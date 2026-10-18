@@ -1,16 +1,29 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useFilters } from "../../app/use-filters";
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
 import { serializeFilters } from "../../shared/filters";
-import { formatDateTime, formatDuration, formatTokens } from "../../shared/format";
-import { queryViewState, useSessions } from "../../shared/queries";
+import {
+  formatCount,
+  formatDateTime,
+  formatDuration,
+  formatTokens,
+  PLACEHOLDER,
+} from "../../shared/format";
+import { useSessions } from "../../shared/queries";
+import { RemoteView } from "../../shared/remote-view";
 import type { SessionPage, SessionRow } from "../../shared/schemas";
-import { StateView } from "../../shared/state-view";
 import { Amount, type Column, DataTable, PageHeader } from "../../shared/ui";
+import { toRemote } from "../../shared/use-remote";
 
+/** Rows asked per page; the answer's `page_size` is what the pager counts with. */
 const PAGE_SIZE = 25;
+
+/** Number of pages of `data`, at least one. */
+export function pageCount(data: Pick<SessionPage, "total" | "page_size">): number {
+  return Math.max(1, Math.ceil(data.total / Math.max(1, data.page_size)));
+}
 
 function columns(timeZone: string, currency: SessionPage["currency"]): Column<SessionRow>[] {
   return [
@@ -42,7 +55,7 @@ function columns(timeZone: string, currency: SessionPage["currency"]): Column<Se
     },
     {
       header: "Project",
-      cell: (row) => row.project ?? "—",
+      cell: (row) => row.project ?? PLACEHOLDER,
       sortValue: (row) => row.project ?? "",
     },
     { header: "Models", cell: (row) => row.models.join(", ") },
@@ -71,29 +84,29 @@ function columns(timeZone: string, currency: SessionPage["currency"]): Column<Se
       numeric: true,
       cell: (row) =>
         row.tool_errors === 0
-          ? String(row.tool_calls)
-          : `${row.tool_calls} (${row.tool_errors} failed)`,
+          ? formatCount(row.tool_calls)
+          : `${formatCount(row.tool_calls)} (${formatCount(row.tool_errors)} failed)`,
       sortValue: (row) => row.tool_calls,
     },
   ];
 }
 
 function Pager(props: {
-  readonly page: number;
-  readonly total: number;
+  readonly data: SessionPage;
   readonly onPage: (page: number) => void;
 }): ReactNode {
-  const pages = Math.max(1, Math.ceil(props.total / PAGE_SIZE));
+  const { page, total } = props.data;
+  const pages = pageCount(props.data);
   return (
     <nav aria-label="Pagination" className="flex items-center justify-between gap-3 text-sm">
       <span className="text-fg-muted">
-        Page {props.page + 1} of {pages} · {props.total.toLocaleString("en-US")} sessions
+        Page {page + 1} of {pages} · {formatCount(total)} sessions
       </span>
       <span className="flex gap-2">
-        <Button isDisabled={props.page === 0} onPress={() => props.onPage(props.page - 1)}>
+        <Button isDisabled={page === 0} onPress={() => props.onPage(page - 1)}>
           Previous
         </Button>
-        <Button isDisabled={props.page + 1 >= pages} onPress={() => props.onPage(props.page + 1)}>
+        <Button isDisabled={page + 1 >= pages} onPress={() => props.onPage(page + 1)}>
           Next
         </Button>
       </span>
@@ -106,29 +119,37 @@ function SessionsTable(): ReactNode {
   const { timeZone } = useAppConfig();
   const [page, setPage] = useState(0);
   const query = useSessions(filters, page, PAGE_SIZE);
-  const state = queryViewState(query, (data) =>
-    data.total === 0
-      ? {
-          title: "No sessions",
-          hint: "No session matches these filters. Widen the range or clear a filter.",
-        }
-      : null,
-  );
   const data = query.data;
+  // A store change can shrink the list under the current page: fall back to its last page.
+  useEffect(() => {
+    if (data !== undefined && data.page === page && page >= pageCount(data)) {
+      setPage(pageCount(data) - 1);
+    }
+  }, [data, page]);
   return (
-    <StateView state={state}>
-      {data === undefined ? null : (
+    <RemoteView
+      remote={toRemote(query)}
+      emptyWhen={(answer) =>
+        answer.total === 0
+          ? {
+              title: "No sessions",
+              hint: "No session matches these filters. Widen the range or clear a filter.",
+            }
+          : null
+      }
+    >
+      {(answer) => (
         <>
           <DataTable
             caption="Sessions, newest first"
-            rows={data.rows}
+            rows={answer.rows}
             rowKey={(row) => `${row.agent}:${row.session}`}
-            columns={columns(timeZone, data.currency)}
+            columns={columns(timeZone, answer.currency)}
           />
-          <Pager page={page} total={data.total} onPage={setPage} />
+          <Pager data={answer} onPage={setPage} />
         </>
       )}
-    </StateView>
+    </RemoteView>
   );
 }
 
@@ -137,10 +158,7 @@ export function SessionsScreen(): ReactNode {
   const { filters } = useFilters();
   return (
     <>
-      <PageHeader
-        title="Sessions"
-        summary="Every session with tokens, cost and duration, and a drilldown per event."
-      />
+      <PageHeader to="/sessions" />
       {/* Keyed by the filters: a new filter set starts again at the first page. */}
       <SessionsTable key={serializeFilters(filters).toString()} />
     </>

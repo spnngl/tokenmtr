@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
-import { formatClock, formatCurrencyMicros, formatPercent, formatTokens } from "../shared/format";
+import {
+  formatClock,
+  formatCurrencyMicros,
+  formatPercent,
+  formatRoiMultiple,
+  formatTokens,
+} from "../shared/format";
 import { QuotaMeters } from "../shared/quota-meters";
-import type { AgentRecap, Budget } from "../shared/schemas";
+import type { AgentRecap, Budget, MeasuredBudget } from "../shared/schemas";
 import { Amount } from "../shared/ui";
 import { UsageMeter } from "../shared/usage-meter";
 
@@ -48,7 +54,7 @@ function MoneyBlock({ recap }: { readonly recap: AgentRecap }): ReactNode {
         <Stat label="API value" lead>
           <Amount micros={totals.api_value_micros} currency={currency} approximate={approximate} />
         </Stat>
-        {totals.roi === null ? null : <Stat label="ROI">{`${totals.roi.toFixed(1)}x`}</Stat>}
+        {totals.roi === null ? null : <Stat label="ROI">{formatRoiMultiple(totals.roi)}</Stat>}
         <Stat label="Projected spend">
           <Amount micros={recap.projected_paid_micros} currency={currency} approximate />
         </Stat>
@@ -60,7 +66,7 @@ function MoneyBlock({ recap }: { readonly recap: AgentRecap }): ReactNode {
   );
 }
 
-function budgetDetail(budget: Budget): ReactNode {
+function budgetDetail(budget: MeasuredBudget): ReactNode {
   const spent = formatCurrencyMicros(budget.spent_micros, budget.currency);
   const limit = formatCurrencyMicros(budget.limit_micros, budget.currency);
   const projected = formatCurrencyMicros(budget.projected_micros, budget.currency);
@@ -73,14 +79,22 @@ function BudgetBlock({ budgets }: { readonly budgets: readonly Budget[] }): Reac
   }
   return (
     <Block title="Budgets">
-      {budgets.map((budget) => (
-        <UsageMeter
-          key={budget.id}
-          label={budget.id}
-          usedFraction={budget.percent / 100}
-          detail={budgetDetail(budget)}
-        />
-      ))}
+      {budgets.map((budget) =>
+        budget.state === "measured" ? (
+          <UsageMeter
+            key={budget.id}
+            label={budget.id}
+            usedFraction={budget.percent / 100}
+            detail={budgetDetail(budget)}
+          />
+        ) : (
+          <p key={budget.id} className="text-xs text-fg-muted">
+            <span className="font-medium text-fg">{budget.id}</span>: limit{" "}
+            {formatCurrencyMicros(budget.limit_micros, budget.currency)}, spend shows once the first{" "}
+            {budget.currency} rate is fetched
+          </p>
+        ),
+      )}
     </Block>
   );
 }

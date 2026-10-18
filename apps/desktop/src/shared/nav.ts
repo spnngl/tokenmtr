@@ -86,6 +86,11 @@ export const NAV_ITEMS = [
 
 export type NavPath = (typeof NAV_ITEMS)[number]["to"];
 
+/** Whether `path` is one of the screens in `NAV_ITEMS`. */
+export function isNavPath(path: string): path is NavPath {
+  return NAV_ITEMS.some((item) => item.to === path);
+}
+
 /** The nav entry of a screen. @throws {Error} when `to` is not in `NAV_ITEMS`. */
 export function navItem(to: NavPath): NavItem {
   const item = NAV_ITEMS.find((candidate) => candidate.to === to);

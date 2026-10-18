@@ -11,34 +11,49 @@ import { quotaMeterSchema } from "./quota";
 import { totalsSchema } from "./usage";
 
 export const PERIODS = ["today", "week", "month"] as const;
-export const periodSchema = z.enum(PERIODS);
+const periodSchema = z.enum(PERIODS);
 export type Period = z.infer<typeof periodSchema>;
 
-export const budgetSchema = z.object({
+const budgetBase = {
   id: z.string(),
   period: z.enum(["day", "week", "month"]),
   measure: z.enum(["paid", "api_value"]),
   /** The budget's own currency, whatever the display currency is. */
   currency: currencySchema,
   period_start: dateSchema,
+  /** Exclusive. */
   period_end: dateSchema,
   limit_micros: microsSchema,
-  spent_micros: microsSchema,
-  /** Whole percent; may exceed 100. */
-  percent: countSchema,
-  projected_micros: microsSchema,
-  projected_percent: countSchema,
-});
-export type Budget = z.infer<typeof budgetSchema>;
+};
 
-export const liveSchema = z.object({
+/** `BudgetView` of the query crate, by `state` (`BudgetState`). */
+export const budgetSchema = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("measured"),
+    ...budgetBase,
+    spent_micros: microsSchema,
+    /** Whole percent; may exceed 100. */
+    percent: countSchema,
+    projected_micros: microsSchema,
+    projected_percent: countSchema,
+  }),
+  /**
+   * The budget's currency needs an FX rate and the store has none yet: only the limit and period
+   * are real. Rust sends zeroes for the rest; the schema drops them so no screen shows them.
+   */
+  z.object({ state: z.literal("no_fx_rate"), ...budgetBase }),
+]);
+export type Budget = z.infer<typeof budgetSchema>;
+export type MeasuredBudget = Extract<Budget, { state: "measured" }>;
+
+const liveSchema = z.object({
   tokens_per_minute: countSchema,
   api_value_per_hour_usd_micros: microsSchema,
   active_sessions: countSchema,
 });
 export type Live = z.infer<typeof liveSchema>;
 
-export const agentRecapSchema = z.object({
+const agentRecapSchema = z.object({
   /** `null` is the `All` tab. */
   agent: z.string().nullable(),
   period: periodSchema,
@@ -63,7 +78,7 @@ export type AgentRecap = z.infer<typeof agentRecapSchema>;
 export const STATUS_SCHEMA_VERSION = 1;
 
 /** `status --json` (D43): system health and one recap per followed agent. */
-export const statusSchema = z.object({
+const statusSchema = z.object({
   status_schema: z.literal(STATUS_SCHEMA_VERSION),
   generated_at: timestampSchema,
   system: systemHealthSchema,

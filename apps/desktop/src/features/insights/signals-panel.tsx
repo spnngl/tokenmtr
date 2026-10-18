@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import { chartColor } from "../../shared/charts";
+import { formatCount } from "../../shared/format";
 import { ResponsiveChart } from "../../shared/responsive-chart";
 import type { SignalsReport } from "../../shared/schemas/usage";
 import { ChartFrame, type Column, DataTable, Kpi, KpiGrid, Section } from "../../shared/ui";
@@ -67,8 +68,8 @@ export function SignalsPanel({ report }: { readonly report: SignalsReport }): Re
       description="API errors and context compactions per day."
     >
       <KpiGrid>
-        <Kpi label="API errors" value={report.api_errors.toLocaleString("en-US")} />
-        <Kpi label="Compactions" value={report.compactions.toLocaleString("en-US")} />
+        <Kpi label="API errors" value={formatCount(report.api_errors)} />
+        <Kpi label="Compactions" value={formatCount(report.compactions)} />
       </KpiGrid>
       {days.length === 0 ? (
         <p className="text-sm text-fg-muted">No errors or compactions in this range.</p>

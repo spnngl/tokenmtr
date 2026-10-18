@@ -1,20 +1,16 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useDataSource } from "./app-context";
-import { useAppState } from "./queries";
+import { errorText } from "./errors";
 import type { Remote } from "./remote-view";
 
-/** Maps one query onto `Remote`; `offline` (daemon not running) wins over the query's own state. */
-export function toRemote<T>(query: UseQueryResult<T>, offline: Remote<never> | null): Remote<T> {
-  if (offline !== null && offline.kind !== "ready") {
-    return offline;
-  }
+/** Maps one query onto `Remote`; an error carries the user-facing text of its kind. */
+export function toRemote<T>(query: UseQueryResult<T>): Remote<T> {
   switch (query.status) {
     case "pending":
       return { kind: "loading" };
     case "error":
       return {
         kind: "error",
-        message: query.error.message,
+        ...errorText(query.error),
         onRetry: () => {
           void query.refetch();
         },
@@ -39,22 +35,4 @@ export function joinRemotes<A, B, R>(
     return b;
   }
   return { kind: "ready", data: join(a.data, b.data) };
-}
-
-/**
- * The state shared by every screen: `daemon-offline` with a start action when the app reports the
- * daemon is down, else `null`.
- */
-export function useDaemonGate(): Remote<never> | null {
-  const dataSource = useDataSource();
-  const state = useAppState();
-  if (state.data?.kind !== "daemon_offline") {
-    return null;
-  }
-  return {
-    kind: "daemon-offline",
-    onStartDaemon: () => {
-      void dataSource.installDaemon();
-    },
-  };
 }

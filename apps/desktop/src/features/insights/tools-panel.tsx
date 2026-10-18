@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { HorizontalBarChart } from "../../shared/bar-chart";
 import { topRows } from "../../shared/decimate";
-import { formatPercent } from "../../shared/format";
+import { formatCount, formatPercent } from "../../shared/format";
 import type { ToolRow, ToolsReport } from "../../shared/schemas/usage";
 import { SegmentedControl } from "../../shared/segmented-control";
 import { ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
@@ -18,14 +18,14 @@ const CHART_ROWS = 10;
 
 const COLUMNS: readonly Column<ToolRow>[] = [
   { header: "Name", cell: (row) => <span className="font-medium">{toolLabel(row)}</span> },
-  { header: "Calls", numeric: true, cell: (row) => row.calls.toLocaleString("en-US") },
-  { header: "Errors", numeric: true, cell: (row) => row.errors.toLocaleString("en-US") },
+  { header: "Calls", numeric: true, cell: (row) => formatCount(row.calls) },
+  { header: "Errors", numeric: true, cell: (row) => formatCount(row.errors) },
   {
     header: "Error rate",
     numeric: true,
     cell: (row) => formatPercent(row.error_rate_percent / 100, 1),
   },
-  { header: "Sessions", numeric: true, cell: (row) => row.sessions.toLocaleString("en-US") },
+  { header: "Sessions", numeric: true, cell: (row) => formatCount(row.sessions) },
 ];
 
 function rowKey(row: ToolRow): string {
@@ -74,7 +74,7 @@ export function ToolsPanel({ report }: { readonly report: ToolsReport }): ReactN
               values: [row.calls, row.errors],
             }))}
             series={[{ name: "Calls" }, { name: "Errors", color: "var(--danger)" }]}
-            formatValue={(value) => value.toLocaleString("en-US")}
+            formatValue={(value) => formatCount(value)}
           />
         </ChartFrame>
       )}

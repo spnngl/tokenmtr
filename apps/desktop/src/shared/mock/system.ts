@@ -107,7 +107,7 @@ function runs(dataset: string, failing: boolean): SinkHealth["recent_runs"] {
   }));
 }
 
-export const SINKS: readonly SinkHealth[] = [
+const SINKS: readonly SinkHealth[] = [
   {
     state: "healthy",
     sink: "local-csv",

@@ -3,7 +3,7 @@
  * under this many points; the helpers here are the second line of defence for custom ranges and
  * for lists (tools, branches) that have no natural bucket.
  */
-export const MAX_CHART_POINTS = 400;
+const MAX_CHART_POINTS = 400;
 
 /**
  * Merges consecutive rows until at most `max` remain. `combine` must be associative (sums,

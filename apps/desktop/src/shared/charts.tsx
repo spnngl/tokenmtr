@@ -12,12 +12,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Currency } from "./format";
-import { formatCurrencyMicros } from "./format";
+import { type Currency, formatCurrencyMicros, formatDateTime, LOCALE } from "./format";
 import type { QuotaHistory, Series } from "./schemas";
 
 /**
- * Charts are SVG, decorative to assistive tech (`ChartFrame` pairs each with a table), and never
+ * Charts are SVG, decorative to assistive tech (`ChartFrame` hides them and pairs each with a
+ * table; `accessibilityLayer={false}` keeps Recharts from adding focusable, announced nodes inside
+ * that hidden region), and never
  * animate (D47: no animation while hidden or under reduced motion; none is simplest to keep so).
  * Backends send at most ~400 points, so nothing is thinned here.
  */
@@ -32,7 +33,7 @@ export function chartColor(index: number): string {
 const AXIS = { stroke: "var(--border)", tick: { fill: "var(--fg-muted)", fontSize: 11 } } as const;
 
 function compactMoney(micros: number, currency: Currency): string {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(LOCALE, {
     style: "currency",
     currency,
     notation: "compact",
@@ -71,7 +72,7 @@ export function CostChart({ series, currency }: CostChartProps): ReactNode {
     typeof value === "number" ? formatCurrencyMicros(value, currency) : String(value);
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={data}>
+      <ComposedChart data={data} accessibilityLayer={false}>
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="start" {...AXIS} minTickGap={32} />
         <YAxis
@@ -123,17 +124,25 @@ export function CostChart({ series, currency }: CostChartProps): ReactNode {
   );
 }
 
-/** Utilization of one quota window over time; each reset is a vertical marker. */
-export function QuotaHistoryChart({ history }: { readonly history: QuotaHistory }): ReactNode {
+/**
+ * Utilization of one quota window over time, in `timeZone` (D8); each reset is a vertical marker.
+ */
+export function QuotaHistoryChart({
+  history,
+  timeZone,
+}: {
+  readonly history: QuotaHistory;
+  readonly timeZone: string;
+}): ReactNode {
   const data = history.points.map((point) => ({
     at: Date.parse(point.at),
     used: point.used_percent,
   }));
-  const formatTick = (at: number): string =>
-    new Date(at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit" });
+  // "06-15 14:05": the year adds nothing on an axis that spans days.
+  const formatTick = (at: number): string => formatDateTime(at, timeZone).slice(5);
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data}>
+      <LineChart data={data} accessibilityLayer={false}>
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis
           dataKey="at"
@@ -151,7 +160,9 @@ export function QuotaHistoryChart({ history }: { readonly history: QuotaHistory 
           width={44}
         />
         <Tooltip
-          labelFormatter={(at) => (typeof at === "number" ? formatTick(at) : String(at))}
+          labelFormatter={(at) =>
+            typeof at === "number" ? formatDateTime(at, timeZone) : String(at)
+          }
           formatter={(v: unknown) => `${String(v)}%`}
         />
         <ReferenceLine y={90} stroke="var(--danger)" strokeDasharray="4 3" />

@@ -14,6 +14,7 @@ import { ModelsRoute } from "./routes/models";
 import { ReportsRoute } from "./routes/reports";
 import {
   OverviewRoute,
+  ProjectDetailRoute,
   ProjectsRoute,
   QuotaRoute,
   SessionDetailRoute,
@@ -66,7 +67,13 @@ const sessionDetailRoute = createRoute({
   component: SessionDetailRoute,
 });
 
-const routeTree = rootRoute.addChildren([...screenRoutes, sessionDetailRoute]);
+const projectDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$project",
+  component: ProjectDetailRoute,
+});
+
+const routeTree = rootRoute.addChildren([...screenRoutes, sessionDetailRoute, projectDetailRoute]);
 
 /** One route per screen in `NAV_ITEMS`. Tests pass a memory history. Return type is inferred: it is the router's full generic type. */
 export function createAppRouter(history: RouterHistory) {

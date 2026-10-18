@@ -63,7 +63,7 @@ export type HeatMetric = "events" | "total_tokens" | "api_value_micros";
 export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
 /** The metric of one cell. */
-export function heatValue(cell: HeatCell, metric: HeatMetric): number {
+function heatValue(cell: HeatCell, metric: HeatMetric): number {
   switch (metric) {
     case "events":
       return cell.events;

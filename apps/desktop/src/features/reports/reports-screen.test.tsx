@@ -70,6 +70,7 @@ function Harness({
       onSave={onSave}
       saveStatus={saveStatus}
       onPrint={onPrint}
+      isPrinting={false}
     />
   );
 }
@@ -87,14 +88,18 @@ describe("ReportsScreen", () => {
 
   it("error retries", async () => {
     const onRetry = vi.fn();
-    render(<Harness preview={() => ({ kind: "error", message: "Store is locked", onRetry })} />);
+    render(
+      <Harness
+        preview={() => ({
+          kind: "error",
+          title: "Request not valid",
+          message: "Store is locked",
+          onRetry,
+        })}
+      />,
+    );
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("daemon-offline offers to start it", () => {
-    render(<Harness preview={() => ({ kind: "daemon-offline", onStartDaemon: vi.fn() })} />);
-    expect(screen.getByRole("button", { name: "Install / start daemon" })).toBeTruthy();
   });
 
   it("previews, switches format, saves and prints", async () => {
@@ -132,11 +137,11 @@ describe("ReportsScreen", () => {
     expect(screen.getByRole("alert").textContent).toContain("disk full");
   });
 
-  it("disables Save while saving", () => {
+  it("marks Save as pending while saving, keeping its label", () => {
     render(<Harness preview={ready} saveStatus={{ kind: "saving" }} />);
-    expect(screen.getByRole("button", { name: "Save Markdown" }).hasAttribute("disabled")).toBe(
-      true,
-    );
+    const save = screen.getByRole("button", { name: "Save Markdown" });
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    expect(save.hasAttribute("data-pending")).toBe(true);
   });
 
   it("offers project scope and reaches every control by keyboard", async () => {

@@ -1,14 +1,21 @@
 import type { ReactNode } from "react";
 import { Switch } from "react-aria-components";
-import { useDataAction } from "../../shared/actions";
+import {
+  useDataAction,
+  useInstallDaemon,
+  useRestartDaemon,
+  useRevealPath,
+  useScanNow,
+} from "../../shared/actions";
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
 import { formatDateTime } from "../../shared/format";
-import { queryViewState, useSettings } from "../../shared/queries";
+import { useSettings } from "../../shared/queries";
+import { RemoteView } from "../../shared/remote-view";
 import type { Settings } from "../../shared/schemas";
-import { StateView } from "../../shared/state-view";
 import { ThemeSwitcher } from "../../shared/theme-switcher";
 import { Card, PageHeader } from "../../shared/ui";
+import { toRemote } from "../../shared/use-remote";
 import { AgentsSection } from "./agents-section";
 import {
   BackupsSection,
@@ -33,17 +40,12 @@ function Fact(props: { readonly label: string; readonly children: ReactNode }): 
   );
 }
 
-function ErrorLine({ error }: { readonly error: Error | null }): ReactNode {
-  return error === null ? null : (
-    <p role="alert" className="text-sm text-danger">
-      {error.message}
-    </p>
-  );
-}
-
 function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
-  const reveal = useDataAction((ds, path: string) => ds.revealPath(path));
-  const login = useDataAction((ds, enabled: boolean) => ds.setLaunchAtLogin(enabled));
+  const reveal = useRevealPath();
+  const revealing = (path: string): boolean => reveal.isPending && reveal.variables === path;
+  const login = useDataAction((ds, enabled: boolean) => ds.setLaunchAtLogin(enabled), {
+    failure: "Could not change launch at login",
+  });
   return (
     <Card title="General">
       <dl className="flex flex-col gap-2">
@@ -56,20 +58,30 @@ function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
         </Fact>
       </dl>
       <div className="flex flex-wrap gap-2">
-        <Button onPress={() => reveal.mutate(settings.config_path)}>Reveal config file</Button>
-        <Button onPress={() => reveal.mutate(settings.exports_dir)}>Reveal exports folder</Button>
+        <Button
+          isPending={revealing(settings.config_path)}
+          onPress={() => reveal.mutate(settings.config_path)}
+        >
+          Reveal config file
+        </Button>
+        <Button
+          isPending={revealing(settings.exports_dir)}
+          onPress={() => reveal.mutate(settings.exports_dir)}
+        >
+          Reveal exports folder
+        </Button>
       </div>
       <Switch
-        isSelected={settings.launch_at_login}
+        // Shows the requested state while it is applied; a failure toasts and falls back.
+        isSelected={login.isPending ? login.variables : settings.launch_at_login}
         onChange={(enabled) => login.mutate(enabled)}
-        className="group flex min-h-9 items-center gap-2 text-sm"
+        className="group flex min-h-9 w-fit items-center gap-2 text-sm"
       >
-        <span className="flex h-5 w-9 items-center rounded-full border border-border bg-surface-muted px-0.5 transition-colors group-data-selected:bg-accent">
+        <span className="flex h-5 w-9 items-center rounded-full border border-border bg-surface-muted px-0.5 transition-colors group-data-selected:bg-accent group-data-focus-visible:outline-2 group-data-focus-visible:outline-offset-2 group-data-focus-visible:outline-ring">
           <span className="size-4 rounded-full bg-fg-muted transition-transform group-data-selected:translate-x-4 group-data-selected:bg-accent-fg" />
         </span>
         Launch at login
       </Switch>
-      <ErrorLine error={reveal.error ?? login.error} />
     </Card>
   );
 }
@@ -77,9 +89,9 @@ function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
 function DaemonCard({ settings }: { readonly settings: Settings }): ReactNode {
   const { timeZone } = useAppConfig();
   const { daemon } = settings;
-  const scan = useDataAction((ds) => ds.scanNow());
-  const restart = useDataAction((ds) => ds.restartDaemon());
-  const install = useDataAction((ds) => ds.installDaemon());
+  const scan = useScanNow();
+  const restart = useRestartDaemon();
+  const install = useInstallDaemon();
   return (
     <Card title="Daemon">
       <dl className="flex flex-col gap-2">
@@ -105,7 +117,6 @@ function DaemonCard({ settings }: { readonly settings: Settings }): ReactNode {
           </Button>
         )}
       </div>
-      <ErrorLine error={scan.error ?? restart.error ?? install.error} />
     </Card>
   );
 }
@@ -159,17 +170,15 @@ function PreferencesCard({ settings }: { readonly settings: Settings }): ReactNo
 
 /** Settings (PLAN §7): everything configurable or diagnosable, one card per concern. */
 export function SettingsScreen(): ReactNode {
-  const query = useSettings();
-  const state = queryViewState(query, () => null);
-  const settings = query.data;
+  const settings = toRemote(useSettings());
   return (
     <>
       <PageHeader
         title="Settings"
         summary="Config, agents, daemon, currency, theme and parse issues."
       />
-      <StateView state={state}>
-        {settings === undefined ? null : (
+      <RemoteView remote={settings}>
+        {(settings) => (
           <>
             <GeneralCard settings={settings} />
             <AgentsSection agents={settings.agents} />
@@ -183,7 +192,7 @@ export function SettingsScreen(): ReactNode {
             <EraseSection />
           </>
         )}
-      </StateView>
+      </RemoteView>
     </>
   );
 }

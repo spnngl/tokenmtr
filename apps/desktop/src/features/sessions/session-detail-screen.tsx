@@ -1,15 +1,18 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Check, Copy, FolderOpen } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useFilters } from "../../app/use-filters";
-import { useDataAction } from "../../shared/actions";
+import { useRevealPath } from "../../shared/actions";
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
-import { formatDateTime, formatTokens } from "../../shared/format";
-import { queryViewState, useSessionDetail, useSessionOrigin } from "../../shared/queries";
+import { errorText } from "../../shared/errors";
+import { type Currency, formatDateTime, formatTokens, PLACEHOLDER } from "../../shared/format";
+import { useSessionDetail, useSessionOrigin } from "../../shared/queries";
+import { CardRemote, RemoteView } from "../../shared/remote-view";
 import type { SessionEvent, SessionOrigin, SessionToolCall } from "../../shared/schemas";
-import { StateView } from "../../shared/state-view";
+import { useNotify } from "../../shared/toasts";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
+import { toRemote } from "../../shared/use-remote";
 import { buildResumeCommand } from "./resume-command";
 
 const COST_SOURCE_LABEL = {
@@ -23,16 +26,44 @@ function dirname(path: string): string {
   return cut > 0 ? path.slice(0, cut) : path;
 }
 
+/** How long the button says "Copied" before it offers to copy again. */
+const COPIED_MS = 2_000;
+
 function CopyButton({ text }: { readonly text: string }): ReactNode {
+  const notify = useNotify();
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) {
+      return;
+    }
+    const timer = setTimeout(() => setCopied(false), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const copy = (): void => {
-    void navigator.clipboard.writeText(text).then(() => setCopied(true));
+    navigator.clipboard.writeText(text).then(
+      () => setCopied(true),
+      (error: unknown) =>
+        notify({
+          tone: "error",
+          title: "Could not copy the command",
+          message: errorText(error).message,
+        }),
+    );
   };
   return (
-    <Button variant="secondary" onPress={copy}>
-      {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
-      {copied ? "Copied" : "Copy command"}
-    </Button>
+    <>
+      <Button variant="secondary" onPress={copy}>
+        {copied ? (
+          <Check className="size-4" aria-hidden />
+        ) : (
+          <Copy className="size-4" aria-hidden />
+        )}
+        {copied ? "Copied" : "Copy command"}
+      </Button>
+      <span role="status" className="sr-only">
+        {copied ? "Resume command copied" : ""}
+      </span>
+    </>
   );
 }
 
@@ -42,7 +73,8 @@ function ResumeCard(props: {
   readonly origin: SessionOrigin;
 }): ReactNode {
   const { origin } = props;
-  const reveal = useDataAction((ds, path: string) => ds.revealPath(path));
+  const reveal = useRevealPath();
+  const revealing = (path: string): boolean => reveal.isPending && reveal.variables === path;
   const command = buildResumeCommand(props.agent, props.session, origin);
   const { transcript_path: transcript } = origin;
   return (
@@ -61,8 +93,13 @@ function ResumeCard(props: {
       )}
       {origin.transcript_exists && transcript !== null ? (
         <div className="flex flex-wrap gap-2">
-          <Button onPress={() => reveal.mutate(transcript)}>Reveal transcript</Button>
-          <Button onPress={() => reveal.mutate(dirname(transcript))}>
+          <Button isPending={revealing(transcript)} onPress={() => reveal.mutate(transcript)}>
+            Reveal transcript
+          </Button>
+          <Button
+            isPending={revealing(dirname(transcript))}
+            onPress={() => reveal.mutate(dirname(transcript))}
+          >
             <FolderOpen className="size-4" aria-hidden />
             Open folder
           </Button>
@@ -72,21 +109,17 @@ function ResumeCard(props: {
           The transcript file is gone (the agent cleaned it up), so only the recorded usage remains.
         </p>
       )}
-      {reveal.error === null ? null : (
-        <p role="alert" className="text-sm text-danger">
-          {reveal.error.message}
-        </p>
-      )}
     </Card>
   );
 }
 
 function OriginSection(props: { readonly agent: string; readonly session: string }): ReactNode {
-  const query = useSessionOrigin(props.agent, props.session);
-  if (query.data === undefined) {
-    return null;
-  }
-  return <ResumeCard agent={props.agent} session={props.session} origin={query.data} />;
+  const origin = toRemote(useSessionOrigin(props.agent, props.session));
+  return (
+    <CardRemote title="Resume" remote={origin}>
+      {(origin) => <ResumeCard agent={props.agent} session={props.session} origin={origin} />}
+    </CardRemote>
+  );
 }
 
 /** Drilldown of one session (PLAN §7): resume command, per-event rows, tool calls, signals. */
@@ -96,20 +129,15 @@ export function SessionDetailScreen(props: {
 }): ReactNode {
   const { filters } = useFilters();
   const { timeZone } = useAppConfig();
-  const query = useSessionDetail(props.agent, props.session, filters.currency);
-  const state = queryViewState(query, (detail) =>
-    detail.events.length === 0 && detail.tool_calls.length === 0
-      ? { title: "Session not found", hint: "No recorded events for this session." }
-      : null,
-  );
-  const detail = query.data;
+  const detail = toRemote(useSessionDetail(props.agent, props.session, filters.currency));
   const at = (iso: string): string => formatDateTime(Date.parse(iso), timeZone);
 
-  const eventColumns: Column<SessionEvent>[] = [
+  // Amounts are in the currency the backend answered in (EUR falls back to USD without a rate).
+  const eventColumns = (currency: Currency): Column<SessionEvent>[] => [
     { header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
     { header: "Model", cell: (row) => row.model, sortValue: (row) => row.model },
     { header: "Kind", cell: (row) => row.kind },
-    { header: "Branch", cell: (row) => row.git_branch ?? "—" },
+    { header: "Branch", cell: (row) => row.git_branch ?? PLACEHOLDER },
     {
       header: "Tokens",
       numeric: true,
@@ -123,7 +151,7 @@ export function SessionDetailScreen(props: {
       cell: (row) => (
         <Amount
           micros={row.api_value_micros}
-          currency={filters.currency}
+          currency={currency}
           approximate={row.cost_source !== "reported"}
         />
       ),
@@ -134,7 +162,7 @@ export function SessionDetailScreen(props: {
   const toolColumns: Column<SessionToolCall>[] = [
     { header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
     { header: "Tool", cell: (row) => row.tool_name, sortValue: (row) => row.tool_name },
-    { header: "MCP server", cell: (row) => row.mcp_server ?? "—" },
+    { header: "MCP server", cell: (row) => row.mcp_server ?? PLACEHOLDER },
     {
       header: "Result",
       cell: (row) => {
@@ -157,10 +185,17 @@ export function SessionDetailScreen(props: {
         All sessions
       </Link>
       <PageHeader title={`Session ${props.session}`} summary={`Agent: ${props.agent}`} />
-      <StateView state={state}>
-        <OriginSection agent={props.agent} session={props.session} />
-        {detail === undefined ? null : (
+      <RemoteView
+        remote={detail}
+        emptyWhen={(detail) =>
+          detail.events.length === 0 && detail.tool_calls.length === 0
+            ? { title: "Session not found", hint: "No recorded events for this session." }
+            : null
+        }
+      >
+        {(detail) => (
           <>
+            <OriginSection agent={props.agent} session={props.session} />
             {detail.signals.length === 0 ? null : (
               <Card title="Signals">
                 <ul className="flex flex-col gap-1 text-sm">
@@ -182,7 +217,7 @@ export function SessionDetailScreen(props: {
                 caption="Session events"
                 rows={detail.events}
                 rowKey={(row, index) => `${index}:${row.at}`}
-                columns={eventColumns}
+                columns={eventColumns(detail.currency)}
               />
             </Card>
             <Card title="Tool calls">
@@ -199,7 +234,7 @@ export function SessionDetailScreen(props: {
             </Card>
           </>
         )}
-      </StateView>
+      </RemoteView>
     </>
   );
 }

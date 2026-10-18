@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useDataAction } from "../../shared/actions";
+import { useKeepTenYears } from "../../shared/actions";
 import { Button } from "../../shared/button";
 import type { AgentInfo, Capabilities } from "../../shared/schemas";
 import { Card } from "../../shared/ui";
@@ -22,7 +22,7 @@ function ProfileRow({
   readonly agent: AgentInfo;
   readonly profile: AgentInfo["profiles"][number];
 }): ReactNode {
-  const keep = useDataAction((ds) => ds.keepTenYears(agent.agent, profile.profile));
+  const keep = useKeepTenYears(agent.agent, profile.profile, agent.label);
   return (
     <li className="flex flex-col gap-1 border-t border-border pt-2 first:border-t-0 first:pt-0">
       <p className="text-sm">
@@ -45,11 +45,6 @@ function ProfileRow({
                 Keep for 10 years
               </Button>
             </>
-          )}
-          {keep.error === null ? null : (
-            <span role="alert" className="text-danger">
-              {keep.error.message}
-            </span>
           )}
         </div>
       )}

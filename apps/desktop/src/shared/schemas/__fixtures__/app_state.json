@@ -1,0 +1,52 @@
+{
+  "kind": "onboarding",
+  "agents": [
+    {
+      "agent": "claude",
+      "label": "Claude Code",
+      "followed": true,
+      "capabilities": {
+        "quota": true,
+        "reported_cost": false,
+        "subscription": true
+      },
+      "profiles": [
+        {
+          "profile": "default",
+          "root": "/Users/ada/.claude",
+          "account": "ada@example.com",
+          "retention_days": 30,
+          "keeps_ten_years": false
+        },
+        {
+          "profile": "work",
+          "root": "/Users/ada/.claude-work",
+          "account": null,
+          "retention_days": null,
+          "keeps_ten_years": true
+        }
+      ]
+    },
+    {
+      "agent": "pi",
+      "label": "pi",
+      "followed": false,
+      "capabilities": {
+        "quota": false,
+        "reported_cost": true,
+        "subscription": true
+      },
+      "profiles": [
+        {
+          "profile": "default",
+          "root": "/Users/ada/.pi/agent",
+          "account": null,
+          "retention_days": null,
+          "keeps_ten_years": false
+        }
+      ]
+    }
+  ],
+  "daemon_installed": false,
+  "notifications": "undetermined"
+}

@@ -2,10 +2,15 @@ import { type ReactNode, useState } from "react";
 import { useFilters } from "../../app/use-filters";
 import { useAppConfig } from "../../shared/app-context";
 import { CostChart, seriesGroups } from "../../shared/charts";
-import { formatPercent, formatRoiMultiple, formatTokens } from "../../shared/format";
 import {
-  NO_USAGE_COPY,
-  queryViewState,
+  type Currency,
+  formatCount,
+  formatPercent,
+  formatRoiMultiple,
+  formatTokens,
+  PLACEHOLDER,
+} from "../../shared/format";
+import {
   useHeatmap,
   useModels,
   useOverview,
@@ -15,9 +20,9 @@ import {
 } from "../../shared/queries";
 import { QuotaMeters } from "../../shared/quota-meters";
 import { RankedBars } from "../../shared/ranked-bars";
-import type { GroupBy } from "../../shared/schemas";
+import { CardRemote, NO_USAGE_COPY, RemoteView } from "../../shared/remote-view";
+import type { GroupBy, Series, Totals } from "../../shared/schemas";
 import { SegmentedControl } from "../../shared/segmented-control";
-import { StateView } from "../../shared/state-view";
 import {
   Amount,
   Card,
@@ -28,6 +33,7 @@ import {
   KpiGrid,
   PageHeader,
 } from "../../shared/ui";
+import { toRemote } from "../../shared/use-remote";
 import { HeatmapGrid, summarizeWeekdays, type WeekdaySummary } from "./heatmap";
 
 const TOP_COUNT = 5;
@@ -37,13 +43,9 @@ const COST_GROUPS: readonly { value: Extract<GroupBy, "agent" | "model">; label:
   { value: "model", label: "By model" },
 ];
 
-const WEEKDAY_COLUMNS = (currency: "USD" | "EUR"): Column<WeekdaySummary>[] => [
+const WEEKDAY_COLUMNS = (currency: Currency): Column<WeekdaySummary>[] => [
   { header: "Weekday", cell: (row) => row.weekday },
-  {
-    header: "Events",
-    numeric: true,
-    cell: (row) => row.events.toLocaleString("en-US"),
-  },
+  { header: "Events", numeric: true, cell: (row) => formatCount(row.events) },
   { header: "Tokens", numeric: true, cell: (row) => formatTokens(row.tokens) },
   {
     header: "API value",
@@ -54,17 +56,11 @@ const WEEKDAY_COLUMNS = (currency: "USD" | "EUR"): Column<WeekdaySummary>[] => [
     header: "Busiest hour",
     numeric: true,
     cell: (row) =>
-      row.busiestHour === null ? "—" : `${String(row.busiestHour).padStart(2, "0")}:00`,
+      row.busiestHour === null ? PLACEHOLDER : `${String(row.busiestHour).padStart(2, "0")}:00`,
   },
 ];
 
-function Kpis(): ReactNode {
-  const { filters } = useFilters();
-  const query = useOverview(filters);
-  const totals = query.data;
-  if (totals === undefined) {
-    return null;
-  }
+function Kpis({ totals }: { readonly totals: Totals }): ReactNode {
   const { currency, approximate } = totals;
   return (
     <KpiGrid>
@@ -91,14 +87,14 @@ function Kpis(): ReactNode {
         label="Cache savings"
         value={
           totals.cache_savings_micros === null ? (
-            "—"
+            PLACEHOLDER
           ) : (
             <Amount micros={totals.cache_savings_micros} currency={currency} />
           )
         }
       />
       <Kpi label="Output tokens" value={formatTokens(totals.output)} />
-      <Kpi label="Sessions" value={totals.sessions.toLocaleString("en-US")} />
+      <Kpi label="Sessions" value={formatCount(totals.sessions)} />
     </KpiGrid>
   );
 }
@@ -106,11 +102,19 @@ function Kpis(): ReactNode {
 function CostCard(): ReactNode {
   const { filters } = useFilters();
   const [groupBy, setGroupBy] = useState<"agent" | "model">("agent");
-  const query = useSeries(filters, groupBy);
-  const series = query.data;
-  if (series === undefined) {
-    return null;
-  }
+  return (
+    <CardRemote title="Daily cost" remote={toRemote(useSeries(filters, groupBy))}>
+      {(series) => <CostFrame series={series} groupBy={groupBy} onGroupByChange={setGroupBy} />}
+    </CardRemote>
+  );
+}
+
+function CostFrame(props: {
+  readonly series: Series;
+  readonly groupBy: "agent" | "model";
+  readonly onGroupByChange: (groupBy: "agent" | "model") => void;
+}): ReactNode {
+  const { series, groupBy } = props;
   const groups = seriesGroups(series);
   return (
     <ChartFrame
@@ -122,7 +126,7 @@ function CostCard(): ReactNode {
           label="Group cost"
           options={COST_GROUPS}
           value={groupBy}
-          onChange={setGroupBy}
+          onChange={props.onGroupByChange}
         />
       }
       table={
@@ -166,132 +170,144 @@ function CostCard(): ReactNode {
   );
 }
 
-function TopModels(): ReactNode {
+function TopModels({ currency }: { readonly currency: Currency }): ReactNode {
   const { filters, setFilters } = useFilters();
-  const query = useModels(filters);
-  const rows = (query.data ?? []).slice(0, TOP_COUNT);
   return (
     <Card title="Top models">
-      {rows.length === 0 ? (
-        <p className="text-sm text-fg-muted">No model usage in this range.</p>
-      ) : (
-        <RankedBars
-          label="Top models by API value"
-          items={rows.map((row) => ({
-            key: row.model,
-            label: row.model,
-            value: (
-              <Amount
-                micros={row.api_value_micros}
-                currency={filters.currency}
-                approximate={row.approximate}
-              />
-            ),
-            percent: row.share_percent,
-            detail: `${formatPercent(row.share_percent / 100)} of cost · ${formatTokens(row.total_tokens)} tokens`,
-            onPress: () => setFilters({ ...filters, model: row.model }),
-          }))}
-        />
-      )}
+      <RemoteView remote={toRemote(useModels(filters))} size="section">
+        {(models) =>
+          models.length === 0 ? (
+            <p className="text-sm text-fg-muted">No model usage in this range.</p>
+          ) : (
+            <RankedBars
+              label="Top models by API value"
+              items={models.slice(0, TOP_COUNT).map((row) => ({
+                key: row.model,
+                label: row.model,
+                value: (
+                  <Amount
+                    micros={row.api_value_micros}
+                    currency={currency}
+                    approximate={row.approximate}
+                  />
+                ),
+                percent: row.share_percent,
+                detail: `${formatPercent(row.share_percent / 100)} of cost · ${formatTokens(row.total_tokens)} tokens`,
+                onPress: () => setFilters({ ...filters, model: row.model }),
+              }))}
+            />
+          )
+        }
+      </RemoteView>
     </Card>
   );
 }
 
-function TopProjects(): ReactNode {
+function TopProjects({ currency }: { readonly currency: Currency }): ReactNode {
   const { filters, setFilters } = useFilters();
-  const query = useProjects(filters);
-  const rows = (query.data ?? []).slice(0, TOP_COUNT);
   return (
     <Card title="Top projects">
-      {rows.length === 0 ? (
-        <p className="text-sm text-fg-muted">No project usage in this range.</p>
-      ) : (
-        <RankedBars
-          label="Top projects by API value"
-          items={rows.map((row) => {
-            const name = row.name ?? row.project ?? "No project";
-            return {
-              key: row.project ?? "(none)",
-              label: name,
-              value: (
-                <Amount
-                  micros={row.api_value_micros}
-                  currency={filters.currency}
-                  approximate={row.approximate}
-                />
-              ),
-              percent: row.share_percent,
-              detail: row.client ?? undefined,
-              ...(row.project === null
-                ? {}
-                : { onPress: () => setFilters({ ...filters, project: row.project }) }),
-            };
-          })}
-        />
-      )}
+      <RemoteView remote={toRemote(useProjects(filters))} size="section">
+        {(projects) =>
+          projects.length === 0 ? (
+            <p className="text-sm text-fg-muted">No project usage in this range.</p>
+          ) : (
+            <RankedBars
+              label="Top projects by API value"
+              items={projects.slice(0, TOP_COUNT).map((row) => {
+                const { project } = row;
+                return {
+                  key: project ?? "(none)",
+                  label: row.name ?? project ?? "No project",
+                  value: (
+                    <Amount
+                      micros={row.api_value_micros}
+                      currency={currency}
+                      approximate={row.approximate}
+                    />
+                  ),
+                  percent: row.share_percent,
+                  detail: row.client ?? undefined,
+                  ...(project === null
+                    ? {}
+                    : { onPress: () => setFilters({ ...filters, project }) }),
+                };
+              })}
+            />
+          )
+        }
+      </RemoteView>
     </Card>
   );
 }
 
 function Activity(): ReactNode {
   const { filters } = useFilters();
-  const heatmap = useHeatmap(filters).data;
-  if (heatmap === undefined) {
-    return null;
-  }
   return (
     <Card title="Activity by hour">
-      <HeatmapGrid heatmap={heatmap} />
-      <details className="text-sm">
-        <summary className="cursor-pointer font-medium text-accent">View as table</summary>
-        <div className="pt-2">
-          <DataTable
-            caption="Activity by weekday"
-            rows={summarizeWeekdays(heatmap)}
-            rowKey={(row) => row.weekday}
-            columns={WEEKDAY_COLUMNS(heatmap.currency)}
-          />
-        </div>
-      </details>
+      <RemoteView remote={toRemote(useHeatmap(filters))} size="section">
+        {(heatmap) => (
+          <>
+            <HeatmapGrid heatmap={heatmap} />
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-accent">View as table</summary>
+              <div className="pt-2">
+                <DataTable
+                  caption="Activity by weekday"
+                  rows={summarizeWeekdays(heatmap)}
+                  rowKey={(row) => row.weekday}
+                  columns={WEEKDAY_COLUMNS(heatmap.currency)}
+                />
+              </div>
+            </details>
+          </>
+        )}
+      </RemoteView>
     </Card>
   );
 }
 
+/** Hidden when no followed agent reports quota; a failed read still shows, with Retry. */
 function QuotaSection(): ReactNode {
   const { filters } = useFilters();
   const { timeZone, now } = useAppConfig();
-  const meters = useQuotaLatest(filters).data ?? [];
-  if (meters.length === 0) {
-    return null;
-  }
   return (
-    <Card title="Quota">
-      <QuotaMeters meters={meters} timeZone={timeZone} now={now()} />
-    </Card>
+    <CardRemote title="Quota" remote={toRemote(useQuotaLatest(filters))}>
+      {(meters) =>
+        meters.length === 0 ? null : (
+          <Card title="Quota">
+            <QuotaMeters meters={meters} timeZone={timeZone} now={now()} />
+          </Card>
+        )
+      }
+    </CardRemote>
   );
 }
 
 /** Overview (PLAN §7): quota, headline figures, daily cost, top models and projects, activity. */
 export function OverviewScreen(): ReactNode {
   const { filters } = useFilters();
-  const totals = useOverview(filters);
-  const state = queryViewState(totals, (data) => (data.events === 0 ? NO_USAGE_COPY : null));
   return (
     <>
-      <PageHeader
-        title="Overview"
-        summary="Paid cost against API value, quota meters, daily cost, top models and projects."
-      />
-      <StateView state={state}>
-        <QuotaSection />
-        <Kpis />
-        <CostCard />
-        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-          <TopModels />
-          <TopProjects />
-        </div>
-        <Activity />
-      </StateView>
+      <PageHeader to="/" />
+      <RemoteView
+        remote={toRemote(useOverview(filters))}
+        emptyWhen={(totals) => (totals.events === 0 ? NO_USAGE_COPY : null)}
+      >
+        {(totals) => (
+          <>
+            <QuotaSection />
+            <Kpis totals={totals} />
+            <CostCard />
+            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+              {/* Model and project rows carry no currency: the totals say which one answered. */}
+              <TopModels currency={totals.currency} />
+              <TopProjects currency={totals.currency} />
+            </div>
+            <Activity />
+          </>
+        )}
+      </RemoteView>
     </>
   );
 }

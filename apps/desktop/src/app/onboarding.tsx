@@ -1,8 +1,9 @@
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
-import { useDataAction } from "../shared/actions";
+import { useDataAction, useInstallDaemon, useKeepTenYears } from "../shared/actions";
+import { APP_NAME } from "../shared/brand";
 import { Button } from "../shared/button";
-import type { AgentInfo, AppState } from "../shared/schemas";
+import type { AgentInfo, AppState, ProfileInfo } from "../shared/schemas";
 import { Card } from "../shared/ui";
 
 type OnboardingState = Extract<AppState, { kind: "onboarding" }>;
@@ -23,14 +24,6 @@ function capabilityList(agent: AgentInfo): string {
   return names.length === 0 ? "usage only" : names.join(", ");
 }
 
-function ActionError({ error }: { readonly error: Error | null }): ReactNode {
-  return error === null ? null : (
-    <p role="alert" className="text-sm text-danger">
-      {error.message}
-    </p>
-  );
-}
-
 function Done({ children }: { readonly children: ReactNode }): ReactNode {
   return (
     <p className="flex items-center gap-2 text-sm text-fg-muted">
@@ -40,20 +33,50 @@ function Done({ children }: { readonly children: ReactNode }): ReactNode {
   );
 }
 
+/** One profile whose agent deletes old transcripts: its own action, so its own pending state. */
+function KeepHistoryCard(props: {
+  readonly agent: AgentInfo;
+  readonly profile: ProfileInfo;
+}): ReactNode {
+  const { agent, profile } = props;
+  const keep = useKeepTenYears(agent.agent, profile.profile, agent.label);
+  return (
+    <Card title={`Keep ${agent.label} (${profile.profile}) history`}>
+      {profile.keeps_ten_years ? (
+        <Done>{profile.profile}: transcripts are kept for 10 years.</Done>
+      ) : (
+        <>
+          <p className="text-sm text-fg-muted">
+            {agent.label} deletes {profile.profile} transcripts after {profile.retention_days} days,
+            and usage older than that is lost. Raising the limit to 10 years edits the agent's own
+            settings file.
+          </p>
+          <div>
+            <Button variant="secondary" isPending={keep.isPending} onPress={() => keep.mutate()}>
+              Keep for 10 years
+            </Button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /** First run (PLAN §7): what was found, then the three one-time choices, then go. */
 export function Onboarding({ state }: { readonly state: OnboardingState }): ReactNode {
-  const install = useDataAction((ds) => ds.installDaemon());
-  const notify = useDataAction((ds) => ds.requestNotifications());
-  const keep = useDataAction((ds, v: { agent: string; profile: string }) =>
-    ds.keepTenYears(v.agent, v.profile),
-  );
-  const finish = useDataAction((ds) => ds.completeOnboarding());
+  const install = useInstallDaemon();
+  const notify = useDataAction((ds) => ds.requestNotifications(), {
+    failure: "Could not ask for notifications",
+  });
+  const finish = useDataAction((ds) => ds.completeOnboarding(), {
+    failure: "Could not finish setup",
+  });
   const found = state.agents.filter((agent) => agent.profiles.length > 0);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">Welcome to TokenMtr</h1>
+        <h1 className="text-xl font-semibold">Welcome to {APP_NAME}</h1>
         <p className="text-sm text-fg-muted">
           Local usage, cost and quota for your coding agents. Nothing leaves this machine.
         </p>
@@ -91,32 +114,11 @@ export function Onboarding({ state }: { readonly state: OnboardingState }): Reac
         agent.profiles
           .filter((profile) => profile.retention_days !== null)
           .map((profile) => (
-            <Card
+            <KeepHistoryCard
               key={`${agent.agent}:${profile.profile}`}
-              title={`Keep ${agent.label} (${profile.profile}) history`}
-            >
-              {profile.keeps_ten_years ? (
-                <Done>{profile.profile}: transcripts are kept for 10 years.</Done>
-              ) : (
-                <>
-                  <p className="text-sm text-fg-muted">
-                    {agent.label} deletes {profile.profile} transcripts after{" "}
-                    {profile.retention_days} days, and usage older than that is lost. Raising the
-                    limit to 10 years edits the agent's own settings file.
-                  </p>
-                  <div>
-                    <Button
-                      variant="secondary"
-                      isPending={keep.isPending}
-                      onPress={() => keep.mutate({ agent: agent.agent, profile: profile.profile })}
-                    >
-                      Keep for 10 years
-                    </Button>
-                  </div>
-                  <ActionError error={keep.error} />
-                </>
-              )}
-            </Card>
+              agent={agent}
+              profile={profile}
+            />
           )),
       )}
 
@@ -137,7 +139,6 @@ export function Onboarding({ state }: { readonly state: OnboardingState }): Reac
                 Install daemon
               </Button>
             </div>
-            <ActionError error={install.error} />
           </>
         )}
       </Card>
@@ -155,14 +156,12 @@ export function Onboarding({ state }: { readonly state: OnboardingState }): Reac
             </Button>
           </div>
         ) : null}
-        <ActionError error={notify.error} />
       </Card>
 
-      <div className="flex flex-col items-start gap-2">
+      <div>
         <Button variant="primary" isPending={finish.isPending} onPress={() => finish.mutate()}>
           Open dashboard
         </Button>
-        <ActionError error={finish.error} />
       </div>
     </div>
   );

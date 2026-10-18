@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from "react";
 import type { Currency } from "../../shared/format";
-import { formatCurrencyMicros, formatTokens } from "../../shared/format";
+import { formatCount, formatCurrencyMicros, formatTokens } from "../../shared/format";
 import type { Heatmap } from "../../shared/schemas/usage";
 import { SegmentedControl } from "../../shared/segmented-control";
 import { Section } from "../../shared/ui";
@@ -17,7 +17,7 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 function formatMetric(value: number, metric: HeatMetric, currency: Currency): string {
   switch (metric) {
     case "events":
-      return value.toLocaleString("en-US");
+      return formatCount(value);
     case "total_tokens":
       return formatTokens(value);
     case "api_value_micros":

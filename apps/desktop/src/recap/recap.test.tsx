@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { AppProvider, bootstrapConfig } from "../shared/app-context";
+import { bootstrapConfig } from "../shared/app-context";
+import { AppProvider } from "../shared/app-provider";
 import { axeViolations } from "../shared/axe";
 import { createMockDataSource, type MockScenario } from "../shared/mock";
 import { MOCK_TIME_ZONE, NOW_MS } from "../shared/mock/seed";
@@ -29,6 +30,8 @@ function renderRecap(overrides: Partial<RecapProps> = {}) {
     onOpenDashboard: vi.fn(),
     onOpenSettings: vi.fn(),
     onScanNow: vi.fn(),
+    isScanning: false,
+    agentLabels: new Map([["claude", "Claude Code"]]),
     ...overrides,
   };
   return { props, ...render(<Recap {...props} />) };
@@ -39,7 +42,7 @@ describe("Recap", () => {
     const user = userEvent.setup();
     renderRecap();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "claude", "pi", "aider"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "Claude Code", "pi", "aider"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
 
     await user.tab();
@@ -70,7 +73,7 @@ describe("Recap", () => {
   it("shows the Live block only where the data has it", async () => {
     const user = userEvent.setup();
     renderRecap();
-    await user.click(screen.getByRole("tab", { name: "claude" }));
+    await user.click(screen.getByRole("tab", { name: "Claude Code" }));
     const live = screen.getByRole("region", { name: "Live" });
     expect(live.textContent).toContain("12.5K");
     expect(live.textContent).toContain("$3.20");
@@ -82,7 +85,7 @@ describe("Recap", () => {
   it("flags a budget over 100% with its true percentage", async () => {
     const user = userEvent.setup();
     renderRecap();
-    await user.click(screen.getByRole("tab", { name: "claude" }));
+    await user.click(screen.getByRole("tab", { name: "Claude Code" }));
     const budgets = screen.getByRole("region", { name: "Budgets" });
     expect(within(budgets).getByText(/^1\d\d%$/)).toBeTruthy();
   });
@@ -110,7 +113,7 @@ describe("Recap", () => {
     await user.click(screen.getByRole("button", { name: "Open dashboard" }));
     expect(props.onOpenDashboard).toHaveBeenLastCalledWith(null);
 
-    await user.click(screen.getByRole("tab", { name: "claude" }));
+    await user.click(screen.getByRole("tab", { name: "Claude Code" }));
     await user.click(screen.getByRole("button", { name: "Open dashboard" }));
     expect(props.onOpenDashboard).toHaveBeenLastCalledWith("claude");
   });
@@ -147,13 +150,13 @@ function renderApp(
   const config = { ...bootstrapConfig, timeZone: MOCK_TIME_ZONE, now: () => NOW_MS };
   return render(
     <ThemeProvider>
-      <AppProvider config={config} dataSource={dataSource}>
-        <QueryClientProvider
-          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-        >
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AppProvider config={config} dataSource={dataSource}>
           <RecapApp />
-        </QueryClientProvider>
-      </AppProvider>
+        </AppProvider>
+      </QueryClientProvider>
     </ThemeProvider>,
   );
 }

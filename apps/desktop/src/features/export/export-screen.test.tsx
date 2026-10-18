@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
@@ -10,8 +10,15 @@ import { datasetStatuses, looksLikeProtectedFolder } from "./model";
 
 afterEach(cleanup);
 
-function renderScreen(remote: Remote<SystemHealth>, onExportNow = vi.fn(() => Promise.resolve())) {
-  return render(<ExportScreen remote={remote} onExportNow={onExportNow} timeZone="UTC" />);
+function renderScreen(remote: Remote<SystemHealth>, onExportNow = vi.fn(), isExporting = false) {
+  return render(
+    <ExportScreen
+      remote={remote}
+      onExportNow={onExportNow}
+      isExporting={isExporting}
+      timeZone="UTC"
+    />,
+  );
 }
 
 describe("export model", () => {
@@ -46,14 +53,15 @@ describe("ExportScreen", () => {
 
   it("error retries", async () => {
     const onRetry = vi.fn();
-    renderScreen({ kind: "error", message: "Store is locked", onRetry });
+    renderScreen({
+      kind: "error",
+      title: "Could not read the usage database",
+      message: "Store is locked",
+      onRetry,
+    });
+    expect(screen.getByText("Store is locked")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("daemon-offline offers to start it", () => {
-    renderScreen({ kind: "daemon-offline", onStartDaemon: vi.fn() });
-    expect(screen.getByRole("button", { name: "Install / start daemon" })).toBeTruthy();
   });
 
   it("populated shows every sink state, the protected-folder hint and the datasets", async () => {
@@ -72,21 +80,19 @@ describe("ExportScreen", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("Export now runs once and reports completion", async () => {
-    const onExportNow = vi.fn(() => Promise.resolve());
+  it("Export now and Retry on a failing sink run the export", async () => {
+    const onExportNow = vi.fn();
     renderScreen({ kind: "ready", data: EXPORT_HEALTH }, onExportNow);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Export now" }));
-    expect(onExportNow).toHaveBeenCalledOnce();
-    await waitFor(() => expect(screen.getByText("Export finished.")).toBeTruthy());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Export now" }));
+    await user.click(screen.getByRole("button", { name: "Retry export of documents-copy" }));
+    expect(onExportNow).toHaveBeenCalledTimes(2);
   });
 
-  it("shows a failed export and Retry on a failing sink", async () => {
-    const onExportNow = vi.fn(() => Promise.reject(new Error("Daemon unreachable")));
-    renderScreen({ kind: "ready", data: EXPORT_HEALTH }, onExportNow);
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: "Retry export of documents-copy" }));
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Daemon unreachable"));
+  it("keeps Export now readable but pending while an export runs", () => {
+    renderScreen({ kind: "ready", data: EXPORT_HEALTH }, vi.fn(), true);
+    const button = screen.getByRole("button", { name: "Export now" });
+    expect(button.hasAttribute("data-pending")).toBe(true);
   });
 
   it("notes a daemon that is not running", () => {

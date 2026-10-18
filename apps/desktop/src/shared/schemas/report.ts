@@ -7,11 +7,11 @@ import { currencySchema, dateSchema } from "./primitives";
  */
 
 export const REPORT_FORMATS = ["markdown", "csv", "html"] as const;
-export const reportFormatSchema = z.enum(REPORT_FORMATS);
+const reportFormatSchema = z.enum(REPORT_FORMATS);
 export type ReportFormat = z.infer<typeof reportFormatSchema>;
 
 /** What a report covers: everything, one project or one client. */
-export const reportScopeSchema = z.discriminatedUnion("kind", [
+const reportScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("all") }),
   z.object({ kind: z.literal("project"), project: z.string() }),
   z.object({ kind: z.literal("client"), client: z.string() }),
@@ -19,15 +19,14 @@ export const reportScopeSchema = z.discriminatedUnion("kind", [
 export type ReportScope = z.infer<typeof reportScopeSchema>;
 
 /** `first` to `last`, both inclusive. The shell also accepts `{ kind: "month", date }`; unused here. */
-export const reportRangeSchema = z.object({
+const reportRangeSchema = z.object({
   kind: z.literal("custom"),
   first: dateSchema,
   last: dateSchema,
 });
-export type ReportRange = z.infer<typeof reportRangeSchema>;
 
 /** One report to generate or save. */
-export const reportSpecSchema = z.object({
+const reportSpecSchema = z.object({
   range: reportRangeSchema,
   scope: reportScopeSchema,
   format: reportFormatSchema,

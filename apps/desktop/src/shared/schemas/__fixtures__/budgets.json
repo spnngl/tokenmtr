@@ -1,0 +1,44 @@
+[
+  {
+    "state": "measured",
+    "id": "monthly-paid",
+    "period": "month",
+    "measure": "paid",
+    "currency": "USD",
+    "period_start": "2026-05-01",
+    "period_end": "2026-06-01",
+    "limit_micros": 150000000,
+    "spent_micros": 23400000,
+    "percent": 15,
+    "projected_micros": 241800000,
+    "projected_percent": 161
+  },
+  {
+    "state": "measured",
+    "id": "daily-api",
+    "period": "day",
+    "measure": "api_value",
+    "currency": "USD",
+    "period_start": "2026-05-03",
+    "period_end": "2026-05-04",
+    "limit_micros": 50000000,
+    "spent_micros": 18250000,
+    "percent": 36,
+    "projected_micros": 31280000,
+    "projected_percent": 62
+  },
+  {
+    "state": "no_fx_rate",
+    "id": "weekly-eur",
+    "period": "week",
+    "measure": "api_value",
+    "currency": "EUR",
+    "period_start": "2026-04-27",
+    "period_end": "2026-05-04",
+    "limit_micros": 200000000,
+    "spent_micros": 0,
+    "percent": 0,
+    "projected_micros": 0,
+    "projected_percent": 0
+  }
+]

@@ -3,12 +3,11 @@ import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "rec
 import { chartColor } from "../../shared/charts";
 import { mergeBuckets } from "../../shared/decimate";
 import type { Currency } from "../../shared/format";
-import { formatCurrencyMicros } from "../../shared/format";
+import { formatCurrencyMicros, formatRoiMultiple } from "../../shared/format";
 import { ResponsiveChart } from "../../shared/responsive-chart";
 import type { BillingReport } from "../../shared/schemas";
 import { Amount, ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
 import { useChartAnimation } from "../../shared/use-chart-animation";
-import { formatRoi } from "./model";
 
 type Month = BillingReport["months"][number];
 
@@ -31,7 +30,7 @@ function monthColumns(currency: Currency): readonly Column<Month>[] {
         <Amount micros={row.api_value_micros} currency={currency} approximate={row.approximate} />
       ),
     },
-    { header: "ROI", numeric: true, cell: (row) => formatRoi(row.roi) },
+    { header: "ROI", numeric: true, cell: (row) => formatRoiMultiple(row.roi) },
   ];
 }
 

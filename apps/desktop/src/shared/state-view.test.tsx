@@ -35,7 +35,13 @@ describe("StateView", () => {
 
   it("error is an alert with a working Retry", async () => {
     const onRetry = vi.fn();
-    renderState({ kind: "error", message: "Store is locked", onRetry });
+    renderState({
+      kind: "error",
+      title: "Could not read the usage database",
+      message: "Store is locked",
+      onRetry,
+    });
+    expect(screen.getByRole("alert").textContent).toContain("Could not read the usage database");
     expect(screen.getByRole("alert").textContent).toContain("Store is locked");
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
@@ -43,10 +49,24 @@ describe("StateView", () => {
 
   it("daemon-offline offers Install / start daemon", async () => {
     const onStartDaemon = vi.fn();
-    renderState({ kind: "daemon-offline", onStartDaemon });
+    renderState({ kind: "daemon-offline", onStartDaemon, isPending: false });
     await userEvent.setup().click(screen.getByRole("button", { name: "Install / start daemon" }));
     expect(onStartDaemon).toHaveBeenCalledOnce();
     expect(screen.queryByText("Usage content")).toBeNull();
+  });
+
+  it("keeps a pending action's label and ignores presses", async () => {
+    const onStartDaemon = vi.fn();
+    renderState({ kind: "daemon-offline", onStartDaemon, isPending: true });
+    const button = screen.getByRole("button", { name: "Install / start daemon" });
+    expect(button.hasAttribute("data-pending")).toBe(true);
+    await userEvent.setup().click(button);
+    expect(onStartDaemon).not.toHaveBeenCalled();
+  });
+
+  it("section size fits a card", () => {
+    render(<StateView state={{ kind: "loading" }} size="section" />);
+    expect(screen.getByRole("status").className).toContain("min-h-24");
   });
 
   it("incompatible names both versions and offers Restart daemon", async () => {
@@ -56,6 +76,7 @@ describe("StateView", () => {
       appVersion: "0.2.0",
       daemonVersion: "0.1.0",
       onRestartDaemon,
+      isPending: false,
     });
     expect(screen.getByText("Update required")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("0.2.0");
@@ -76,7 +97,7 @@ describe("StateView", () => {
 
   it("stale keeps the content and offers Scan now", async () => {
     const onScanNow = vi.fn();
-    renderState({ kind: "stale", lastScan: "3 hours ago", onScanNow });
+    renderState({ kind: "stale", lastScan: "3 hours ago", onScanNow, isPending: false });
     expect(screen.getByText("Usage content")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("Last scan 3 hours ago");
     await userEvent.setup().click(screen.getByRole("button", { name: "Scan now" }));
@@ -87,17 +108,18 @@ describe("StateView", () => {
     { kind: "ready" },
     { kind: "loading" },
     { kind: "empty", title: "No agents found", hint: "Start a session." },
-    { kind: "error", message: "Boom", onRetry: () => undefined },
-    { kind: "daemon-offline", onStartDaemon: () => undefined },
+    { kind: "error", title: "Something went wrong", message: "Boom", onRetry: () => undefined },
+    { kind: "daemon-offline", onStartDaemon: () => undefined, isPending: true },
     {
       kind: "incompatible",
       appVersion: "0.2.0",
       daemonVersion: "0.1.0",
       onRestartDaemon: () => undefined,
+      isPending: false,
     },
     { kind: "partial", failedCollectors: 1, issuesHref: "#/settings" },
-    { kind: "stale", lastScan: "1h ago", onScanNow: () => undefined },
-  ])("has no axe violations for $kind", async (state) => {
+    { kind: "stale", lastScan: "1h ago", onScanNow: () => undefined, isPending: false },
+  ])("has no axe violations for $kind", async (state: ViewState) => {
     const { container } = renderState(state);
     expect(await axeViolations(container)).toEqual([]);
   });

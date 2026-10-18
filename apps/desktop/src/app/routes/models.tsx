@@ -1,30 +1,24 @@
 import type { ReactNode } from "react";
 import { ModelsScreen } from "../../features/models/models-screen";
-import { useDataSource } from "../../shared/app-context";
-import { useModels, useSettings } from "../../shared/queries";
-import { joinRemotes, toRemote, useDaemonGate } from "../../shared/use-remote";
+import { useRevealConfig } from "../../shared/actions";
+import { useModels, useOverview } from "../../shared/queries";
+import { joinRemotes, toRemote } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 /** Models: tokens, cost and share per model, with unpriced and divergent warnings. */
 export function ModelsRoute(): ReactNode {
   const { filters } = useFilters();
-  const dataSource = useDataSource();
-  const settings = useSettings();
-  const gate = useDaemonGate();
-  const rows = toRemote(useModels(filters), gate);
-  const remote = joinRemotes(rows, { kind: "ready", data: filters.currency }, (rows, currency) => ({
-    currency,
-    rows,
-  }));
+  const revealConfig = useRevealConfig();
+  const rows = toRemote(useModels(filters));
+  // Model rows carry no currency: the totals of the same filters say which one the backend
+  // answered in (EUR falls back to USD without a rate, D27).
+  const totals = toRemote(useOverview(filters));
+  const remote = joinRemotes(rows, totals, (rows, totals) => ({ currency: totals.currency, rows }));
   return (
     <ModelsScreen
       remote={remote}
       // Price overrides live in the config file: show it where the user adds the entry.
-      onAddOverride={() => {
-        if (settings.data !== undefined) {
-          void dataSource.revealPath(settings.data.config_path);
-        }
-      }}
+      onAddOverride={() => revealConfig.mutate()}
     />
   );
 }

@@ -1,6 +1,9 @@
-import { type ReactNode, useState } from "react";
-import { useAppConfig, useDataSource } from "../shared/app-context";
-import { useRecap } from "../shared/queries";
+import { type ReactNode, useMemo, useState } from "react";
+import { useDataAction, useScanNow } from "../shared/actions";
+import { useAppConfig } from "../shared/app-context";
+import type { DashboardTarget } from "../shared/data-source";
+import { errorText } from "../shared/errors";
+import { useRecap, useSettings } from "../shared/queries";
 import type { Period } from "../shared/schemas";
 import { StateView } from "../shared/state-view";
 import { Recap } from "./recap";
@@ -8,9 +11,18 @@ import { Recap } from "./recap";
 /** Loads the recap for the chosen period and wires the footer actions to the data source. */
 export function RecapApp(): ReactNode {
   const { timeZone, defaultCurrency, now } = useAppConfig();
-  const dataSource = useDataSource();
   const [period, setPeriod] = useState<Period>("today");
   const query = useRecap(period, defaultCurrency);
+  const agents = useSettings().data?.agents;
+  const agentLabels = useMemo(
+    () => new Map((agents ?? []).map((agent) => [agent.agent, agent.label])),
+    [agents],
+  );
+  const scan = useScanNow();
+  const open = useDataAction((ds, target: DashboardTarget) => ds.openDashboard(target), {
+    failure: "Could not open the dashboard",
+    refetch: false,
+  });
 
   if (query.data === undefined) {
     return (
@@ -18,7 +30,7 @@ export function RecapApp(): ReactNode {
         <StateView
           state={
             query.isError
-              ? { kind: "error", message: query.error.message, onRetry: () => void query.refetch() }
+              ? { kind: "error", ...errorText(query.error), onRetry: () => void query.refetch() }
               : { kind: "loading" }
           }
         />
@@ -32,9 +44,11 @@ export function RecapApp(): ReactNode {
       timeZone={timeZone}
       now={now()}
       onPeriodChange={setPeriod}
-      onOpenDashboard={(agent) => void dataSource.openDashboard({ route: "/", agent })}
-      onOpenSettings={() => void dataSource.openDashboard({ route: "/settings", agent: null })}
-      onScanNow={() => void dataSource.scanNow()}
+      onOpenDashboard={(agent) => open.mutate({ route: "/", agent })}
+      onOpenSettings={() => open.mutate({ route: "/settings", agent: null })}
+      onScanNow={() => scan.mutate()}
+      isScanning={scan.isPending}
+      agentLabels={agentLabels}
     />
   );
 }

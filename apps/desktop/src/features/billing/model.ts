@@ -2,6 +2,7 @@ import type {
   AdvisorReport,
   BillingReport,
   Budget,
+  MeasuredBudget,
   Plan,
   SubscriptionLine,
 } from "../../shared/schemas";
@@ -38,21 +39,17 @@ export function planLabel(plan: Plan): string {
 }
 
 /** API value over fees as "3.2x"; `null` (no fee accrued) is "n/a". */
-export function formatRoi(roi: number | null): string {
-  return roi === null ? "n/a" : `${roi.toFixed(1)}x`;
-}
-
 /** A budget's spend as a fraction of its limit; above 1 when over budget. */
-export function budgetFraction(budget: Budget): number {
+export function budgetFraction(budget: MeasuredBudget): number {
   return budget.percent / 100;
 }
 
-export function isOverBudget(budget: Budget): boolean {
+export function isOverBudget(budget: MeasuredBudget): boolean {
   return budget.percent > 100;
 }
 
 /** Whether the projection to the period's end crosses the limit before the spend does. */
-export function isProjectedOver(budget: Budget): boolean {
+export function isProjectedOver(budget: MeasuredBudget): boolean {
   return !isOverBudget(budget) && budget.projected_percent > 100;
 }
 

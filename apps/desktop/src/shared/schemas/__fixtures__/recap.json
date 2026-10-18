@@ -1,0 +1,414 @@
+{
+  "status_schema": 1,
+  "generated_at": "2026-05-03T14:11:59Z",
+  "system": {
+    "level": "error",
+    "daemon": {
+      "state": "running",
+      "last_heartbeat": "2026-05-03T14:11:30Z",
+      "age_secs": 29
+    },
+    "sinks": [
+      {
+        "sink": "local-parquet",
+        "state": "healthy",
+        "lag_rows": 0,
+        "lag_secs": null,
+        "last_success_at": "2026-05-03T14:10:05Z",
+        "recent_runs": [
+          {
+            "dataset": "usage_events",
+            "started_at": "2026-05-03T14:10:02Z",
+            "finished_at": "2026-05-03T14:10:05Z",
+            "rows": 37,
+            "error": null
+          },
+          {
+            "dataset": "tool_calls",
+            "started_at": "2026-05-03T14:10:02Z",
+            "finished_at": "2026-05-03T14:10:04Z",
+            "rows": 112,
+            "error": null
+          }
+        ]
+      },
+      {
+        "sink": "warehouse",
+        "state": "failing",
+        "since": "2026-05-02T07:30:00Z",
+        "last_error": "connection refused (os error 61)",
+        "lag_rows": 5120,
+        "lag_secs": 110400,
+        "last_success_at": "2026-05-02T07:15:00Z",
+        "recent_runs": [
+          {
+            "dataset": "subscriptions",
+            "started_at": "2026-05-03T14:10:02Z",
+            "finished_at": "2026-05-03T14:10:03Z",
+            "rows": 0,
+            "error": "connection refused (os error 61)"
+          }
+        ]
+      }
+    ]
+  },
+  "tabs": [
+    {
+      "agent": null,
+      "period": "today",
+      "range": {
+        "start": "2026-05-03",
+        "end": "2026-05-04"
+      },
+      "currency": "USD",
+      "currency_fallback": false,
+      "totals": {
+        "currency": "USD",
+        "currency_fallback": false,
+        "events": 422,
+        "input_uncached": 91520,
+        "cache_read": 22048000,
+        "cache_write_5m": 457600,
+        "cache_write_1h": 116480,
+        "output": 416000,
+        "reasoning": 24960,
+        "total_tokens": 23129600,
+        "api_value_micros": 41184000,
+        "api_value_usd_micros": 41184000,
+        "paid_micros": 2900000,
+        "subscription_value_micros": 38284000,
+        "subscription_fee_micros": 3333333,
+        "reported_events": 0,
+        "estimated_events": 422,
+        "unpriced_events": 0,
+        "approximate": false,
+        "cached_input_percent": 97.6,
+        "cache_savings_micros": 59488000,
+        "roi": 5.4,
+        "sessions": 7
+      },
+      "projected_paid_micros": 6400000,
+      "quota": [
+        {
+          "agent": "claude",
+          "profile": "default",
+          "fetched_at": "2026-05-03T14:10:00Z",
+          "age_secs": 119,
+          "status": "ok",
+          "account": "ada@example.com",
+          "windows": [
+            {
+              "window": "five_hour",
+              "used_percent": 63.5,
+              "resets_at": "2026-05-03T16:00:00Z",
+              "resets_in_secs": 6481,
+              "eta": {
+                "kind": "will_hit",
+                "at": "2026-05-03T15:31:00Z"
+              }
+            },
+            {
+              "window": "seven_day",
+              "used_percent": 41.0,
+              "resets_at": "2026-05-07T09:00:00Z",
+              "resets_in_secs": 327481,
+              "eta": {
+                "kind": "wont_hit"
+              }
+            },
+            {
+              "window": "seven_day_opus",
+              "used_percent": 2.0,
+              "resets_at": null,
+              "resets_in_secs": null,
+              "eta": {
+                "kind": "not_enough_data"
+              }
+            }
+          ]
+        }
+      ],
+      "budgets": [
+        {
+          "state": "measured",
+          "id": "monthly-paid",
+          "period": "month",
+          "measure": "paid",
+          "currency": "USD",
+          "period_start": "2026-05-01",
+          "period_end": "2026-06-01",
+          "limit_micros": 150000000,
+          "spent_micros": 23400000,
+          "percent": 15,
+          "projected_micros": 241800000,
+          "projected_percent": 161
+        },
+        {
+          "state": "measured",
+          "id": "daily-api",
+          "period": "day",
+          "measure": "api_value",
+          "currency": "USD",
+          "period_start": "2026-05-03",
+          "period_end": "2026-05-04",
+          "limit_micros": 50000000,
+          "spent_micros": 18250000,
+          "percent": 36,
+          "projected_micros": 31280000,
+          "projected_percent": 62
+        }
+      ],
+      "sparkline": [
+        {
+          "date": "2026-04-27",
+          "api_value_micros": 29700000
+        },
+        {
+          "date": "2026-04-28",
+          "api_value_micros": 30800000
+        },
+        {
+          "date": "2026-04-29",
+          "api_value_micros": 31900000
+        },
+        {
+          "date": "2026-04-30",
+          "api_value_micros": 33000000
+        },
+        {
+          "date": "2026-05-01",
+          "api_value_micros": 4400000
+        },
+        {
+          "date": "2026-05-02",
+          "api_value_micros": 8800000
+        },
+        {
+          "date": "2026-05-03",
+          "api_value_micros": 13200000
+        }
+      ],
+      "live": {
+        "tokens_per_minute": 184200,
+        "api_value_per_hour_usd_micros": 8120000,
+        "active_sessions": 2
+      },
+      "top_model": "claude-sonnet-4-5",
+      "last_activity": "2026-05-03T14:09:52Z"
+    },
+    {
+      "agent": "claude",
+      "period": "today",
+      "range": {
+        "start": "2026-05-03",
+        "end": "2026-05-04"
+      },
+      "currency": "USD",
+      "currency_fallback": false,
+      "totals": {
+        "currency": "USD",
+        "currency_fallback": false,
+        "events": 401,
+        "input_uncached": 86900,
+        "cache_read": 20935000,
+        "cache_write_5m": 434500,
+        "cache_write_1h": 110600,
+        "output": 395000,
+        "reasoning": 23700,
+        "total_tokens": 21962000,
+        "api_value_micros": 39105000,
+        "api_value_usd_micros": 39105000,
+        "paid_micros": 0,
+        "subscription_value_micros": 39105000,
+        "subscription_fee_micros": 3333333,
+        "reported_events": 0,
+        "estimated_events": 401,
+        "unpriced_events": 0,
+        "approximate": false,
+        "cached_input_percent": 97.6,
+        "cache_savings_micros": 56485000,
+        "roi": 5.4,
+        "sessions": 7
+      },
+      "projected_paid_micros": 0,
+      "quota": [
+        {
+          "agent": "claude",
+          "profile": "default",
+          "fetched_at": "2026-05-03T14:10:00Z",
+          "age_secs": 119,
+          "status": "ok",
+          "account": "ada@example.com",
+          "windows": [
+            {
+              "window": "five_hour",
+              "used_percent": 63.5,
+              "resets_at": "2026-05-03T16:00:00Z",
+              "resets_in_secs": 6481,
+              "eta": {
+                "kind": "will_hit",
+                "at": "2026-05-03T15:31:00Z"
+              }
+            },
+            {
+              "window": "seven_day",
+              "used_percent": 41.0,
+              "resets_at": "2026-05-07T09:00:00Z",
+              "resets_in_secs": 327481,
+              "eta": {
+                "kind": "wont_hit"
+              }
+            },
+            {
+              "window": "seven_day_opus",
+              "used_percent": 2.0,
+              "resets_at": null,
+              "resets_in_secs": null,
+              "eta": {
+                "kind": "not_enough_data"
+              }
+            }
+          ]
+        }
+      ],
+      "budgets": [
+        {
+          "state": "measured",
+          "id": "monthly-paid",
+          "period": "month",
+          "measure": "paid",
+          "currency": "USD",
+          "period_start": "2026-05-01",
+          "period_end": "2026-06-01",
+          "limit_micros": 150000000,
+          "spent_micros": 23400000,
+          "percent": 15,
+          "projected_micros": 241800000,
+          "projected_percent": 161
+        },
+        {
+          "state": "measured",
+          "id": "daily-api",
+          "period": "day",
+          "measure": "api_value",
+          "currency": "USD",
+          "period_start": "2026-05-03",
+          "period_end": "2026-05-04",
+          "limit_micros": 50000000,
+          "spent_micros": 18250000,
+          "percent": 36,
+          "projected_micros": 31280000,
+          "projected_percent": 62
+        }
+      ],
+      "sparkline": [
+        {
+          "date": "2026-04-27",
+          "api_value_micros": 27000000
+        },
+        {
+          "date": "2026-04-28",
+          "api_value_micros": 28000000
+        },
+        {
+          "date": "2026-04-29",
+          "api_value_micros": 29000000
+        },
+        {
+          "date": "2026-04-30",
+          "api_value_micros": 30000000
+        },
+        {
+          "date": "2026-05-01",
+          "api_value_micros": 4000000
+        },
+        {
+          "date": "2026-05-02",
+          "api_value_micros": 8000000
+        },
+        {
+          "date": "2026-05-03",
+          "api_value_micros": 12000000
+        }
+      ],
+      "live": {
+        "tokens_per_minute": 184200,
+        "api_value_per_hour_usd_micros": 8120000,
+        "active_sessions": 2
+      },
+      "top_model": "claude-sonnet-4-5",
+      "last_activity": "2026-05-03T14:09:52Z"
+    },
+    {
+      "agent": "pi",
+      "period": "today",
+      "range": {
+        "start": "2026-05-03",
+        "end": "2026-05-04"
+      },
+      "currency": "USD",
+      "currency_fallback": false,
+      "totals": {
+        "currency": "USD",
+        "currency_fallback": false,
+        "events": 21,
+        "input_uncached": 4620,
+        "cache_read": 1113000,
+        "cache_write_5m": 23100,
+        "cache_write_1h": 5880,
+        "output": 21000,
+        "reasoning": 1260,
+        "total_tokens": 1167600,
+        "api_value_micros": 2079000,
+        "api_value_usd_micros": 2079000,
+        "paid_micros": 2900000,
+        "subscription_value_micros": -821000,
+        "subscription_fee_micros": 0,
+        "reported_events": 0,
+        "estimated_events": 21,
+        "unpriced_events": 0,
+        "approximate": false,
+        "cached_input_percent": 97.6,
+        "cache_savings_micros": null,
+        "roi": null,
+        "sessions": 7
+      },
+      "projected_paid_micros": 6400000,
+      "quota": [],
+      "budgets": [],
+      "sparkline": [
+        {
+          "date": "2026-04-27",
+          "api_value_micros": 2700000
+        },
+        {
+          "date": "2026-04-28",
+          "api_value_micros": 2800000
+        },
+        {
+          "date": "2026-04-29",
+          "api_value_micros": 2900000
+        },
+        {
+          "date": "2026-04-30",
+          "api_value_micros": 3000000
+        },
+        {
+          "date": "2026-05-01",
+          "api_value_micros": 400000
+        },
+        {
+          "date": "2026-05-02",
+          "api_value_micros": 800000
+        },
+        {
+          "date": "2026-05-03",
+          "api_value_micros": 1200000
+        }
+      ],
+      "live": null,
+      "top_model": "gpt-5",
+      "last_activity": "2026-05-03T10:40:00Z"
+    }
+  ]
+}

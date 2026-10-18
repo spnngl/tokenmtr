@@ -30,7 +30,7 @@ export function ThemeSwitcher(): ReactNode {
           <Radio
             key={value}
             value={value}
-            className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium text-fg-muted transition-colors data-hovered:text-fg data-selected:bg-surface-raised data-selected:text-fg data-selected:shadow-sm"
+            className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium text-fg-muted transition-colors data-hovered:text-fg data-selected:bg-surface-raised data-selected:text-fg data-selected:shadow-sm data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-ring"
           >
             {OPTIONS[value].icon}
             {OPTIONS[value].label}

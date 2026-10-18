@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
-import { formatDuration } from "../../shared/format";
+import { formatCount, formatDuration } from "../../shared/format";
 import type { SinkHealth, SinkRun } from "../../shared/schemas";
 import { Badge, type Column, DataTable, type Tone } from "../../shared/ui";
 import { canExport, formatInstant, looksLikeProtectedFolder } from "./model";
@@ -32,7 +32,7 @@ function runColumns(timeZone: string): readonly Column<SinkRun>[] {
   return [
     { header: "Dataset", cell: (run) => run.dataset },
     { header: "Finished", cell: (run) => formatInstant(run.finished_at, timeZone) },
-    { header: "Rows", numeric: true, cell: (run) => run.rows.toLocaleString("en-US") },
+    { header: "Rows", numeric: true, cell: (run) => formatCount(run.rows) },
     {
       header: "Result",
       cell: (run) =>
@@ -61,7 +61,7 @@ export function SinkCard({ sink, timeZone, onRetry, busy }: SinkCardProps): Reac
         {sink.state === "failing" ? (
           <Button
             variant="secondary"
-            isDisabled={busy}
+            isPending={busy}
             aria-label={`Retry export of ${sink.sink}`}
             onPress={onRetry}
           >
@@ -73,7 +73,7 @@ export function SinkCard({ sink, timeZone, onRetry, busy }: SinkCardProps): Reac
         <div className="flex flex-col">
           <dt className="text-xs text-fg-muted">Waiting to export</dt>
           <dd className="tabular-nums">
-            {sink.lag_rows.toLocaleString("en-US")} rows
+            {formatCount(sink.lag_rows)} rows
             {sink.lag_secs === null ? "" : `, oldest ${formatDuration(sink.lag_secs)} old`}
           </dd>
         </div>

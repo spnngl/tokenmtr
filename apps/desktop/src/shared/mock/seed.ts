@@ -10,10 +10,10 @@ export const NOW_MS = Date.parse(NOW_ISO);
 /** The local day of `NOW_ISO` in `MOCK_TIME_ZONE`. */
 export const TODAY = "2026-06-15";
 export const MOCK_TIME_ZONE = "Europe/Paris";
-export const HISTORY_DAYS = 90;
+const HISTORY_DAYS = 90;
 /** Mock EUR per 1 USD. */
 export const EUR_PER_USD = 0.92;
-export const SUBSCRIPTION_FEE_USD_MICROS = 100_000_000;
+const SUBSCRIPTION_FEE_USD_MICROS = 100_000_000;
 
 const DAY_MS = 86_400_000;
 
@@ -157,7 +157,7 @@ export interface Fact extends RawUsage {
   readonly billing: BillingKind;
 }
 
-export function usageFor(
+function usageFor(
   seed: AgentSeed,
   model: ModelSeed,
   events: number,

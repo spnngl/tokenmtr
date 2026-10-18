@@ -1,0 +1,94 @@
+{
+  "config_path": "/Users/ada/Library/Application Support/TokenMtr/config.toml",
+  "exports_dir": "/Users/ada/Library/Application Support/TokenMtr/exports",
+  "machine": "ada-mbp",
+  "agents": [
+    {
+      "agent": "claude",
+      "label": "Claude Code",
+      "followed": true,
+      "capabilities": {
+        "quota": true,
+        "reported_cost": false,
+        "subscription": true
+      },
+      "profiles": [
+        {
+          "profile": "default",
+          "root": "/Users/ada/.claude",
+          "account": "ada@example.com",
+          "retention_days": 30,
+          "keeps_ten_years": false
+        }
+      ]
+    },
+    {
+      "agent": "pi",
+      "label": "pi",
+      "followed": true,
+      "capabilities": {
+        "quota": false,
+        "reported_cost": true,
+        "subscription": true
+      },
+      "profiles": [
+        {
+          "profile": "default",
+          "root": "/Users/ada/.pi/agent",
+          "account": null,
+          "retention_days": null,
+          "keeps_ten_years": true
+        }
+      ]
+    }
+  ],
+  "daemon": {
+    "state": "running",
+    "last_heartbeat": "2026-05-03T14:11:30Z",
+    "age_secs": 29,
+    "version": "0.4.0"
+  },
+  "display": {
+    "currency": "EUR",
+    "time_zone": "Europe/Paris"
+  },
+  "fx": {
+    "fixed_eur_per_usd": 0.92,
+    "latest": {
+      "date": "2026-05-01",
+      "eur_per_usd_scaled": 881600000,
+      "source": "ecb"
+    },
+    "offline": false
+  },
+  "pricing": {
+    "snapshot_date": "2026-04-15",
+    "models": 214
+  },
+  "tray": {
+    "title": "paid_today",
+    "shortcut": "CmdOrCtrl+Shift+T"
+  },
+  "alerts": {
+    "quota_thresholds": [80, 95],
+    "budget_thresholds": [50, 80, 100],
+    "quota_reset": true
+  },
+  "launch_at_login": true,
+  "protected_folders": [
+    {
+      "agent": "claude",
+      "path": "/Users/ada/Documents/client-work",
+      "accessible": false
+    }
+  ],
+  "backups": [
+    {
+      "started_at": "2026-05-03T03:00:00Z",
+      "finished_at": "2026-05-03T03:00:04Z",
+      "path": "/Users/ada/Library/Application Support/TokenMtr/backups/tokenmtr-2026-05-03.db",
+      "size_bytes": 48234496,
+      "error": null
+    }
+  ]
+}

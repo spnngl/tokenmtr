@@ -22,17 +22,16 @@ export const totalsSchema = z.object({
 });
 export type Totals = z.infer<typeof totalsSchema>;
 
-export const BUCKETS = ["day", "week", "month"] as const;
-export const GROUP_BYS = ["none", "agent", "model", "project"] as const;
-export const bucketSchema = z.enum(BUCKETS);
-export const groupBySchema = z.enum(GROUP_BYS);
-export type Bucket = z.infer<typeof bucketSchema>;
+const BUCKETS = ["day", "week", "month"] as const;
+const GROUP_BYS = ["none", "agent", "model", "project"] as const;
+const bucketSchema = z.enum(BUCKETS);
+const groupBySchema = z.enum(GROUP_BYS);
 export type GroupBy = z.infer<typeof groupBySchema>;
 
-export const seriesPointSchema = z.object({
+const seriesPointSchema = z.object({
   /** First local day of the bucket. */
   start: dateSchema,
-  /** Minutes of activity in the bucket. */
+  /** Real length of the bucket in minutes (1380 or 1500 for a day with a DST change). */
   minutes: countSchema,
   ...usageShape,
   cumulative_api_value_micros: microsSchema,
@@ -89,7 +88,7 @@ export const unresolvedCwdSchema = z.object({
 });
 export type UnresolvedCwd = z.infer<typeof unresolvedCwdSchema>;
 
-export const sessionRowSchema = z.object({
+const sessionRowSchema = z.object({
   agent: z.string(),
   session: z.string(),
   profile: z.string(),
@@ -115,9 +114,9 @@ export const sessionPageSchema = z.object({
 });
 export type SessionPage = z.infer<typeof sessionPageSchema>;
 
-export const COST_SOURCES = ["reported", "estimated", "unpriced"] as const;
+const COST_SOURCES = ["reported", "estimated", "unpriced"] as const;
 
-export const sessionEventSchema = z.object({
+const sessionEventSchema = z.object({
   at: timestampSchema,
   model: z.string(),
   kind: z.string(),
@@ -129,7 +128,7 @@ export const sessionEventSchema = z.object({
 });
 export type SessionEvent = z.infer<typeof sessionEventSchema>;
 
-export const sessionToolCallSchema = z.object({
+const sessionToolCallSchema = z.object({
   at: timestampSchema,
   tool_name: z.string(),
   mcp_server: z.string().nullable(),
@@ -137,7 +136,7 @@ export const sessionToolCallSchema = z.object({
 });
 export type SessionToolCall = z.infer<typeof sessionToolCallSchema>;
 
-export const SIGNAL_KINDS = ["api_error", "compaction"] as const;
+const SIGNAL_KINDS = ["api_error", "compaction"] as const;
 
 export const sessionDetailSchema = z.object({
   currency: currencySchema,
@@ -150,7 +149,7 @@ export const sessionDetailSchema = z.object({
 export type SessionDetail = z.infer<typeof sessionDetailSchema>;
 
 /** `weekday` 1 = Monday .. 7 = Sunday; `hour` 0-23 in the configured zone. */
-export const heatCellSchema = z.object({
+const heatCellSchema = z.object({
   weekday: z.number().int().min(1).max(7),
   hour: z.number().int().min(0).max(23),
   events: countSchema,
@@ -165,7 +164,7 @@ export const heatmapSchema = z.object({
 });
 export type Heatmap = z.infer<typeof heatmapSchema>;
 
-export const toolRowSchema = z.object({
+const toolRowSchema = z.object({
   tool_name: z.string().nullable(),
   mcp_server: z.string().nullable(),
   calls: countSchema,
@@ -181,13 +180,13 @@ export const toolsReportSchema = z.object({
 });
 export type ToolsReport = z.infer<typeof toolsReportSchema>;
 
-export const signalDaySchema = z.object({
+const signalDaySchema = z.object({
   date: dateSchema,
   api_errors: countSchema,
   compactions: countSchema,
 });
 
-export const sessionCompactionsSchema = z.object({
+const sessionCompactionsSchema = z.object({
   agent: z.string(),
   session: z.string(),
   compactions: countSchema,
@@ -201,11 +200,11 @@ export const signalsReportSchema = z.object({
 });
 export type SignalsReport = z.infer<typeof signalsReportSchema>;
 
-export const PLANS = ["pro", "max_5x", "max_20x", "team", "enterprise", "custom"] as const;
+const PLANS = ["pro", "max_5x", "max_20x", "team", "enterprise", "custom"] as const;
 export const planSchema = z.enum(PLANS);
 export type Plan = z.infer<typeof planSchema>;
 
-export const subscriptionLineSchema = z.object({
+const subscriptionLineSchema = z.object({
   id: z.string(),
   provider: z.string(),
   plan: planSchema,
@@ -220,7 +219,7 @@ export const subscriptionLineSchema = z.object({
 });
 export type SubscriptionLine = z.infer<typeof subscriptionLineSchema>;
 
-export const billingMonthSchema = z.object({
+const billingMonthSchema = z.object({
   /** First day of the month. */
   month: dateSchema,
   ...usageShape,

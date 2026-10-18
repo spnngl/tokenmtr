@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { formatCurrencyMicros } from "../../shared/format";
-import type { Budget } from "../../shared/schemas";
+import type { Budget, MeasuredBudget } from "../../shared/schemas";
 import { Badge, Section } from "../../shared/ui";
 import { UsageMeter } from "../../shared/usage-meter";
 import { budgetFraction, isOverBudget, isProjectedOver } from "./model";
@@ -12,7 +12,7 @@ function budgetLabel(budget: Budget): string {
   return `${PERIOD_LABELS[budget.period]} ${MEASURE_LABELS[budget.measure]}`;
 }
 
-function BudgetRow({ budget }: { readonly budget: Budget }): ReactNode {
+function MeasuredRow({ budget }: { readonly budget: MeasuredBudget }): ReactNode {
   const spent = formatCurrencyMicros(budget.spent_micros, budget.currency);
   const limit = formatCurrencyMicros(budget.limit_micros, budget.currency);
   const projected = formatCurrencyMicros(budget.projected_micros, budget.currency);
@@ -35,6 +35,22 @@ function BudgetRow({ budget }: { readonly budget: Budget }): ReactNode {
           Projected {projected} ({budget.projected_percent}%) by the end of the period.
         </span>
       </div>
+    </li>
+  );
+}
+
+function BudgetRow({ budget }: { readonly budget: Budget }): ReactNode {
+  if (budget.state === "measured") {
+    return <MeasuredRow budget={budget} />;
+  }
+  const limit = formatCurrencyMicros(budget.limit_micros, budget.currency);
+  return (
+    <li className="flex flex-col gap-1 rounded-md border border-border bg-surface-raised p-3 text-sm">
+      <span className="font-medium">{budgetLabel(budget)}</span>
+      <span className="text-fg-muted">
+        Limit {limit}, {budget.period_start} to {budget.period_end}. Spend shows once the first{" "}
+        {budget.currency} exchange rate is fetched.
+      </span>
     </li>
   );
 }

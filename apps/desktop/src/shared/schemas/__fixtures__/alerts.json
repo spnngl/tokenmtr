@@ -1,0 +1,40 @@
+[
+  {
+    "fired_at": "2026-05-03T13:42:00Z",
+    "dedup_key": "quota_threshold:claude:default:five_hour:80:2026-05-03T16:00:00Z",
+    "kind": "quota_threshold",
+    "window": "five_hour",
+    "percent": 80
+  },
+  {
+    "fired_at": "2026-05-03T11:00:05Z",
+    "dedup_key": "quota_reset:claude:default:five_hour:2026-05-03T11:00:00Z",
+    "kind": "quota_reset",
+    "window": "five_hour"
+  },
+  {
+    "fired_at": "2026-05-02T19:20:00Z",
+    "dedup_key": "budget_threshold:monthly-paid:80:2026-05-01",
+    "kind": "budget_threshold",
+    "budget": "monthly-paid",
+    "percent": 80
+  },
+  {
+    "fired_at": "2026-05-02T08:00:00Z",
+    "dedup_key": "sink_failing:warehouse",
+    "kind": "sink_failing",
+    "sink": "warehouse",
+    "since": "2026-05-02T07:30:00Z"
+  },
+  {
+    "fired_at": "2026-05-01T09:12:44Z",
+    "dedup_key": "format_drift:claude",
+    "kind": "format_drift",
+    "agent": "claude"
+  },
+  {
+    "fired_at": "2026-05-02T03:00:01Z",
+    "dedup_key": "backup_failed:2026-05-02",
+    "kind": "backup_failed"
+  }
+]

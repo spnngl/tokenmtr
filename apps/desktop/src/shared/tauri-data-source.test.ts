@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DataSource } from "./data-source";
+import { DataSourceError } from "./errors";
 import { defaultFilters } from "./filters";
 import { createMockDataSource } from "./mock";
 import { toQueryRequest } from "./schemas";
-import { createTauriDataSource, DataSourceError, type Invoke } from "./tauri-data-source";
+import { createTauriDataSource, type Invoke } from "./tauri-data-source";
 
 const SPEC = {
   range: { kind: "custom", first: "2026-05-01", last: "2026-05-30" },
@@ -112,9 +113,14 @@ describe("Tauri data source over the mock fixtures", () => {
     }
   });
 
-  it("rejects a document that does not match the schema", async () => {
+  it("rejects a document that does not match the schema, logging the detail only", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const tauri = createTauriDataSource(async () => ({ currency: "USD" }));
-    await expect(tauri.overview(FILTERS)).rejects.toThrow(/overview: unexpected response/);
+    const error = await tauri.overview(FILTERS).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ command: "overview", failure: { kind: "schema" } });
+    expect(error).not.toHaveProperty("message", expect.stringContaining("currency"));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^overview: unexpected response/));
+    log.mockRestore();
   });
 
   it("wraps a failing command", async () => {
@@ -123,7 +129,11 @@ describe("Tauri data source over the mock fixtures", () => {
     });
     const error = await tauri.scanNow().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(DataSourceError);
-    expect(error).toHaveProperty("message", "scan_now: database is locked");
+    expect(error).toMatchObject({
+      message: "database is locked",
+      command: "scan_now",
+      failure: { kind: "unknown", message: "database is locked" },
+    });
   });
 
   it("sends a report spec as `request` and reads the saved path", async () => {
@@ -131,9 +141,12 @@ describe("Tauri data source over the mock fixtures", () => {
     const tauri = createTauriDataSource(invoke);
     await expect(tauri.saveReport(SPEC)).resolves.toBeNull();
     expect(invoke).toHaveBeenCalledWith("save_report", { request: SPEC });
-    await expect(tauri.generateReport(SPEC)).rejects.toThrow(
-      /generate_report: unexpected response/,
-    );
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(tauri.generateReport(SPEC)).rejects.toMatchObject({
+      command: "generate_report",
+      failure: { kind: "schema" },
+    });
+    log.mockRestore();
   });
 
   it("sends the filters as a query request", async () => {

@@ -1,0 +1,67 @@
+[
+  {
+    "agent": "claude",
+    "profile": "default",
+    "fetched_at": "2026-05-03T14:10:00Z",
+    "age_secs": 119,
+    "status": "ok",
+    "account": "ada@example.com",
+    "windows": [
+      {
+        "window": "five_hour",
+        "used_percent": 63.5,
+        "resets_at": "2026-05-03T16:00:00Z",
+        "resets_in_secs": 6481,
+        "eta": {
+          "kind": "will_hit",
+          "at": "2026-05-03T15:31:00Z"
+        }
+      },
+      {
+        "window": "seven_day",
+        "used_percent": 41.0,
+        "resets_at": "2026-05-07T09:00:00Z",
+        "resets_in_secs": 327481,
+        "eta": {
+          "kind": "wont_hit"
+        }
+      },
+      {
+        "window": "seven_day_opus",
+        "used_percent": 2.0,
+        "resets_at": null,
+        "resets_in_secs": null,
+        "eta": {
+          "kind": "not_enough_data"
+        }
+      }
+    ]
+  },
+  {
+    "agent": "claude",
+    "profile": "work",
+    "fetched_at": "2026-05-02T18:00:00Z",
+    "age_secs": 72719,
+    "status": "token_expired",
+    "account": null,
+    "windows": []
+  },
+  {
+    "agent": "claude",
+    "profile": "side",
+    "fetched_at": "2026-05-03T14:00:00Z",
+    "age_secs": 719,
+    "status": "signed_out",
+    "account": null,
+    "windows": []
+  },
+  {
+    "agent": "claude",
+    "profile": "lab",
+    "fetched_at": "2026-05-03T14:05:00Z",
+    "age_secs": 419,
+    "status": "failed",
+    "account": null,
+    "windows": []
+  }
+]

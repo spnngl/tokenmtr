@@ -1,55 +1,55 @@
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, useContext } from "react";
 import type { DataSource } from "./data-source";
-import type { Currency, Fx } from "./format";
+import type { Currency } from "./format";
+import type { Settings } from "./schemas";
 
-/** Settings the UI reads from the config; Phase 11 supplies the real values. */
+/** What the UI reads from the config, plus the clock. */
 export interface AppConfig {
   /** IANA zone used for every day and hour bucket (D8). */
   readonly timeZone: string;
   /** `display.currency`: the filter bar's initial currency. */
   readonly defaultCurrency: Currency;
-  readonly fx: Fx;
   /** Epoch milliseconds; injectable so fixtures and tests pin the clock. */
   readonly now: () => number;
 }
 
 /**
- * Config used until Phase 11 reads the daemon's: system zone (named explicitly here, once), USD,
- * and no FX rates.
+ * Config used until the shell's settings arrive (or when it cannot answer): system zone (named
+ * explicitly here, once) and USD.
  */
 export const bootstrapConfig: AppConfig = {
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   defaultCurrency: "USD",
-  fx: { kind: "ecb", rates: [], offline: false },
   now: () => Date.now(),
 };
 
-interface AppContextValue {
-  readonly config: AppConfig;
-  readonly dataSource: DataSource;
+/** `base` with the display zone and currency the shell's settings report. */
+export function configFromSettings(base: AppConfig, settings: Settings): AppConfig {
+  return {
+    ...base,
+    timeZone: settings.display.time_zone,
+    defaultCurrency: settings.display.currency,
+  };
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
-
-export function AppProvider(props: AppContextValue & { readonly children: ReactNode }): ReactNode {
-  const { children, ...value } = props;
-  return <AppContext value={value}>{children}</AppContext>;
-}
-
-function useAppContext(): AppContextValue {
-  const value = useContext(AppContext);
-  if (value === null) {
-    throw new Error("useAppConfig and useDataSource must be used inside AppProvider");
-  }
-  return value;
-}
+/** Filled by `AppProvider` (`app-provider.tsx`); read through the hooks below. */
+export const DataSourceContext = createContext<DataSource | null>(null);
+export const AppConfigContext = createContext<AppConfig | null>(null);
 
 /** @throws {Error} outside an `AppProvider`. */
 export function useAppConfig(): AppConfig {
-  return useAppContext().config;
+  const config = useContext(AppConfigContext);
+  if (config === null) {
+    throw new Error("useAppConfig must be used inside AppProvider");
+  }
+  return config;
 }
 
 /** @throws {Error} outside an `AppProvider`. */
 export function useDataSource(): DataSource {
-  return useAppContext().dataSource;
+  const dataSource = useContext(DataSourceContext);
+  if (dataSource === null) {
+    throw new Error("useDataSource must be used inside AppProvider");
+  }
+  return dataSource;
 }

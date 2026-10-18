@@ -3,24 +3,24 @@ import type { Filters } from "../filters";
 import { currencySchema, dateSchema } from "./primitives";
 
 /** `RangeSpec` of the query crate (tagged by `kind`; `custom.end` is exclusive). */
-export const rangeSpecSchema = z.discriminatedUnion("kind", [
+const rangeSpecSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("today") }),
   z.object({ kind: z.literal("last_days"), days: z.number().int().positive() }),
   z.object({ kind: z.literal("this_week") }),
   z.object({ kind: z.literal("this_month") }),
   z.object({ kind: z.literal("custom"), start: dateSchema, end: dateSchema }),
 ]);
-export type RangeSpec = z.infer<typeof rangeSpecSchema>;
+type RangeSpec = z.infer<typeof rangeSpecSchema>;
 
 /** `BillingFilter`: `subscription` is `{ subscription: null }` for any subscription. */
-export const billingFilterSchema = z.union([
+const billingFilterSchema = z.union([
   z.literal("any"),
   z.literal("api"),
   z.object({ subscription: z.string().nullable() }),
 ]);
 
 /** `FilterSpec`: empty lists mean "no restriction". */
-export const filterSpecSchema = z.object({
+const filterSpecSchema = z.object({
   range: rangeSpecSchema,
   agents: z.array(z.string()),
   profiles: z.array(z.string()),
@@ -29,16 +29,15 @@ export const filterSpecSchema = z.object({
   clients: z.array(z.string()),
   billing: billingFilterSchema,
 });
-export type FilterSpec = z.infer<typeof filterSpecSchema>;
 
 /** What every filtered query command receives: the filters and the display currency. */
-export const queryRequestSchema = z.object({ filters: filterSpecSchema, currency: currencySchema });
+const queryRequestSchema = z.object({ filters: filterSpecSchema, currency: currencySchema });
 export type QueryRequest = z.infer<typeof queryRequestSchema>;
 
 const DAY_MS = 86_400_000;
 
 /** The day after `date` (a UTC calendar date, so no zone is involved). */
-export function nextDay(date: string): string {
+function nextDay(date: string): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
 }
 

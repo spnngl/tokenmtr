@@ -1,0 +1,16 @@
+[
+  {
+    "started_at": "2026-05-03T03:00:00Z",
+    "finished_at": "2026-05-03T03:00:04Z",
+    "path": "/Users/ada/Library/Application Support/TokenMtr/backups/tokenmtr-2026-05-03.db",
+    "size_bytes": 48234496,
+    "error": null
+  },
+  {
+    "started_at": "2026-05-02T03:00:00Z",
+    "finished_at": "2026-05-02T03:00:01Z",
+    "path": null,
+    "size_bytes": null,
+    "error": "disk full: No space left on device (os error 28)"
+  }
+]

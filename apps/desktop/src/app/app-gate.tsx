@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useDataAction } from "../shared/actions";
+import { useInstallDaemon, useRestartDaemon, useScanNow } from "../shared/actions";
 import { useAppConfig } from "../shared/app-context";
+import { errorText } from "../shared/errors";
 import { formatDuration } from "../shared/format";
 import { useAppState } from "../shared/queries";
 import type { AppState } from "../shared/schemas";
@@ -29,13 +30,13 @@ export function staleSince(state: ReadyState, nowMs: number): string | null {
  */
 export function AppGate({ children }: { readonly children: ReactNode }): ReactNode {
   const query = useAppState();
-  const startDaemon = useDataAction((ds) => ds.installDaemon());
-  const restartDaemon = useDataAction((ds) => ds.restartDaemon());
+  const startDaemon = useInstallDaemon();
+  const restartDaemon = useRestartDaemon();
   const state = query.data;
 
   if (state === undefined) {
     const view: ViewState = query.isError
-      ? { kind: "error", message: query.error.message, onRetry: () => void query.refetch() }
+      ? { kind: "error", ...errorText(query.error), onRetry: () => void query.refetch() }
       : { kind: "loading" };
     return (
       <div className="p-4 md:p-6">
@@ -52,7 +53,11 @@ export function AppGate({ children }: { readonly children: ReactNode }): ReactNo
       return (
         <div className="p-4 md:p-6">
           <StateView
-            state={{ kind: "daemon-offline", onStartDaemon: () => startDaemon.mutate() }}
+            state={{
+              kind: "daemon-offline",
+              onStartDaemon: () => startDaemon.mutate(),
+              isPending: startDaemon.isPending,
+            }}
           />
         </div>
       );
@@ -65,6 +70,7 @@ export function AppGate({ children }: { readonly children: ReactNode }): ReactNo
               appVersion: state.app_version,
               daemonVersion: state.daemon_version,
               onRestartDaemon: () => restartDaemon.mutate(),
+              isPending: restartDaemon.isPending,
             }}
           />
         </div>
@@ -79,7 +85,7 @@ export function AppGate({ children }: { readonly children: ReactNode }): ReactNo
 export function AppBanners({ children }: { readonly children: ReactNode }): ReactNode {
   const { data } = useAppState();
   const { now } = useAppConfig();
-  const scan = useDataAction((ds) => ds.scanNow());
+  const scan = useScanNow();
   if (data === undefined || data.kind !== "ready") {
     return children;
   }
@@ -87,7 +93,12 @@ export function AppBanners({ children }: { readonly children: ReactNode }): Reac
   const stale: ViewState =
     since === null
       ? { kind: "ready" }
-      : { kind: "stale", lastScan: since, onScanNow: () => scan.mutate() };
+      : {
+          kind: "stale",
+          lastScan: since,
+          onScanNow: () => scan.mutate(),
+          isPending: scan.isPending,
+        };
   const partial: ViewState =
     data.failed_collectors === 0
       ? { kind: "ready" }

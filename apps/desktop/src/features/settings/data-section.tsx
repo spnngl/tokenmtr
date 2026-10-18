@@ -1,12 +1,15 @@
 import { type ReactNode, useState } from "react";
 import { Input, Label, TextField } from "react-aria-components";
-import { useDataAction } from "../../shared/actions";
+import { useBackupNow, useDataAction } from "../../shared/actions";
 import { useAppConfig } from "../../shared/app-context";
+import { APP_NAME } from "../../shared/brand";
 import { Button } from "../../shared/button";
-import { formatDateTime } from "../../shared/format";
+import { formatCount, formatDateTime, PLACEHOLDER } from "../../shared/format";
 import { useAlerts, useParseIssues } from "../../shared/queries";
+import { CardRemote } from "../../shared/remote-view";
 import type { Alert, Backup, ParseIssue, Settings } from "../../shared/schemas";
 import { Card, type Column, DataTable } from "../../shared/ui";
+import { toRemote } from "../../shared/use-remote";
 
 const ISSUE_LABELS: Record<ParseIssue["kind"], string> = {
   format_drift: "Format drift",
@@ -38,14 +41,6 @@ function alertText(alert: Alert): string {
   }
 }
 
-function ErrorLine({ error }: { readonly error: Error | null }): ReactNode {
-  return error === null ? null : (
-    <p role="alert" className="text-sm text-danger">
-      {error.message}
-    </p>
-  );
-}
-
 /** D50: macOS asks before a background process reads Documents, Desktop, iCloud or Dropbox. */
 export function ProtectedFoldersSection({
   folders,
@@ -70,9 +65,9 @@ export function ProtectedFoldersSection({
           </ul>
           {folders.some((folder) => !folder.accessible) ? (
             <p role="status" className="text-sm text-fg-muted">
-              TokenMtr cannot read these until you allow it: open System Settings, Privacy &amp;
-              Security, Files and Folders (or Full Disk Access), and enable TokenMtr. Until then it
-              falls back to the folders it can read.
+              {APP_NAME} cannot read these until you allow it: open System Settings, Privacy &amp;
+              Security, Files and Folders (or Full Disk Access), and enable {APP_NAME}. Until then
+              it falls back to the folders it can read.
             </p>
           ) : null}
         </>
@@ -83,7 +78,7 @@ export function ProtectedFoldersSection({
 
 export function BackupsSection({ backups }: { readonly backups: readonly Backup[] }): ReactNode {
   const { timeZone } = useAppConfig();
-  const backup = useDataAction((ds) => ds.backupNow());
+  const backup = useBackupNow();
   const columns: Column<Backup>[] = [
     {
       header: "When",
@@ -93,7 +88,7 @@ export function BackupsSection({ backups }: { readonly backups: readonly Backup[
       header: "Result",
       cell: (row) => (row.error === null ? "OK" : `Failed: ${row.error}`),
     },
-    { header: "File", cell: (row) => row.path ?? "—" },
+    { header: "File", cell: (row) => row.path ?? PLACEHOLDER },
   ];
   return (
     <Card
@@ -104,7 +99,6 @@ export function BackupsSection({ backups }: { readonly backups: readonly Backup[
         </Button>
       }
     >
-      <ErrorLine error={backup.error} />
       {backups.length === 0 ? (
         <p className="text-sm text-fg-muted">No backup yet.</p>
       ) : (
@@ -119,9 +113,18 @@ export function BackupsSection({ backups }: { readonly backups: readonly Backup[
   );
 }
 
+/** Parse issues; a failed read shows as an error, never as "no issue". */
 export function ParseIssuesSection(): ReactNode {
+  const issues = toRemote(useParseIssues());
+  return (
+    <CardRemote title="Parse issues" remote={issues}>
+      {(issues) => <ParseIssuesCard issues={issues} />}
+    </CardRemote>
+  );
+}
+
+function ParseIssuesCard({ issues }: { readonly issues: readonly ParseIssue[] }): ReactNode {
   const { timeZone } = useAppConfig();
-  const issues = useParseIssues().data ?? [];
   const open = issues.filter((issue) => issue.resolved_at === null);
   const drift = open.filter((issue) => issue.kind === "format_drift");
   const columns: Column<ParseIssue>[] = [
@@ -131,7 +134,7 @@ export function ParseIssuesSection(): ReactNode {
     {
       header: "Count",
       numeric: true,
-      cell: (row) => row.occurrences.toLocaleString("en-US"),
+      cell: (row) => formatCount(row.occurrences),
     },
     {
       header: "Last seen",
@@ -150,7 +153,7 @@ export function ParseIssuesSection(): ReactNode {
           className="rounded-md border border-border bg-surface-muted px-3 py-2 text-sm"
         >
           {drift.map((issue) => issue.agent).join(", ")} changed its log format. Usage from the new
-          format may be missing until TokenMtr is updated.
+          format may be missing until {APP_NAME} is updated.
         </p>
       )}
       {issues.length === 0 ? (
@@ -167,9 +170,18 @@ export function ParseIssuesSection(): ReactNode {
   );
 }
 
+/** Recently fired alerts; a failed read shows as an error, never as "no alert". */
 export function RecentAlertsSection(): ReactNode {
+  const alerts = toRemote(useAlerts());
+  return (
+    <CardRemote title="Recent alerts" remote={alerts}>
+      {(alerts) => <RecentAlertsCard alerts={alerts} />}
+    </CardRemote>
+  );
+}
+
+function RecentAlertsCard({ alerts }: { readonly alerts: readonly Alert[] }): ReactNode {
   const { timeZone } = useAppConfig();
-  const alerts = useAlerts().data ?? [];
   return (
     <Card title="Recent alerts">
       {alerts.length === 0 ? (
@@ -190,11 +202,14 @@ export function RecentAlertsSection(): ReactNode {
 /** D56: erasing is irreversible, so the button stays disabled until the phrase is typed. */
 export function EraseSection(): ReactNode {
   const [typed, setTyped] = useState("");
-  const erase = useDataAction((ds) => ds.eraseAllData());
+  const erase = useDataAction((ds) => ds.eraseAllData(), {
+    failure: "Could not erase the data",
+    success: () => "All data erased",
+  });
   return (
     <Card title="Erase all data">
       <p className="text-sm text-fg-muted">
-        Deletes the TokenMtr database, exports and backups on this machine. Agent logs are not
+        Deletes the {APP_NAME} database, exports and backups on this machine. Agent logs are not
         touched. This cannot be undone.
       </p>
       <TextField value={typed} onChange={setTyped} className="flex max-w-sm flex-col gap-1">
@@ -206,12 +221,11 @@ export function EraseSection(): ReactNode {
           variant="primary"
           isDisabled={typed !== CONFIRMATION}
           isPending={erase.isPending}
-          onPress={() => erase.mutate()}
+          onPress={() => erase.mutate(undefined, { onSuccess: () => setTyped("") })}
         >
           Erase all data
         </Button>
       </div>
-      <ErrorLine error={erase.error} />
     </Card>
   );
 }

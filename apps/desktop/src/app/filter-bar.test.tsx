@@ -3,7 +3,8 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { AppProvider, bootstrapConfig } from "../shared/app-context";
+import { bootstrapConfig } from "../shared/app-context";
+import { AppProvider } from "../shared/app-provider";
 import { axeViolations } from "../shared/axe";
 import { createMockDataSource } from "../shared/mock";
 import { ThemeProvider } from "../shared/theme";
@@ -16,11 +17,11 @@ async function renderApp(url: string) {
   await router.load();
   const view = render(
     <ThemeProvider>
-      <AppProvider config={bootstrapConfig} dataSource={createMockDataSource()}>
-        <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={new QueryClient()}>
+        <AppProvider config={bootstrapConfig} dataSource={createMockDataSource()}>
           <RouterProvider router={router} />
-        </QueryClientProvider>
-      </AppProvider>
+        </AppProvider>
+      </QueryClientProvider>
     </ThemeProvider>,
   );
   const filters = await screen.findByRole("form", { name: "Filters" });

@@ -1,16 +1,17 @@
 import { micros, usage } from "../../shared/fixtures";
-import type { Budget } from "../../shared/schemas";
+import type { Budget, MeasuredBudget } from "../../shared/schemas";
 import type { BillingData } from "./model";
 
 const MONTHS = ["2026-03-01", "2026-04-01", "2026-05-01"] as const;
 
-export const BUDGET_OVER: Budget = {
+export const BUDGET_OVER: MeasuredBudget = {
+  state: "measured",
   id: "monthly-paid",
   period: "month",
   measure: "paid",
   currency: "USD",
   period_start: "2026-05-01",
-  period_end: "2026-05-31",
+  period_end: "2026-06-01",
   limit_micros: micros(100),
   spent_micros: micros(128),
   percent: 128,
@@ -18,18 +19,31 @@ export const BUDGET_OVER: Budget = {
   projected_percent: 190,
 };
 
-export const BUDGET_PROJECTED: Budget = {
+export const BUDGET_PROJECTED: MeasuredBudget = {
+  state: "measured",
   id: "weekly-api",
   period: "week",
   measure: "api_value",
   currency: "USD",
   period_start: "2026-05-18",
-  period_end: "2026-05-24",
+  period_end: "2026-05-25",
   limit_micros: micros(200),
   spent_micros: micros(120),
   percent: 60,
   projected_micros: micros(240),
   projected_percent: 120,
+};
+
+/** An EUR budget before the first FX rate: only its limit is known. */
+export const BUDGET_NO_RATE: Budget = {
+  state: "no_fx_rate",
+  id: "daily-eur",
+  period: "day",
+  measure: "paid",
+  currency: "EUR",
+  period_start: "2026-05-20",
+  period_end: "2026-05-21",
+  limit_micros: micros(20),
 };
 
 /** A subscription, a pay-as-you-go tail, three months, budgets over 100%, three advisor outcomes. */
@@ -96,7 +110,7 @@ export const BILLING_DATA: BillingData = {
     })),
     roi: 2.8,
   },
-  budgets: [BUDGET_OVER, BUDGET_PROJECTED],
+  budgets: [BUDGET_OVER, BUDGET_PROJECTED, BUDGET_NO_RATE],
   advisor: [
     {
       agent: "claude-code",

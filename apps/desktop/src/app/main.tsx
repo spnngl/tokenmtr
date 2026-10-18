@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { AppProvider } from "../shared/app-context";
-import { subscribeToShell } from "../shared/events";
+import { AppProvider } from "../shared/app-provider";
+import { navigationSearch, subscribeToShell } from "../shared/events";
 import { createRuntime } from "../shared/runtime";
 import { ThemeProvider } from "../shared/theme";
 import { createAppRouter } from "./router";
@@ -20,24 +20,29 @@ const queryClient = new QueryClient();
 const history = createHashHistory();
 const router = createAppRouter(history);
 
-const runtime = await createRuntime(window.location.search);
+const runtime = createRuntime(window.location.search);
 if (runtime.listen !== undefined) {
-  await subscribeToShell({
+  void subscribeToShell({
     listen: runtime.listen,
     queryClient,
     window: "main",
-    navigate: (path) => history.push(path),
+    navigate: ({ route, agent }) => {
+      void router.navigate({
+        to: route,
+        search: (current: Record<string, unknown>) => navigationSearch(current, agent),
+      });
+    },
   });
 }
 
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <AppProvider config={runtime.config} dataSource={runtime.dataSource}>
-        <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <AppProvider config={runtime.config} dataSource={runtime.dataSource}>
           <RouterProvider router={router} />
-        </QueryClientProvider>
-      </AppProvider>
+        </AppProvider>
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 );

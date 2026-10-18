@@ -2,7 +2,7 @@ import { formatClock, formatDay } from "../../shared/format";
 import type { SinkHealth, SinkRun } from "../../shared/schemas";
 
 /** The datasets a sink can export (`tokenmtr-export`), with what each one holds. */
-export const DATASETS = [
+const DATASETS = [
   { id: "usage_events", description: "One row per model call: tokens, cost, project, branch." },
   { id: "tool_calls", description: "One row per tool call, with MCP server and error flag." },
   { id: "subscriptions", description: "Declared subscriptions and their fees." },

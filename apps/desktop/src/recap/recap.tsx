@@ -28,6 +28,10 @@ export interface RecapProps {
   readonly onOpenDashboard: (agent: string | null) => void;
   readonly onOpenSettings: () => void;
   readonly onScanNow: () => void;
+  /** A scan started by `onScanNow` is running. */
+  readonly isScanning: boolean;
+  /** Display name per agent id (`settings.agents`); an agent missing from it shows its id. */
+  readonly agentLabels: ReadonlyMap<string, string>;
 }
 
 /** Menu-bar recap (360px wide): agent tabs, period switch, blocks, footer. */
@@ -35,7 +39,7 @@ export function Recap(props: RecapProps): ReactNode {
   const { snapshot } = props;
   const tabs = snapshot.tabs.map((recap) => ({
     id: recap.agent ?? ALL_TAB_ID,
-    label: recap.agent ?? "All",
+    label: recap.agent === null ? "All" : (props.agentLabels.get(recap.agent) ?? recap.agent),
     recap,
   }));
   const [tabId, setTabId] = useState<string | null>(null);
@@ -104,7 +108,7 @@ export function Recap(props: RecapProps): ReactNode {
             Open dashboard
           </Button>
           <span className="flex-1" />
-          <Button variant="quiet" onPress={props.onScanNow}>
+          <Button variant="quiet" isPending={props.isScanning} onPress={props.onScanNow}>
             Scan now
           </Button>
           <Button variant="quiet" aria-label="Settings" onPress={props.onOpenSettings}>

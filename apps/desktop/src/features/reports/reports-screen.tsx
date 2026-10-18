@@ -32,6 +32,8 @@ interface ReportsScreenProps {
   readonly saveStatus: SaveStatus;
   /** Renders the request as HTML and opens the print dialog ("Save as PDF"). */
   readonly onPrint: () => void;
+  /** The HTML for printing is being rendered. */
+  readonly isPrinting: boolean;
 }
 
 type ScopeKind = ReportScope["kind"];
@@ -203,6 +205,7 @@ export function ReportsScreen({
   onSave,
   saveStatus,
   onPrint,
+  isPrinting,
 }: ReportsScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
@@ -215,16 +218,14 @@ export function ReportsScreen({
             description={report.filename}
             actions={
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="primary"
-                  isDisabled={saveStatus.kind === "saving"}
-                  onPress={onSave}
-                >
-                  <Download aria-hidden className="size-4" />
+                <Button variant="primary" isPending={saveStatus.kind === "saving"} onPress={onSave}>
+                  {saveStatus.kind === "saving" ? null : (
+                    <Download aria-hidden className="size-4" />
+                  )}
                   Save {formatLabel(report.format)}
                 </Button>
-                <Button variant="secondary" onPress={onPrint}>
-                  <Printer aria-hidden className="size-4" />
+                <Button variant="secondary" isPending={isPrinting} onPress={onPrint}>
+                  {isPrinting ? null : <Printer aria-hidden className="size-4" />}
                   Save as PDF
                 </Button>
               </div>

@@ -2,6 +2,7 @@ import { Link, Outlet } from "@tanstack/react-router";
 import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Dialog, DialogTrigger, Modal, ModalOverlay } from "react-aria-components";
+import { APP_NAME } from "../shared/brand";
 import { Button } from "../shared/button";
 import { NAV_ITEMS } from "../shared/nav";
 import { AppBanners, AppGate } from "./app-gate";
@@ -33,7 +34,7 @@ function NavList({ onNavigate }: { readonly onNavigate?: () => void }): ReactNod
 }
 
 function Brand(): ReactNode {
-  return <span className="text-base font-semibold">TokenMtr</span>;
+  return <span className="text-base font-semibold">{APP_NAME}</span>;
 }
 
 /** Below `md` the sidebar becomes a drawer opened from the top bar. */
@@ -61,6 +62,9 @@ function NavDrawer(): ReactNode {
   );
 }
 
+/** Target of the skip link: the routed screen. */
+const MAIN_ID = "main-content";
+
 /**
  * Full-app shell: sidebar (drawer when narrow), top bar with the command palette, then the gate:
  * filter bar and routed screen when the app can show data, otherwise the state that explains why not.
@@ -68,6 +72,14 @@ function NavDrawer(): ReactNode {
 export function Layout(): ReactNode {
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
+      {/* A hash router owns the URL fragment, so the skip link moves focus instead of linking. */}
+      <button
+        type="button"
+        onClick={() => document.getElementById(MAIN_ID)?.focus()}
+        className="sr-only z-50 rounded-md bg-surface-raised px-3 py-2 text-sm font-medium text-fg shadow-sm focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+      >
+        Skip to content
+      </button>
       <aside className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col gap-4 border-r border-border bg-surface-raised p-3 md:flex">
         <div className="px-3 pt-1">
           <Brand />
@@ -86,7 +98,11 @@ export function Layout(): ReactNode {
         </header>
         <AppGate>
           <FilterBar />
-          <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:p-6">
+          <main
+            id={MAIN_ID}
+            tabIndex={-1}
+            className="flex min-w-0 flex-1 flex-col gap-4 p-4 outline-none md:p-6"
+          >
             <AppBanners>
               <Outlet />
             </AppBanners>

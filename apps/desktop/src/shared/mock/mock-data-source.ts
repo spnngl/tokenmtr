@@ -1,4 +1,6 @@
 import type { DataSource, NotificationPermissionState } from "../data-source";
+import { DataSourceError } from "../errors";
+import type { Currency } from "../format";
 import type { AppState, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
 import { advisorOf, quotaHistoryOf, quotaLatestOf } from "./quota";
@@ -60,6 +62,11 @@ export interface MockOptions {
   readonly latencyMs?: number;
   /** Observes every action the UI triggers, e.g. `scanNow`. */
   readonly onAction?: (action: string, args: readonly unknown[]) => void;
+  /**
+   * No FX rate is known: like the backend (D27), a EUR request is answered in USD with
+   * `currency_fallback` set.
+   */
+  readonly noFxRates?: boolean;
 }
 
 const SCAN_INTERVAL_SECS = 60;
@@ -91,6 +98,9 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
   let onboarded = scenario !== "onboarding";
   let notifications: NotificationPermissionState = "undetermined";
   let daemonInstalled = false;
+  /** The currency the backend answers in when asked for `requested`. */
+  const answered = (requested: Currency): Currency =>
+    options.noFxRates === true ? "USD" : requested;
 
   const act = (action: string, ...args: readonly unknown[]): Promise<void> => {
     options.onAction?.(action, args);
@@ -102,7 +112,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       return new Promise<T>(() => undefined);
     }
     if (scenario === "error") {
-      return Promise.reject(new Error("database is locked"));
+      // The shape the Tauri data source gives a failed command (a `store` `CommandError`).
+      return Promise.reject(
+        new DataSourceError("mock", { kind: "store", message: "database is locked" }),
+      );
     }
     return new Promise<T>((resolve, reject) => {
       const run = () => {
@@ -178,42 +191,59 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     settings: () => read(() => settingsOf(tenYears)),
 
     overview: (filters) =>
-      read(() =>
-        totalsOf(
+      read(() => ({
+        ...totalsOf(
           empty ? [] : factsFor(filters),
-          filters.currency,
+          answered(filters.currency),
           empty ? 0 : sessionsOf(filters, 0, 1).total,
         ),
-      ),
+        currency_fallback: answered(filters.currency) !== filters.currency,
+      })),
     series: (filters, groupBy) =>
       read(() =>
-        seriesOf(empty ? [] : factsFor(filters), rangeOf(filters.range), filters.currency, groupBy),
+        seriesOf(
+          empty ? [] : factsFor(filters),
+          rangeOf(filters.range),
+          answered(filters.currency),
+          groupBy,
+        ),
       ),
-    models: (filters) => read(() => modelsOf(empty ? [] : factsFor(filters), filters.currency)),
-    projects: (filters) => read(() => projectsOf(empty ? [] : factsFor(filters), filters.currency)),
-    branches: (filters) => read(() => branchesOf(empty ? [] : factsFor(filters), filters.currency)),
+    models: (filters) =>
+      read(() => modelsOf(empty ? [] : factsFor(filters), answered(filters.currency))),
+    projects: (filters) =>
+      read(() => projectsOf(empty ? [] : factsFor(filters), answered(filters.currency))),
+    branches: (filters) =>
+      read(() => branchesOf(empty ? [] : factsFor(filters), answered(filters.currency))),
     unresolvedCwds: () => read(() => (empty ? [] : [...UNRESOLVED])),
-    heatmap: (filters) => read(() => heatmapOf(empty ? [] : factsFor(filters), filters.currency)),
+    heatmap: (filters) =>
+      read(() => heatmapOf(empty ? [] : factsFor(filters), answered(filters.currency))),
     tools: (filters) => read(() => toolsOf(empty ? [] : factsFor(filters))),
     signals: (filters) => read(() => signalsOf(rangeOf(filters.range))),
-    billing: (filters) => read(() => billingOf(empty ? [] : factsFor(filters), filters.currency)),
+    billing: (filters) =>
+      read(() => billingOf(empty ? [] : factsFor(filters), answered(filters.currency))),
 
-    sessions: (filters, page, pageSize) =>
-      read(() =>
+    sessions: (filters, page, pageSize) => {
+      const answeredFilters = { ...filters, currency: answered(filters.currency) };
+      return read(() =>
         empty
-          ? { currency: filters.currency, total: 0, page, page_size: pageSize, rows: [] }
-          : sessionsOf(filters, page, pageSize),
-      ),
+          ? { currency: answeredFilters.currency, total: 0, page, page_size: pageSize, rows: [] }
+          : sessionsOf(answeredFilters, page, pageSize),
+      );
+    },
     sessionDetail: (agent, session, currency) =>
-      read(() => sessionDetailOf(agent, session, currency)),
+      read(() => sessionDetailOf(agent, session, answered(currency))),
     sessionOrigin: (agent, session) => read(() => sessionOriginOf(agent, session)),
 
     quotaLatest: (filters) => read(() => (empty ? [] : quotaLatestOf(filters))),
     quotaHistory: (filters, agent) => read(() => (empty ? [] : quotaHistoryOf(filters, agent))),
     advisor: (filters) => read(() => (empty ? [] : advisorOf(filters))),
-    budgets: () => read(() => (empty ? [] : budgetsOf())),
+    budgets: () => read(() => (empty ? [] : budgetsOf(options.noFxRates === true))),
 
-    recap: (period, currency) => read(() => recapOf(period, currency, empty)),
+    recap: (period, currency) =>
+      read(() => ({
+        ...recapOf(period, answered(currency), empty),
+        currency_fallback: answered(currency) !== currency,
+      })),
     systemHealth: () => read(() => systemHealthOf()),
     ingestStatus: () => read(() => ingestStatusOf()),
     parseIssues: () => read(() => [...PARSE_ISSUES]),

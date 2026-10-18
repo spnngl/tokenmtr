@@ -4,7 +4,6 @@ import type { DataSource } from "./data-source";
 import type { Filters } from "./filters";
 import type { Currency } from "./format";
 import type { FilterOptions, GroupBy, Period } from "./schemas";
-import type { ViewState } from "./state-view";
 
 /** One React Query hook per `DataSource` read; keys carry every input so filters refetch. */
 function useRead<T>(
@@ -80,58 +79,7 @@ export const useBudgets = (currency: Currency) =>
   useRead(["budgets", currency], (ds) => ds.budgets(currency), KEEP);
 
 export const useRecap = (period: Period, currency: Currency) =>
-  useRead(["recap", period, currency], (ds) => ds.recap(period, currency), {
-    keepPrevious: true,
-    refetchMs: 15_000,
-  });
+  useRead(["recap", period, currency], (ds) => ds.recap(period, currency), KEEP);
 export const useSystemHealth = () => useRead(["system-health"], (ds) => ds.systemHealth());
-export const useIngestStatus = () => useRead(["ingest-status"], (ds) => ds.ingestStatus());
 export const useParseIssues = () => useRead(["parse-issues"], (ds) => ds.parseIssues());
 export const useAlerts = () => useRead(["alerts"], (ds) => ds.alerts());
-export const useBackups = () => useRead(["backups"], (ds) => ds.backups());
-export const useFxRates = () => useRead(["fx-rates"], (ds) => ds.fxRates());
-
-export interface EmptyCopy {
-  readonly title: string;
-  readonly hint: string;
-}
-
-/** Empty state of every screen that aggregates usage over the filtered range. */
-export const NO_USAGE_COPY: EmptyCopy = {
-  title: "No usage in this range",
-  hint: "Widen the range or clear a filter. If you have not run an agent yet, start a session and scan.",
-};
-
-/**
- * Maps a query onto the §7 view states: loading, error (with retry), empty (when `empty` returns
- * copy for the data) or ready.
- */
-export function queryViewState<T>(
-  query: UseQueryResult<T>,
-  empty: (data: T) => EmptyCopy | null,
-): ViewState {
-  switch (query.status) {
-    case "pending":
-      return { kind: "loading" };
-    case "error":
-      return {
-        kind: "error",
-        message: query.error.message,
-        onRetry: () => {
-          void query.refetch();
-        },
-      };
-    case "success": {
-      const copy = empty(query.data);
-      return copy === null ? { kind: "ready" } : { kind: "empty", ...copy };
-    }
-    default:
-      query satisfies never;
-      throw new Error("unreachable query status");
-  }
-}
-
-/** Combines the states of several queries: the first non-ready state wins. */
-export function firstBlockingState(states: readonly ViewState[]): ViewState {
-  return states.find((state) => state.kind !== "ready") ?? { kind: "ready" };
-}

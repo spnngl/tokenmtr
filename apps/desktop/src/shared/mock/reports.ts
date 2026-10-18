@@ -355,6 +355,9 @@ const BUDGET_SEEDS: readonly BudgetSeed[] = [
 
 const PERIOD_DAYS = { day: 1, week: 7, month: 30 } as const;
 
+/** Limit of a budget shown without an FX rate: its spend-based seed limit needs the rate. */
+const NO_RATE_LIMIT_MICROS = 20_000_000;
+
 function periodStart(period: BudgetSeed["period"]): string {
   switch (period) {
     case "day":
@@ -369,9 +372,21 @@ function periodStart(period: BudgetSeed["period"]): string {
   }
 }
 
-export function budgetsOf(): Budget[] {
-  return BUDGET_SEEDS.map((seed) => {
+/** With `noFxRates`, EUR budgets cannot be measured yet (as before the first ECB fetch). */
+export function budgetsOf(noFxRates = false): Budget[] {
+  return BUDGET_SEEDS.map((seed): Budget => {
     const start = periodStart(seed.period);
+    const base = {
+      id: seed.id,
+      period: seed.period,
+      measure: seed.measure,
+      currency: seed.currency,
+      period_start: start,
+      period_end: addDays(start, PERIOD_DAYS[seed.period]),
+    };
+    if (noFxRates && seed.currency === "EUR") {
+      return { state: "no_fx_rate", ...base, limit_micros: NO_RATE_LIMIT_MICROS };
+    }
     const rows = FACTS.filter(
       (fact) => fact.date >= start && (seed.agent === null || fact.agent === seed.agent),
     );
@@ -382,12 +397,8 @@ export function budgetsOf(): Budget[] {
     const elapsed = Math.max(1, (Date.parse(TODAY) - Date.parse(start)) / 86_400_000 + 1);
     const projected = Math.round((spent / elapsed) * PERIOD_DAYS[seed.period]);
     return {
-      id: seed.id,
-      period: seed.period,
-      measure: seed.measure,
-      currency: seed.currency,
-      period_start: start,
-      period_end: addDays(start, PERIOD_DAYS[seed.period]),
+      state: "measured",
+      ...base,
       limit_micros: limit,
       spent_micros: spent,
       percent: Math.floor((spent / limit) * 100),

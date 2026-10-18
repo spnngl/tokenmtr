@@ -1,0 +1,12 @@
+[
+  {
+    "date": "2026-05-01",
+    "eur_per_usd_scaled": 881600000,
+    "source": "ecb"
+  },
+  {
+    "date": "2026-04-30",
+    "eur_per_usd_scaled": 883200000,
+    "source": "ecb"
+  }
+]

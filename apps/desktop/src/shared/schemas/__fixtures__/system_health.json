@@ -1,0 +1,82 @@
+{
+  "level": "warning",
+  "daemon": {
+    "state": "running",
+    "last_heartbeat": "2026-05-03T14:11:30Z",
+    "age_secs": 29
+  },
+  "sinks": [
+    {
+      "sink": "local-parquet",
+      "state": "healthy",
+      "lag_rows": 0,
+      "lag_secs": null,
+      "last_success_at": "2026-05-03T14:10:05Z",
+      "recent_runs": [
+        {
+          "dataset": "usage_events",
+          "started_at": "2026-05-03T14:10:02Z",
+          "finished_at": "2026-05-03T14:10:05Z",
+          "rows": 37,
+          "error": null
+        },
+        {
+          "dataset": "tool_calls",
+          "started_at": "2026-05-03T14:10:02Z",
+          "finished_at": "2026-05-03T14:10:04Z",
+          "rows": 112,
+          "error": null
+        }
+      ]
+    },
+    {
+      "sink": "warehouse",
+      "state": "failing",
+      "since": "2026-05-02T07:30:00Z",
+      "last_error": "connection refused (os error 61)",
+      "lag_rows": 5120,
+      "lag_secs": 110400,
+      "last_success_at": "2026-05-02T07:15:00Z",
+      "recent_runs": [
+        {
+          "dataset": "subscriptions",
+          "started_at": "2026-05-03T14:10:02Z",
+          "finished_at": "2026-05-03T14:10:03Z",
+          "rows": 0,
+          "error": "connection refused (os error 61)"
+        }
+      ]
+    },
+    {
+      "sink": "s3-archive",
+      "state": "lagging",
+      "lag_rows": 840,
+      "lag_secs": 3600,
+      "last_success_at": "2026-05-03T13:10:00Z",
+      "recent_runs": [
+        {
+          "dataset": "quota_snapshots",
+          "started_at": "2026-05-03T13:09:58Z",
+          "finished_at": "2026-05-03T13:10:00Z",
+          "rows": 24,
+          "error": null
+        },
+        {
+          "dataset": "fx_rates",
+          "started_at": "2026-05-03T13:09:58Z",
+          "finished_at": "2026-05-03T13:09:59Z",
+          "rows": 1,
+          "error": null
+        }
+      ]
+    },
+    {
+      "sink": "legacy-csv",
+      "state": "disabled",
+      "lag_rows": 0,
+      "lag_secs": null,
+      "last_success_at": null,
+      "recent_runs": []
+    }
+  ]
+}

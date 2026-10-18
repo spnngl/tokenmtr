@@ -18,7 +18,7 @@ export const filterOptionsSchema = z.object({
 });
 export type FilterOptions = z.infer<typeof filterOptionsSchema>;
 
-export const capabilitiesSchema = z.object({
+const capabilitiesSchema = z.object({
   quota: z.boolean(),
   reported_cost: z.boolean(),
   subscription: z.boolean(),
@@ -26,7 +26,7 @@ export const capabilitiesSchema = z.object({
 export type Capabilities = z.infer<typeof capabilitiesSchema>;
 
 /** One profile of an agent, as found on disk. */
-export const profileInfoSchema = z.object({
+const profileInfoSchema = z.object({
   profile: z.string(),
   root: z.string(),
   account: z.string().nullable(),
@@ -37,7 +37,7 @@ export const profileInfoSchema = z.object({
 });
 export type ProfileInfo = z.infer<typeof profileInfoSchema>;
 
-export const agentInfoSchema = z.object({
+const agentInfoSchema = z.object({
   agent: z.string(),
   label: z.string(),
   followed: z.boolean(),
@@ -46,7 +46,7 @@ export const agentInfoSchema = z.object({
 });
 export type AgentInfo = z.infer<typeof agentInfoSchema>;
 
-export const NOTIFICATION_PERMISSIONS = ["granted", "denied", "undetermined"] as const;
+const NOTIFICATION_PERMISSIONS = ["granted", "denied", "undetermined"] as const;
 
 /**
  * Where the app is in its life. Everything but `ready` replaces the screens (D52, first run,
@@ -75,7 +75,7 @@ export const appStateSchema = z.discriminatedUnion("kind", [
 ]);
 export type AppState = z.infer<typeof appStateSchema>;
 
-export const protectedFolderSchema = z.object({
+const protectedFolderSchema = z.object({
   agent: z.string(),
   path: z.string(),
   /** D50: macOS blocks reads until the user grants access. */

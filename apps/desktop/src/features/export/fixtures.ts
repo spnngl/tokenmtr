@@ -21,7 +21,7 @@ export const SINK_HEALTHY: SinkHealth = {
   ],
 };
 
-export const SINK_LAGGING: SinkHealth = {
+const SINK_LAGGING: SinkHealth = {
   state: "lagging",
   sink: "warehouse",
   lag_rows: 5400,

@@ -1,0 +1,135 @@
+[
+  {
+    "agent": "claude",
+    "profile": "default",
+    "current_plan": "max_5x",
+    "snapshots": 412,
+    "monthly_api_value_usd_micros": 486250000,
+    "advice": {
+      "advice": "recommend",
+      "verdict": {
+        "verdict": "upgrade",
+        "plan": "max_20x"
+      },
+      "current": "max_5x",
+      "headroom": 80,
+      "fits": [
+        {
+          "plan": "pro",
+          "monthly_fee": 20000000,
+          "five_hour_peak": 548.0,
+          "seven_day_peak": 310.5,
+          "fits": false
+        },
+        {
+          "plan": "max_5x",
+          "monthly_fee": 100000000,
+          "five_hour_peak": 109.6,
+          "seven_day_peak": 62.1,
+          "fits": false
+        },
+        {
+          "plan": "max_20x",
+          "monthly_fee": 200000000,
+          "five_hour_peak": 27.4,
+          "seven_day_peak": 15.5,
+          "fits": true
+        }
+      ]
+    }
+  },
+  {
+    "agent": "claude",
+    "profile": "work",
+    "current_plan": "max_20x",
+    "snapshots": 380,
+    "monthly_api_value_usd_micros": 61200000,
+    "advice": {
+      "advice": "recommend",
+      "verdict": {
+        "verdict": "downgrade",
+        "plan": "pro"
+      },
+      "current": "max_20x",
+      "headroom": 80,
+      "fits": [
+        {
+          "plan": "pro",
+          "monthly_fee": 20000000,
+          "five_hour_peak": 72.0,
+          "seven_day_peak": 40.0,
+          "fits": true
+        }
+      ]
+    }
+  },
+  {
+    "agent": "claude",
+    "profile": "side",
+    "current_plan": "pro",
+    "snapshots": 290,
+    "monthly_api_value_usd_micros": 31500000,
+    "advice": {
+      "advice": "recommend",
+      "verdict": {
+        "verdict": "keep"
+      },
+      "current": "pro",
+      "headroom": 80,
+      "fits": [
+        {
+          "plan": "pro",
+          "monthly_fee": 20000000,
+          "five_hour_peak": 66.0,
+          "seven_day_peak": 51.0,
+          "fits": true
+        }
+      ]
+    }
+  },
+  {
+    "agent": "claude",
+    "profile": "lab",
+    "current_plan": "pro",
+    "snapshots": 150,
+    "monthly_api_value_usd_micros": 4200000,
+    "advice": {
+      "advice": "recommend",
+      "verdict": {
+        "verdict": "pay_as_you_go"
+      },
+      "current": "pro",
+      "headroom": 80,
+      "fits": [
+        {
+          "plan": "pro",
+          "monthly_fee": 20000000,
+          "five_hour_peak": 9.0,
+          "seven_day_peak": 3.5,
+          "fits": true
+        }
+      ]
+    }
+  },
+  {
+    "agent": "claude",
+    "profile": "new",
+    "current_plan": null,
+    "snapshots": 6,
+    "monthly_api_value_usd_micros": 1800000,
+    "advice": {
+      "advice": "not_enough_data",
+      "span_days": 2
+    }
+  },
+  {
+    "agent": "pi",
+    "profile": "default",
+    "current_plan": null,
+    "snapshots": 0,
+    "monthly_api_value_usd_micros": 92300000,
+    "advice": {
+      "advice": "not_applicable"
+    }
+  }
+]

@@ -1,10 +1,31 @@
+import {
+  type InvalidateQueryFilters,
+  type Query,
+  QueryCache,
+  QueryClient,
+} from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
+import { bootstrapConfig, configFromSettings } from "./app-context";
 import { COMMANDS, ERROR_KINDS, EVENTS } from "./bindings";
-import { daemonStateSchema, type Listen, navigationPath, subscribeToShell } from "./events";
+import { commandFailure, DataSourceError } from "./errors";
+import {
+  daemonStateSchema,
+  type Listen,
+  navigationSearch,
+  queriesForStoreChange,
+  subscribeToShell,
+} from "./events";
 import { defaultFilters } from "./filters";
 import { createMockDataSource } from "./mock";
-import { configFromSettings } from "./runtime";
-import { commandErrorSchema, createTauriDataSource, type Invoke } from "./tauri-data-source";
+import type { ReportSpec } from "./schemas";
+import { createTauriDataSource, type Invoke } from "./tauri-data-source";
+
+const REPORT_SPEC: ReportSpec = {
+  range: { kind: "custom", first: "2026-06-01", last: "2026-06-30" },
+  scope: { kind: "all" },
+  format: "markdown",
+  currency: "USD",
+};
 
 /** A `listen` whose handlers the test fires by hand. */
 function fakeListen() {
@@ -27,16 +48,43 @@ function fakeListen() {
 }
 
 function fakeClient() {
-  return { invalidateQueries: vi.fn(async () => undefined) };
+  return {
+    invalidateQueries: vi.fn<(filters?: InvalidateQueryFilters) => Promise<void>>(
+      async () => undefined,
+    ),
+  };
+}
+
+/** The part of a cached query an invalidation predicate reads. */
+function fakeQuery(queryKey: readonly unknown[]): Query {
+  return new QueryCache().build(new QueryClient(), { queryKey });
 }
 
 describe("shell events", () => {
-  it("refetches everything on the main window when the store changes", async () => {
+  it("refetches the queries that read the changed datasets on the main window", async () => {
     const { listen, fire } = fakeListen();
     const queryClient = fakeClient();
     await subscribeToShell({ listen, queryClient, window: "main" });
-    fire(EVENTS.storeChanged, { datasets: ["usage"] });
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith();
+    fire(EVENTS.storeChanged, { datasets: ["quota_snapshots"] });
+    const filter = queryClient.invalidateQueries.mock.lastCall?.[0];
+    const matches = (head: string) => filter?.predicate?.(fakeQuery([head, "x"])) === true;
+    expect(matches("quota-latest")).toBe(true);
+    expect(matches("app-state")).toBe(true);
+    expect(matches("models")).toBe(false);
+    expect(matches("report")).toBe(false);
+  });
+
+  it("maps store changes onto query keys, refreshing every store query when unsure", () => {
+    const usage = queriesForStoreChange({ datasets: ["usage_events"] });
+    expect(usage.has("overview")).toBe(true);
+    expect(usage.has("settings")).toBe(false);
+    expect(queriesForStoreChange({ datasets: ["fx_rates"] }).has("settings")).toBe(true);
+    for (const unsure of [{ datasets: [] }, { datasets: ["new_dataset"] }, null]) {
+      const heads = queriesForStoreChange(unsure);
+      expect(heads.has("tools")).toBe(true);
+      expect(heads.has("quota-history")).toBe(true);
+      expect(heads.has("report")).toBe(false);
+    }
   });
 
   it("refetches alerts and health when an alert fires", async () => {
@@ -76,15 +124,37 @@ describe("shell events", () => {
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
 
-  it("moves the router on navigate and drops malformed targets", async () => {
+  it("moves the router on navigate and drops targets that are not screens", async () => {
     const { listen, fire } = fakeListen();
     const navigate = vi.fn();
     await subscribeToShell({ listen, queryClient: fakeClient(), window: "main", navigate });
     fire(EVENTS.navigate, { route: "/quota", agent: null });
     fire(EVENTS.navigate, { route: "/", agent: "claude" });
     fire(EVENTS.navigate, { route: "quota", agent: null });
-    expect(navigate.mock.calls).toEqual([["/quota"], ["/?agent=claude"]]);
-    expect(navigationPath({ route: "/", agent: "a b" })).toBe("/?agent=a%20b");
+    fire(EVENTS.navigate, { route: "/nowhere", agent: null });
+    expect(navigate.mock.calls).toEqual([
+      [{ route: "/quota", agent: null }],
+      [{ route: "/", agent: "claude" }],
+    ]);
+  });
+
+  it("keeps the current filters when navigating", () => {
+    const current = { range: "7d", agent: "pi" };
+    expect(navigationSearch(current, null)).toEqual(current);
+    expect(navigationSearch(current, "claude")).toEqual({ range: "7d", agent: "claude" });
+  });
+
+  it("keeps and removes the listeners that registered when one fails", async () => {
+    const { listen: inner, unsubscribed } = fakeListen();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const listen: Listen = (event, handler) =>
+      event === EVENTS.navigate ? Promise.reject(new Error("denied")) : inner(event, handler);
+    const stop = await subscribeToShell({ listen, queryClient: fakeClient(), window: "main" });
+    stop();
+    expect(unsubscribed).toContain(EVENTS.storeChanged);
+    expect(unsubscribed).not.toContain(EVENTS.navigate);
+    expect(errors).toHaveBeenCalledOnce();
+    errors.mockRestore();
   });
 
   it("removes every listener when unsubscribed", async () => {
@@ -152,48 +222,58 @@ describe("command bindings", () => {
       tauri.eraseAllData(),
       tauri.requestNotifications(),
       tauri.completeOnboarding(),
+      tauri.generateReport(REPORT_SPEC),
+      tauri.saveReport(REPORT_SPEC),
     ];
     await Promise.allSettled(attempts);
     const registered = new Set<string>(COMMANDS);
     for (const command of calls) {
       expect(registered.has(command), command).toBe(true);
     }
-    // Commands the UI does not call through the data source yet: subscriptions and reports are
-    // written by the Settings form and the Reports screen (rendered in the webview for now).
+    // No screen adds a subscription yet: plans are edited in the config file (Billing links to it).
     const unused = COMMANDS.filter((command) => !calls.has(command));
-    expect(unused).toEqual(["add_subscription", "generate_report", "save_report"]);
+    expect(unused).toEqual(["add_subscription"]);
   });
 
-  it("parses a serialised command error and knows every kind", () => {
+  it("classifies a serialised command error by kind and keeps unknown kinds' text", () => {
     for (const kind of ERROR_KINDS) {
-      expect(commandErrorSchema.safeParse({ kind, message: "m" }).success).toBe(true);
+      expect(commandFailure({ kind, message: "m" })).toEqual({ kind, message: "m" });
     }
-    expect(commandErrorSchema.safeParse({ kind: "other", message: "m" }).success).toBe(false);
+    expect(commandFailure({ kind: "other", message: "m" })).toEqual({
+      kind: "unknown",
+      message: "m",
+    });
+    expect(commandFailure("database is locked")).toEqual({
+      kind: "unknown",
+      message: "database is locked",
+    });
   });
 
-  it("surfaces a command error's message, not its JSON", async () => {
+  it("surfaces a command error's message and kind, not its JSON", async () => {
     const tauri = createTauriDataSource(async () => {
       throw { kind: "daemon_offline", message: "the daemon is not running" };
     });
-    await expect(tauri.scanNow()).rejects.toThrow("scan_now: the daemon is not running");
+    const error = await tauri.scanNow().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(DataSourceError);
+    expect(error).toMatchObject({
+      message: "the daemon is not running",
+      command: "scan_now",
+      failure: { kind: "daemon_offline" },
+    });
   });
 });
 
 describe("config from settings", () => {
-  it("takes the display zone and currency and a fixed rate when configured", async () => {
+  it("takes the display zone and currency and keeps the clock", async () => {
     const settings = await createMockDataSource({ scenario: "populated" }).settings();
-    const fixed = configFromSettings({
+    const config = configFromSettings(bootstrapConfig, {
       ...settings,
       display: { currency: "EUR", time_zone: "Europe/Paris" },
-      fx: { ...settings.fx, fixed_eur_per_usd: 0.92 },
     });
-    expect(fixed.timeZone).toBe("Europe/Paris");
-    expect(fixed.defaultCurrency).toBe("EUR");
-    expect(fixed.fx).toEqual({ kind: "fixed", eurPerUsd: 0.92 });
-    const ecb = configFromSettings({
-      ...settings,
-      fx: { ...settings.fx, fixed_eur_per_usd: null, offline: true },
+    expect(config).toEqual({
+      ...bootstrapConfig,
+      timeZone: "Europe/Paris",
+      defaultCurrency: "EUR",
     });
-    expect(ecb.fx).toEqual({ kind: "ecb", rates: [], offline: true });
   });
 });

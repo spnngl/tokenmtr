@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-aria-components";
+import { APP_NAME } from "./brand";
 import { Button } from "./button";
 
 /**
@@ -19,24 +20,49 @@ export type ViewState =
   | { readonly kind: "ready" }
   | { readonly kind: "loading" }
   | { readonly kind: "empty"; readonly title: string; readonly hint: string }
-  | { readonly kind: "error"; readonly message: string; readonly onRetry: () => void }
-  | { readonly kind: "daemon-offline"; readonly onStartDaemon: () => void }
+  | {
+      readonly kind: "error";
+      readonly title: string;
+      readonly message: string;
+      readonly onRetry: () => void;
+    }
+  | {
+      readonly kind: "daemon-offline";
+      readonly onStartDaemon: () => void;
+      readonly isPending: boolean;
+    }
   | {
       readonly kind: "incompatible";
       readonly appVersion: string;
       readonly daemonVersion: string;
       readonly onRestartDaemon: () => void;
+      readonly isPending: boolean;
     }
   | { readonly kind: "partial"; readonly failedCollectors: number; readonly issuesHref: string }
-  | { readonly kind: "stale"; readonly lastScan: string; readonly onScanNow: () => void };
+  | {
+      readonly kind: "stale";
+      readonly lastScan: string;
+      readonly onScanNow: () => void;
+      readonly isPending: boolean;
+    };
+
+/** `page` fills a screen; `section` fits inside one card of a screen. */
+export type StateSize = "page" | "section";
 
 interface StateViewProps {
   readonly state: ViewState;
+  readonly size?: StateSize | undefined;
   /** Content shown for `ready`, `partial` and `stale`. */
   readonly children?: ReactNode;
 }
 
+const PANEL_SIZE: Record<StateSize, string> = {
+  page: "min-h-48 gap-3 rounded-md border border-border bg-surface-raised p-6",
+  section: "min-h-24 gap-2 p-3",
+};
+
 function Panel(props: {
+  readonly size: StateSize;
   readonly role: "status" | "alert";
   readonly icon: ReactNode;
   readonly title: string;
@@ -48,7 +74,7 @@ function Panel(props: {
     <div
       role={props.role}
       aria-busy={props.busy}
-      className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-md border border-border bg-surface-raised p-6 text-center"
+      className={`flex flex-col items-center justify-center text-center ${PANEL_SIZE[props.size]}`}
     >
       {props.icon}
       <p className="text-base font-semibold">{props.title}</p>
@@ -78,13 +104,14 @@ function Banner(props: {
 }
 
 /** Renders one §7 view state around the page content. */
-export function StateView({ state, children }: StateViewProps): ReactNode {
+export function StateView({ state, size = "page", children }: StateViewProps): ReactNode {
   switch (state.kind) {
     case "ready":
       return children;
     case "loading":
       return (
         <Panel
+          size={size}
           role="status"
           busy
           icon={
@@ -96,6 +123,7 @@ export function StateView({ state, children }: StateViewProps): ReactNode {
     case "empty":
       return (
         <Panel
+          size={size}
           role="status"
           icon={<Inbox className="size-6 text-fg-muted" aria-hidden />}
           title={state.title}
@@ -105,9 +133,10 @@ export function StateView({ state, children }: StateViewProps): ReactNode {
     case "error":
       return (
         <Panel
+          size={size}
           role="alert"
           icon={<CircleAlert className="size-6 text-danger" aria-hidden />}
-          title="Could not load data"
+          title={state.title}
           body={state.message}
           action={
             <Button variant="primary" onPress={state.onRetry}>
@@ -119,12 +148,13 @@ export function StateView({ state, children }: StateViewProps): ReactNode {
     case "daemon-offline":
       return (
         <Panel
+          size={size}
           role="alert"
           icon={<ServerOff className="size-6 text-warning" aria-hidden />}
           title="Daemon not running"
-          body="TokenMtr needs its background daemon to scan your agent sessions."
+          body={`${APP_NAME} needs its background daemon to scan your agent sessions.`}
           action={
-            <Button variant="primary" onPress={state.onStartDaemon}>
+            <Button variant="primary" onPress={state.onStartDaemon} isPending={state.isPending}>
               Install / start daemon
             </Button>
           }
@@ -133,12 +163,13 @@ export function StateView({ state, children }: StateViewProps): ReactNode {
     case "incompatible":
       return (
         <Panel
+          size={size}
           role="alert"
           icon={<Download className="size-6 text-warning" aria-hidden />}
           title="Update required"
           body={`The app is ${state.appVersion} but the daemon is ${state.daemonVersion}. Restart the daemon after updating so both run the same version.`}
           action={
-            <Button variant="primary" onPress={state.onRestartDaemon}>
+            <Button variant="primary" onPress={state.onRestartDaemon} isPending={state.isPending}>
               Restart daemon
             </Button>
           }
@@ -165,7 +196,11 @@ export function StateView({ state, children }: StateViewProps): ReactNode {
           <Banner
             icon={<Clock className="size-4 shrink-0 text-warning" aria-hidden />}
             text={`Last scan ${state.lastScan}. Data may be out of date.`}
-            action={<Button onPress={state.onScanNow}>Scan now</Button>}
+            action={
+              <Button onPress={state.onScanNow} isPending={state.isPending}>
+                Scan now
+              </Button>
+            }
           />
           {children}
         </div>

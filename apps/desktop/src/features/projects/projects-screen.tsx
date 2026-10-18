@@ -1,21 +1,23 @@
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { useFilters } from "../../app/use-filters";
 import { useDataAction } from "../../shared/actions";
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
-import { formatDateTime, formatTokens } from "../../shared/format";
 import {
-  NO_USAGE_COPY,
-  queryViewState,
-  useBranches,
-  useProjects,
-  useUnresolvedCwds,
-} from "../../shared/queries";
+  type Currency,
+  formatCount,
+  formatDateTime,
+  formatPercent,
+  formatTokens,
+} from "../../shared/format";
+import { useBranches, useOverview, useProjects, useUnresolvedCwds } from "../../shared/queries";
 import { RankedBars } from "../../shared/ranked-bars";
-import type { ProjectRow } from "../../shared/schemas";
-import { StateView } from "../../shared/state-view";
+import { CardRemote, NO_USAGE_COPY, RemoteView } from "../../shared/remote-view";
+import type { ProjectRow, UnresolvedCwd } from "../../shared/schemas";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
+import { joinRemotes, toRemote } from "../../shared/use-remote";
 
 const NO_CLIENT = "No client";
 
@@ -31,88 +33,102 @@ export function groupByClient(rows: readonly ProjectRow[]): [string, ProjectRow[
 
 function ProjectBars(props: {
   readonly rows: readonly ProjectRow[];
+  readonly currency: Currency;
   readonly label: string;
   readonly onOpen: (project: string) => void;
 }): ReactNode {
-  const { filters } = useFilters();
   return (
     <RankedBars
       label={props.label}
-      items={props.rows.map((row) => ({
-        key: row.project ?? "(none)",
-        label: row.name ?? row.project ?? "No project",
-        value: (
-          <Amount
-            micros={row.api_value_micros}
-            currency={filters.currency}
-            approximate={row.approximate}
-          />
-        ),
-        percent: row.share_percent,
-        detail: `${row.share_percent.toFixed(0)}% of cost · ${formatTokens(row.total_tokens)} tokens`,
-        ...(row.project === null ? {} : { onPress: () => props.onOpen(row.project ?? "") }),
-      }))}
+      items={props.rows.map((row) => {
+        const { project } = row;
+        return {
+          key: project ?? "(none)",
+          label: row.name ?? project ?? "No project",
+          value: (
+            <Amount
+              micros={row.api_value_micros}
+              currency={props.currency}
+              approximate={row.approximate}
+            />
+          ),
+          percent: row.share_percent,
+          detail: `${formatPercent(row.share_percent / 100)} of cost · ${formatTokens(row.total_tokens)} tokens`,
+          ...(project === null ? {} : { onPress: () => props.onOpen(project) }),
+        };
+      })}
     />
   );
 }
 
-function ProjectDetail(props: {
-  readonly project: string;
-  readonly onBack: () => void;
-}): ReactNode {
+/** One project's branches (`/projects/$project`); the filter bar's filters still apply. */
+export function ProjectDetailScreen({ project }: { readonly project: string }): ReactNode {
   const { filters } = useFilters();
-  const query = useBranches({ ...filters, project: props.project });
-  const state = queryViewState(query, (rows) => (rows.length === 0 ? NO_USAGE_COPY : null));
-  const rows = query.data ?? [];
-  const max = Math.max(1, ...rows.map((row) => row.api_value_micros));
+  const navigate = useNavigate();
+  const scoped = { ...filters, project };
+  // Branch rows carry no currency: the totals of the same request say which one answered (D27).
+  const remote = joinRemotes(
+    toRemote(useBranches(scoped)),
+    toRemote(useOverview(scoped)),
+    (rows, totals) => ({ rows, currency: totals.currency }),
+  );
   return (
     <>
       <div>
-        <Button variant="quiet" onPress={props.onBack}>
+        <Button
+          variant="quiet"
+          onPress={() =>
+            void navigate({
+              to: "/projects",
+              search: (previous: Record<string, unknown>) => previous,
+            })
+          }
+        >
           <ArrowLeft className="size-4" aria-hidden />
           All projects
         </Button>
       </div>
-      <PageHeader title={props.project} summary="Cost per git branch." />
-      <StateView state={state}>
-        <Card title="Branches">
-          <RankedBars
-            label="Branches by API value"
-            items={rows.map((row) => ({
-              key: row.branch ?? "(none)",
-              label: row.branch ?? "No branch",
-              value: (
-                <Amount
-                  micros={row.api_value_micros}
-                  currency={filters.currency}
-                  approximate={row.approximate}
-                />
-              ),
-              percent: (row.api_value_micros / max) * 100,
-              detail: `${formatTokens(row.total_tokens)} tokens`,
-            }))}
-          />
-        </Card>
-      </StateView>
+      <PageHeader title={project} summary="Cost per git branch." />
+      <RemoteView
+        remote={remote}
+        emptyWhen={({ rows }) => (rows.length === 0 ? NO_USAGE_COPY : null)}
+      >
+        {({ rows, currency }) => {
+          const max = Math.max(1, ...rows.map((row) => row.api_value_micros));
+          return (
+            <Card title="Branches">
+              <RankedBars
+                label="Branches by API value"
+                items={rows.map((row) => ({
+                  key: row.branch ?? "(none)",
+                  label: row.branch ?? "No branch",
+                  value: (
+                    <Amount
+                      micros={row.api_value_micros}
+                      currency={currency}
+                      approximate={row.approximate}
+                    />
+                  ),
+                  percent: (row.api_value_micros / max) * 100,
+                  detail: `${formatTokens(row.total_tokens)} tokens`,
+                }))}
+              />
+            </Card>
+          );
+        }}
+      </RemoteView>
     </>
   );
 }
 
-function UnresolvedCard(): ReactNode {
-  const { filters } = useFilters();
+function UnresolvedTable({ rows }: { readonly rows: readonly UnresolvedCwd[] }): ReactNode {
   const { timeZone } = useAppConfig();
-  const rows = useUnresolvedCwds(filters).data ?? [];
-  const addRule = useDataAction((ds, cwd: string) => ds.addProjectRule(cwd));
-  if (rows.length === 0) {
-    return null;
-  }
-  const columns: Column<(typeof rows)[number]>[] = [
+  const addRule = useDataAction((ds, cwd: string) => ds.addProjectRule(cwd), {
+    failure: "Could not add the project rule",
+  });
+  const columns: Column<UnresolvedCwd>[] = [
     { header: "Working directory", cell: (row) => <code>{row.cwd}</code> },
-    {
-      header: "Events",
-      numeric: true,
-      cell: (row) => row.events.toLocaleString("en-US"),
-    },
+    { header: "Events", numeric: true, cell: (row) => formatCount(row.events) },
     {
       header: "API value",
       numeric: true,
@@ -125,7 +141,11 @@ function UnresolvedCard(): ReactNode {
     {
       header: "Rule",
       cell: (row) => (
-        <Button onPress={() => addRule.mutate(row.cwd)} aria-label={`Add rule for ${row.cwd}`}>
+        <Button
+          onPress={() => addRule.mutate(row.cwd)}
+          isPending={addRule.isPending && addRule.variables === row.cwd}
+          aria-label={`Add rule for ${row.cwd}`}
+        >
           Add rule
         </Button>
       ),
@@ -143,49 +163,60 @@ function UnresolvedCard(): ReactNode {
         rowKey={(row) => row.cwd}
         columns={columns}
       />
-      {addRule.error === null ? null : (
-        <p role="alert" className="text-sm text-danger">
-          {addRule.error.message}
-        </p>
-      )}
     </Card>
   );
 }
 
-function ProjectList(props: { readonly onOpen: (project: string) => void }): ReactNode {
+/** Hidden when every directory resolves; a failed read still shows, with Retry. */
+function UnresolvedCard(): ReactNode {
   const { filters } = useFilters();
-  const query = useProjects(filters);
-  const state = queryViewState(query, (rows) => (rows.length === 0 ? NO_USAGE_COPY : null));
-  const groups = groupByClient(query.data ?? []);
   return (
-    <StateView state={state}>
-      {groups.map(([client, rows]) => (
-        <Card key={client} title={client}>
-          <ProjectBars
-            rows={rows}
-            label={`${client} projects by API value`}
-            onOpen={props.onOpen}
-          />
-        </Card>
-      ))}
-      <UnresolvedCard />
-    </StateView>
+    <CardRemote title="Unresolved directories" remote={toRemote(useUnresolvedCwds(filters))}>
+      {(rows) => (rows.length === 0 ? null : <UnresolvedTable rows={rows} />)}
+    </CardRemote>
   );
 }
 
 /** Projects (PLAN §7): cost per project grouped by client, branch drilldown, unresolved cwds. */
 export function ProjectsScreen(): ReactNode {
-  const [selected, setSelected] = useState<string | null>(null);
-  if (selected !== null) {
-    return <ProjectDetail project={selected} onBack={() => setSelected(null)} />;
-  }
+  const { filters } = useFilters();
+  const navigate = useNavigate();
+  // Project rows carry no currency: the totals of the same filters say which one answered (D27).
+  const remote = joinRemotes(
+    toRemote(useProjects(filters)),
+    toRemote(useOverview(filters)),
+    (rows, totals) => ({ rows, currency: totals.currency }),
+  );
+  const open = (project: string): void => {
+    void navigate({
+      to: "/projects/$project",
+      params: { project },
+      search: (previous: Record<string, unknown>) => previous,
+    });
+  };
   return (
     <>
-      <PageHeader
-        title="Projects"
-        summary="Cost per project and client, with a branch drilldown."
-      />
-      <ProjectList onOpen={setSelected} />
+      <PageHeader to="/projects" />
+      <RemoteView
+        remote={remote}
+        emptyWhen={({ rows }) => (rows.length === 0 ? NO_USAGE_COPY : null)}
+      >
+        {({ rows, currency }) => (
+          <>
+            {groupByClient(rows).map(([client, inClient]) => (
+              <Card key={client} title={client}>
+                <ProjectBars
+                  rows={inClient}
+                  currency={currency}
+                  label={`${client} projects by API value`}
+                  onOpen={open}
+                />
+              </Card>
+            ))}
+            <UnresolvedCard />
+          </>
+        )}
+      </RemoteView>
     </>
   );
 }

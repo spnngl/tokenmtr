@@ -1,0 +1,87 @@
+{
+  "currency": "USD",
+  "events": [
+    {
+      "at": "2026-05-03T12:01:20Z",
+      "model": "claude-opus-4-1",
+      "kind": "message",
+      "git_branch": "main",
+      "total_tokens": 48210,
+      "output": 1204,
+      "api_value_micros": 912300,
+      "cost_source": "estimated"
+    },
+    {
+      "at": "2026-05-03T12:01:41Z",
+      "model": "claude-sonnet-4-5",
+      "kind": "tool_result",
+      "git_branch": "main",
+      "total_tokens": 51022,
+      "output": 310,
+      "api_value_micros": 160400,
+      "cost_source": "reported"
+    },
+    {
+      "at": "2026-05-03T13:30:02Z",
+      "model": "claude-sonnet-4-5",
+      "kind": "compaction",
+      "git_branch": null,
+      "total_tokens": 152004,
+      "output": 4012,
+      "api_value_micros": 512000,
+      "cost_source": "estimated"
+    },
+    {
+      "at": "2026-05-03T13:30:05Z",
+      "model": "claude-sonnet-4-5",
+      "kind": "branch_summary",
+      "git_branch": "feat/golden",
+      "total_tokens": 8100,
+      "output": 800,
+      "api_value_micros": 31000,
+      "cost_source": "estimated"
+    },
+    {
+      "at": "2026-05-03T13:31:00Z",
+      "model": "claude-haiku-4-5",
+      "kind": "auxiliary",
+      "git_branch": "feat/golden",
+      "total_tokens": 2100,
+      "output": 40,
+      "api_value_micros": 2400,
+      "cost_source": "estimated"
+    },
+    {
+      "at": "2026-05-03T00:00:00Z",
+      "model": "internal-preview",
+      "kind": "daily_aggregate",
+      "git_branch": null,
+      "total_tokens": 12000,
+      "output": 900,
+      "api_value_micros": 0,
+      "cost_source": "unpriced"
+    }
+  ],
+  "events_truncated": false,
+  "tool_calls": [
+    {
+      "at": "2026-05-03T12:01:35Z",
+      "tool_name": "Bash",
+      "mcp_server": null,
+      "is_error": false
+    },
+    {
+      "at": "2026-05-03T12:02:10Z",
+      "tool_name": "mcp__linear__get_issue",
+      "mcp_server": "linear",
+      "is_error": true
+    },
+    {
+      "at": "2026-05-03T12:03:00Z",
+      "tool_name": "Read",
+      "mcp_server": null,
+      "is_error": null
+    }
+  ],
+  "signals": [["2026-05-03T12:40:11Z", "api_error"], ["2026-05-03T13:30:02Z", "compaction"]]
+}

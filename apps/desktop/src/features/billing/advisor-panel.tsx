@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { formatCurrencyMicros } from "../../shared/format";
+import { formatCount, formatCurrencyMicros } from "../../shared/format";
 import type { Advice, AdvisorReport } from "../../shared/schemas";
 import { Badge, type Column, DataTable, Section } from "../../shared/ui";
 import { ADVISOR_MIN_DAYS, planLabel } from "./model";
@@ -67,7 +67,7 @@ function AdviceBody({ report }: { readonly report: AdvisorReport }): ReactNode {
               value={formatCurrencyMicros(report.monthly_api_value_usd_micros, "USD")}
             />
             <Input label="Peak headroom" value={`${advice.headroom}%`} />
-            <Input label="Quota snapshots" value={report.snapshots.toLocaleString("en-US")} />
+            <Input label="Quota snapshots" value={formatCount(report.snapshots)} />
           </dl>
           <DataTable
             caption={`Plan fit for ${report.agent} / ${report.profile}`}

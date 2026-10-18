@@ -3,40 +3,18 @@
  * zones are always passed explicitly (D8), never read from the system.
  */
 
-const LOCALE = "en-US";
+/** The one display locale (D8): figures and text ordering never depend on the machine. */
+export const LOCALE = "en-US";
 const MICROS_PER_UNIT = 1_000_000;
 const MICROS_PER_CENT = MICROS_PER_UNIT / 100;
-const PLACEHOLDER = "\u2014";
+/** Shown where a value does not exist (no fee, no data), never `0`. */
+export const PLACEHOLDER = "\u2014";
 
 export const CURRENCIES = ["USD", "EUR"] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
 /** `YYYY-MM-DD`, a UTC calendar date. Lexicographic order is chronological order. */
 export type IsoDate = string;
-
-export interface FxRate {
-  readonly date: IsoDate;
-  readonly eurPerUsd: number;
-}
-
-/**
- * EUR-per-USD rates (D27).
- * - `fixed`: `fx.fixed_eur_per_usd` overrides the ECB; every figure is exact.
- * - `ecb`: `rates` sorted ascending by date. `offline` is true while the daemon cannot refresh
- *   them, so the table may end before the event date.
- */
-export type Fx =
-  | { readonly kind: "fixed"; readonly eurPerUsd: number }
-  | { readonly kind: "ecb"; readonly rates: readonly FxRate[]; readonly offline: boolean };
-
-export type MoneyText =
-  | { readonly approximate: false; readonly text: string }
-  | {
-      readonly approximate: true;
-      readonly text: string;
-      /** `offline`: last known rate used; `before-first-rate`: earliest rate used; `no-rate`: none. */
-      readonly reason: "offline" | "before-first-rate" | "no-rate";
-    };
 
 const moneyFormats = new Map<Currency, Intl.NumberFormat>();
 
@@ -65,76 +43,34 @@ function formatCents(cents: number, currency: Currency): string {
   return moneyFormat(currency).format(cents / 100);
 }
 
-/** Latest rate dated strictly before `date`, plus whether it is the table's last entry. */
-function rateBefore(
-  rates: readonly FxRate[],
-  date: IsoDate,
-): { readonly rate: FxRate; readonly isLast: boolean } | undefined {
-  let found: { readonly rate: FxRate; readonly isLast: boolean } | undefined;
-  rates.forEach((rate, index) => {
-    if (rate.date < date) {
-      found = { rate, isLast: index === rates.length - 1 };
-    }
-  });
-  return found;
-}
-
 /**
- * Formats a USD amount in the display currency.
+ * Formats an amount the backend already converted into `currency`: query results carry
+ * `*_micros` plus the root `currency` they are expressed in, which is USD when EUR was asked for
+ * but no FX rate exists (D27). Label money with that `currency`, never with the one requested.
  *
- * `amountUsdMicros` is a safe-integer `number`, not a `bigint`: the store keeps `i64`
- * micro-USD (D7) and Tauri's JSON bridge delivers it as a JSON number, which `bigint` could not
- * represent without a custom parser. 2^53 micro-USD is about 9 billion USD, far beyond any
- * usage total, and the Zod boundary schema rejects anything not a safe integer.
+ * `micros` is a safe-integer `number`, not a `bigint`: the store keeps `i64` micro-units (D7)
+ * and Tauri's JSON bridge delivers a JSON number. 2^53 micro-units is about 9 billion, far beyond
+ * any usage total, and the Zod boundary schema rejects anything not a safe integer.
  *
- * EUR uses the latest rate dated strictly before `date` (D27), the event's UTC date. The result
- * is `approximate` when that rate is the last known one while rates cannot be refreshed, or
- * when `date` precedes every known rate.
- */
-export function formatMoney(
-  amountUsdMicros: number,
-  date: IsoDate,
-  currency: Currency,
-  fx: Fx,
-): MoneyText {
-  if (currency === "USD") {
-    const cents = roundHalfAwayFromZero(amountUsdMicros / MICROS_PER_CENT);
-    return { approximate: false, text: formatCents(cents, "USD") };
-  }
-  if (fx.kind === "fixed") {
-    const cents = roundHalfAwayFromZero((amountUsdMicros * fx.eurPerUsd) / MICROS_PER_CENT);
-    return { approximate: false, text: formatCents(cents, "EUR") };
-  }
-  const before = rateBefore(fx.rates, date);
-  const first = fx.rates[0];
-  const used = before?.rate ?? first;
-  if (used === undefined) {
-    return { approximate: true, text: PLACEHOLDER, reason: "no-rate" };
-  }
-  const cents = roundHalfAwayFromZero((amountUsdMicros * used.eurPerUsd) / MICROS_PER_CENT);
-  const text = formatCents(cents, "EUR");
-  if (before === undefined) {
-    return { approximate: true, text, reason: "before-first-rate" };
-  }
-  if (fx.offline && before.isLast) {
-    return { approximate: true, text, reason: "offline" };
-  }
-  return { approximate: false, text };
-}
-
-/**
- * Formats an amount the backend already converted into `currency` (query results carry
- * `*_micros` plus a root `currency`). Unlike `formatMoney` it applies no FX rate.
+ * The locale stays `en-US` for every currency ("€1,234.50"): one fixed locale keeps figures
+ * deterministic across machines (D8).
  */
 export function formatCurrencyMicros(micros: number, currency: Currency): string {
   return formatCents(roundHalfAwayFromZero(micros / MICROS_PER_CENT), currency);
+}
+
+const countFormat = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 });
+
+/** A whole count with grouping: `12345` -> "12,345". */
+export function formatCount(count: number): string {
+  return Number.isFinite(count) ? countFormat.format(count) : PLACEHOLDER;
 }
 
 const TOKEN_UNITS = ["", "K", "M", "B", "T"] as const;
 
 /** ROI is API value over fees paid: "4.0×"; `null` (no fee to compare with) is a dash. */
 export function formatRoiMultiple(roi: number | null): string {
-  return roi === null ? "—" : `${roi.toFixed(1)}×`;
+  return roi === null ? PLACEHOLDER : `${roi.toFixed(1)}×`;
 }
 
 /** `999` -> "999", `1_234` -> "1.2K", `3_400_000` -> "3.4M". One decimal, trailing `.0` dropped. */
@@ -250,14 +186,6 @@ function zonedParts(instantMs: number, timeZone: string): Record<string, string>
 export function formatDay(instantMs: number, timeZone: string): IsoDate {
   const { year, month, day } = zonedParts(instantMs, timeZone);
   return `${year}-${month}-${day}`;
-}
-
-/**
- * Wall-clock hour bucket of an instant in `timeZone`, as `HH:00` (24h).
- * @throws {RangeError} when `timeZone` is not a valid IANA zone.
- */
-export function formatHour(instantMs: number, timeZone: string): string {
-  return `${zonedParts(instantMs, timeZone).hour}:00`;
 }
 
 /**

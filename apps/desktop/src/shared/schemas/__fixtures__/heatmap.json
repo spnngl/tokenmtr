@@ -1,0 +1,1181 @@
+{
+  "currency": "USD",
+  "cells": [
+    {
+      "weekday": 1,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 9,
+      "events": 4,
+      "total_tokens": 224400,
+      "api_value_micros": 401200
+    },
+    {
+      "weekday": 1,
+      "hour": 10,
+      "events": 7,
+      "total_tokens": 392700,
+      "api_value_micros": 702100
+    },
+    {
+      "weekday": 1,
+      "hour": 11,
+      "events": 10,
+      "total_tokens": 561000,
+      "api_value_micros": 1003000
+    },
+    {
+      "weekday": 1,
+      "hour": 12,
+      "events": 13,
+      "total_tokens": 729300,
+      "api_value_micros": 1303900
+    },
+    {
+      "weekday": 1,
+      "hour": 13,
+      "events": 16,
+      "total_tokens": 897600,
+      "api_value_micros": 1604800
+    },
+    {
+      "weekday": 1,
+      "hour": 14,
+      "events": 19,
+      "total_tokens": 1065900,
+      "api_value_micros": 1905700
+    },
+    {
+      "weekday": 1,
+      "hour": 15,
+      "events": 22,
+      "total_tokens": 1234200,
+      "api_value_micros": 2206600
+    },
+    {
+      "weekday": 1,
+      "hour": 16,
+      "events": 25,
+      "total_tokens": 1402500,
+      "api_value_micros": 2507500
+    },
+    {
+      "weekday": 1,
+      "hour": 17,
+      "events": 28,
+      "total_tokens": 1570800,
+      "api_value_micros": 2808400
+    },
+    {
+      "weekday": 1,
+      "hour": 18,
+      "events": 31,
+      "total_tokens": 1739100,
+      "api_value_micros": 3109300
+    },
+    {
+      "weekday": 1,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 1,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 1,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 1,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 1,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 9,
+      "events": 5,
+      "total_tokens": 280500,
+      "api_value_micros": 501500
+    },
+    {
+      "weekday": 2,
+      "hour": 10,
+      "events": 8,
+      "total_tokens": 448800,
+      "api_value_micros": 802400
+    },
+    {
+      "weekday": 2,
+      "hour": 11,
+      "events": 11,
+      "total_tokens": 617100,
+      "api_value_micros": 1103300
+    },
+    {
+      "weekday": 2,
+      "hour": 12,
+      "events": 14,
+      "total_tokens": 785400,
+      "api_value_micros": 1404200
+    },
+    {
+      "weekday": 2,
+      "hour": 13,
+      "events": 17,
+      "total_tokens": 953700,
+      "api_value_micros": 1705100
+    },
+    {
+      "weekday": 2,
+      "hour": 14,
+      "events": 20,
+      "total_tokens": 1122000,
+      "api_value_micros": 2006000
+    },
+    {
+      "weekday": 2,
+      "hour": 15,
+      "events": 23,
+      "total_tokens": 1290300,
+      "api_value_micros": 2306900
+    },
+    {
+      "weekday": 2,
+      "hour": 16,
+      "events": 26,
+      "total_tokens": 1458600,
+      "api_value_micros": 2607800
+    },
+    {
+      "weekday": 2,
+      "hour": 17,
+      "events": 29,
+      "total_tokens": 1626900,
+      "api_value_micros": 2908700
+    },
+    {
+      "weekday": 2,
+      "hour": 18,
+      "events": 32,
+      "total_tokens": 1795200,
+      "api_value_micros": 3209600
+    },
+    {
+      "weekday": 2,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 2,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 2,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 2,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 2,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 9,
+      "events": 6,
+      "total_tokens": 336600,
+      "api_value_micros": 601800
+    },
+    {
+      "weekday": 3,
+      "hour": 10,
+      "events": 9,
+      "total_tokens": 504900,
+      "api_value_micros": 902700
+    },
+    {
+      "weekday": 3,
+      "hour": 11,
+      "events": 12,
+      "total_tokens": 673200,
+      "api_value_micros": 1203600
+    },
+    {
+      "weekday": 3,
+      "hour": 12,
+      "events": 15,
+      "total_tokens": 841500,
+      "api_value_micros": 1504500
+    },
+    {
+      "weekday": 3,
+      "hour": 13,
+      "events": 18,
+      "total_tokens": 1009800,
+      "api_value_micros": 1805400
+    },
+    {
+      "weekday": 3,
+      "hour": 14,
+      "events": 21,
+      "total_tokens": 1178100,
+      "api_value_micros": 2106300
+    },
+    {
+      "weekday": 3,
+      "hour": 15,
+      "events": 24,
+      "total_tokens": 1346400,
+      "api_value_micros": 2407200
+    },
+    {
+      "weekday": 3,
+      "hour": 16,
+      "events": 27,
+      "total_tokens": 1514700,
+      "api_value_micros": 2708100
+    },
+    {
+      "weekday": 3,
+      "hour": 17,
+      "events": 30,
+      "total_tokens": 1683000,
+      "api_value_micros": 3009000
+    },
+    {
+      "weekday": 3,
+      "hour": 18,
+      "events": 33,
+      "total_tokens": 1851300,
+      "api_value_micros": 3309900
+    },
+    {
+      "weekday": 3,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 3,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 3,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 3,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 3,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 9,
+      "events": 7,
+      "total_tokens": 392700,
+      "api_value_micros": 702100
+    },
+    {
+      "weekday": 4,
+      "hour": 10,
+      "events": 10,
+      "total_tokens": 561000,
+      "api_value_micros": 1003000
+    },
+    {
+      "weekday": 4,
+      "hour": 11,
+      "events": 13,
+      "total_tokens": 729300,
+      "api_value_micros": 1303900
+    },
+    {
+      "weekday": 4,
+      "hour": 12,
+      "events": 16,
+      "total_tokens": 897600,
+      "api_value_micros": 1604800
+    },
+    {
+      "weekday": 4,
+      "hour": 13,
+      "events": 19,
+      "total_tokens": 1065900,
+      "api_value_micros": 1905700
+    },
+    {
+      "weekday": 4,
+      "hour": 14,
+      "events": 22,
+      "total_tokens": 1234200,
+      "api_value_micros": 2206600
+    },
+    {
+      "weekday": 4,
+      "hour": 15,
+      "events": 25,
+      "total_tokens": 1402500,
+      "api_value_micros": 2507500
+    },
+    {
+      "weekday": 4,
+      "hour": 16,
+      "events": 28,
+      "total_tokens": 1570800,
+      "api_value_micros": 2808400
+    },
+    {
+      "weekday": 4,
+      "hour": 17,
+      "events": 31,
+      "total_tokens": 1739100,
+      "api_value_micros": 3109300
+    },
+    {
+      "weekday": 4,
+      "hour": 18,
+      "events": 34,
+      "total_tokens": 1907400,
+      "api_value_micros": 3410200
+    },
+    {
+      "weekday": 4,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 4,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 4,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 4,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 4,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 9,
+      "events": 8,
+      "total_tokens": 448800,
+      "api_value_micros": 802400
+    },
+    {
+      "weekday": 5,
+      "hour": 10,
+      "events": 11,
+      "total_tokens": 617100,
+      "api_value_micros": 1103300
+    },
+    {
+      "weekday": 5,
+      "hour": 11,
+      "events": 14,
+      "total_tokens": 785400,
+      "api_value_micros": 1404200
+    },
+    {
+      "weekday": 5,
+      "hour": 12,
+      "events": 17,
+      "total_tokens": 953700,
+      "api_value_micros": 1705100
+    },
+    {
+      "weekday": 5,
+      "hour": 13,
+      "events": 20,
+      "total_tokens": 1122000,
+      "api_value_micros": 2006000
+    },
+    {
+      "weekday": 5,
+      "hour": 14,
+      "events": 23,
+      "total_tokens": 1290300,
+      "api_value_micros": 2306900
+    },
+    {
+      "weekday": 5,
+      "hour": 15,
+      "events": 26,
+      "total_tokens": 1458600,
+      "api_value_micros": 2607800
+    },
+    {
+      "weekday": 5,
+      "hour": 16,
+      "events": 29,
+      "total_tokens": 1626900,
+      "api_value_micros": 2908700
+    },
+    {
+      "weekday": 5,
+      "hour": 17,
+      "events": 32,
+      "total_tokens": 1795200,
+      "api_value_micros": 3209600
+    },
+    {
+      "weekday": 5,
+      "hour": 18,
+      "events": 35,
+      "total_tokens": 1963500,
+      "api_value_micros": 3510500
+    },
+    {
+      "weekday": 5,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 5,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 5,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 5,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 5,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 9,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 10,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 11,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 12,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 13,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 14,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 15,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 16,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 17,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 18,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 6,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 6,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 6,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 6,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 0,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 1,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 2,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 3,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 4,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 5,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 6,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 7,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 8,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 9,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 10,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 11,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 12,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 13,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 14,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 15,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 16,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 17,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 18,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 19,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    },
+    {
+      "weekday": 7,
+      "hour": 20,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 7,
+      "hour": 21,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 7,
+      "hour": 22,
+      "events": 2,
+      "total_tokens": 112200,
+      "api_value_micros": 200600
+    },
+    {
+      "weekday": 7,
+      "hour": 23,
+      "events": 0,
+      "total_tokens": 0,
+      "api_value_micros": 0
+    }
+  ]
+}

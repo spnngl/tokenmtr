@@ -36,7 +36,15 @@ const ROUTES: Record<(typeof SCREENS)[number], string> = {
   settings: "/settings",
 };
 
-const STATES = ["empty", "offline", "incompatible", "onboarding", "partial", "stale"] as const;
+const STATES = [
+  "empty",
+  "error",
+  "offline",
+  "incompatible",
+  "onboarding",
+  "partial",
+  "stale",
+] as const;
 
 const VIEWPORTS = [
   { name: "1280", width: 1280, height: 800 },
@@ -76,6 +84,12 @@ for (const theme of THEMES) {
         for (const state of STATES) {
           test(`state ${state}`, async ({ page }) => {
             await page.goto(`/?mock=${state}#/`);
+            if (state === "error") {
+              // Reads retry with back-off before they report the failure.
+              await expect(page.getByRole("button", { name: "Retry" })).toBeVisible({
+                timeout: 20_000,
+              });
+            }
             await settle(page);
             await shoot(page, theme, `${viewport.name}-state-${state}`);
           });
@@ -87,6 +101,13 @@ for (const theme of THEMES) {
           await page.getByRole("button", { name: /Search/ }).click();
           await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
           await shoot(page, theme, `${viewport.name}-palette`);
+        });
+
+        test("project drilldown", async ({ page }) => {
+          await page.goto("/?mock=populated#/projects/tokenmtr");
+          await expect(page.getByRole("heading", { level: 1, name: /tokenmtr/ })).toBeVisible();
+          await settle(page);
+          await shoot(page, theme, `${viewport.name}-project-detail`);
         });
 
         test("session drilldown", async ({ page }) => {
@@ -107,12 +128,17 @@ for (const theme of THEMES) {
     test.describe("recap 360px", () => {
       test.use({ viewport: { width: 360, height: 640 } });
 
-      for (const tab of ["All", "claude", "pi"] as const) {
-        test(`tab ${tab}`, async ({ page }) => {
+      const TABS = [
+        { name: "All", file: "All" },
+        { name: "Claude Code", file: "claude" },
+        { name: "pi", file: "pi" },
+      ] as const;
+      for (const tab of TABS) {
+        test(`tab ${tab.file}`, async ({ page }) => {
           await page.goto("/tray.html?mock=populated");
-          await page.getByRole("tab", { name: tab }).click();
+          await page.getByRole("tab", { name: tab.name }).click();
           await settle(page);
-          await shoot(page, theme, `360-recap-${tab}`);
+          await shoot(page, theme, `360-recap-${tab.file}`);
         });
       }
 

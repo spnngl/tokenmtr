@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { HorizontalBarChart } from "../../shared/bar-chart";
 import { topRows } from "../../shared/decimate";
 import type { Currency } from "../../shared/format";
-import { formatCurrencyMicros, formatTokens } from "../../shared/format";
+import { formatCount, formatCurrencyMicros, formatTokens } from "../../shared/format";
 import type { BranchRow } from "../../shared/schemas/usage";
 import { Amount, ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
 import { branchLabel } from "./model";
@@ -12,7 +12,7 @@ const CHART_ROWS = 10;
 function columns(currency: Currency): readonly Column<BranchRow>[] {
   return [
     { header: "Branch", cell: (row) => <span className="font-medium">{branchLabel(row)}</span> },
-    { header: "Events", numeric: true, cell: (row) => row.events.toLocaleString("en-US") },
+    { header: "Events", numeric: true, cell: (row) => formatCount(row.events) },
     { header: "Tokens", numeric: true, cell: (row) => formatTokens(row.total_tokens) },
     {
       header: "API value",

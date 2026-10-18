@@ -3,12 +3,14 @@ import { type ReactNode, useState } from "react";
 import { ReportsScreen, type SaveStatus } from "../../features/reports/reports-screen";
 import { type ReportRequest, toReportSpec } from "../../features/reports/request";
 import { printHtml } from "../../features/reports/save";
+import { useDataAction } from "../../shared/actions";
 import { useAppConfig, useDataSource } from "../../shared/app-context";
+import { errorText } from "../../shared/errors";
 import type { Filters } from "../../shared/filters";
 import { formatDay } from "../../shared/format";
 import { useFilterOptions } from "../../shared/queries";
 import type { ReportScope } from "../../shared/schemas";
-import { toRemote, useDaemonGate } from "../../shared/use-remote";
+import { toRemote } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 function scopeOf(filters: Filters): ReportScope {
@@ -26,7 +28,6 @@ export function ReportsRoute(): ReactNode {
   const { filters } = useFilters();
   const dataSource = useDataSource();
   const options = useFilterOptions();
-  const gate = useDaemonGate();
   const { timeZone, now } = useAppConfig();
   const [edited, setEdited] = useState<ReportRequest | null>(null);
   const request: ReportRequest = edited ?? {
@@ -38,13 +39,17 @@ export function ReportsRoute(): ReactNode {
   const spec = toReportSpec(request, formatDay(now(), timeZone));
   const preview = toRemote(
     useQuery({ queryKey: ["report", spec], queryFn: () => dataSource.generateReport(spec) }),
-    gate,
   );
+  // Saving reports its outcome inline (the saved path stays visible); printing through a toast.
   const save = useMutation({ mutationFn: () => dataSource.saveReport(spec) });
+  const print = useDataAction(
+    async (ds) => printHtml(await ds.generateReport({ ...spec, format: "html" })),
+    { failure: "Could not prepare the report for printing", refetch: false },
+  );
   const saveStatus: SaveStatus = save.isPending
     ? { kind: "saving" }
     : save.isError
-      ? { kind: "error", message: save.error.message }
+      ? { kind: "error", message: errorText(save.error).message }
       : typeof save.data === "string"
         ? { kind: "saved", path: save.data }
         : { kind: "idle" };
@@ -62,9 +67,8 @@ export function ReportsRoute(): ReactNode {
       preview={preview}
       onSave={() => save.mutate()}
       saveStatus={saveStatus}
-      onPrint={() => {
-        void dataSource.generateReport({ ...spec, format: "html" }).then(printHtml);
-      }}
+      onPrint={() => print.mutate()}
+      isPrinting={print.isPending}
     />
   );
 }

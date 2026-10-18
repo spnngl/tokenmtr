@@ -1,0 +1,5 @@
+{
+  "format": "csv",
+  "filename": "tokenmtr-tokenmtr-2026-05-01-2026-05-30.csv",
+  "content": "date,agent,model,events,total_tokens,api_value_usd\n2026-05-01,claude,claude-sonnet-4-5,42,1834500,3.412000\n"
+}

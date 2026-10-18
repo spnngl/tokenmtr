@@ -1,5 +1,6 @@
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
+import { formatCount } from "../../shared/format";
 import { type Remote, RemoteView } from "../../shared/remote-view";
 import type { SystemHealth } from "../../shared/schemas";
 import { Badge, type Column, DataTable, PageHeader, Section } from "../../shared/ui";
@@ -8,16 +9,12 @@ import { SinkCard } from "./sink-card";
 
 interface ExportScreenProps {
   readonly remote: Remote<SystemHealth>;
-  /** Runs an export of every enabled sink now; rejects with an `Error` the screen shows. */
-  readonly onExportNow: () => Promise<void>;
+  /** Runs an export of every enabled sink now; the app's toasts report the outcome. */
+  readonly onExportNow: () => void;
+  /** An export started by `onExportNow` is running. */
+  readonly isExporting: boolean;
   readonly timeZone: string;
 }
-
-type Action =
-  | { readonly kind: "idle" }
-  | { readonly kind: "running" }
-  | { readonly kind: "done" }
-  | { readonly kind: "failed"; readonly message: string };
 
 function datasetColumns(timeZone: string): readonly Column<DatasetStatus>[] {
   return [
@@ -31,7 +28,7 @@ function datasetColumns(timeZone: string): readonly Column<DatasetStatus>[] {
     {
       header: "Rows",
       numeric: true,
-      cell: (dataset) => dataset.lastRun?.rows.toLocaleString("en-US") ?? "n/a",
+      cell: (dataset) => (dataset.lastRun === null ? "n/a" : formatCount(dataset.lastRun.rows)),
     },
     {
       header: "Result",
@@ -50,25 +47,14 @@ function datasetColumns(timeZone: string): readonly Column<DatasetStatus>[] {
 function ExportBody({
   health,
   onExportNow,
+  isExporting,
   timeZone,
 }: {
   readonly health: SystemHealth;
-  readonly onExportNow: () => Promise<void>;
+  readonly onExportNow: () => void;
+  readonly isExporting: boolean;
   readonly timeZone: string;
 }): ReactNode {
-  const [action, setAction] = useState<Action>({ kind: "idle" });
-  const run = (): void => {
-    setAction({ kind: "running" });
-    onExportNow().then(
-      () => setAction({ kind: "done" }),
-      (error: unknown) =>
-        setAction({
-          kind: "failed",
-          message: error instanceof Error ? error.message : "Export failed",
-        }),
-    );
-  };
-  const busy = action.kind === "running";
   return (
     <div className="flex flex-col gap-8">
       {health.daemon.state === "running" ? null : (
@@ -81,24 +67,20 @@ function ExportBody({
         title="Sinks"
         description="Where your usage data is mirrored, and whether each copy is up to date."
         actions={
-          <Button variant="primary" isDisabled={busy} onPress={run}>
-            {busy ? "Exporting" : "Export now"}
+          <Button variant="primary" isPending={isExporting} onPress={onExportNow}>
+            Export now
           </Button>
         }
       >
-        {action.kind === "done" ? (
-          <p role="status" className="text-sm">
-            Export finished.
-          </p>
-        ) : null}
-        {action.kind === "failed" ? (
-          <p role="alert" className="text-sm text-danger">
-            {action.message}
-          </p>
-        ) : null}
         <ul className="flex flex-col gap-3">
           {health.sinks.map((sink) => (
-            <SinkCard key={sink.sink} sink={sink} timeZone={timeZone} onRetry={run} busy={busy} />
+            <SinkCard
+              key={sink.sink}
+              sink={sink}
+              timeZone={timeZone}
+              onRetry={onExportNow}
+              busy={isExporting}
+            />
           ))}
         </ul>
       </Section>
@@ -115,7 +97,12 @@ function ExportBody({
 }
 
 /** The Export page: sink health (D41), run history, datasets and the "Export now" action. */
-export function ExportScreen({ remote, onExportNow, timeZone }: ExportScreenProps): ReactNode {
+export function ExportScreen({
+  remote,
+  onExportNow,
+  isExporting,
+  timeZone,
+}: ExportScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader to="/export" />
@@ -130,7 +117,14 @@ export function ExportScreen({ remote, onExportNow, timeZone }: ExportScreenProp
             : null
         }
       >
-        {(health) => <ExportBody health={health} onExportNow={onExportNow} timeZone={timeZone} />}
+        {(health) => (
+          <ExportBody
+            health={health}
+            onExportNow={onExportNow}
+            isExporting={isExporting}
+            timeZone={timeZone}
+          />
+        )}
       </RemoteView>
     </div>
   );

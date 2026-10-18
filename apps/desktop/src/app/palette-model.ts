@@ -8,11 +8,11 @@ import { THEMES, type Theme } from "../shared/theme";
 export type PaletteDimension = "agent" | "profile" | "project" | "client" | "model";
 
 export type PaletteAction =
-  | "scan-now"
-  | "export-now"
-  | "backup-now"
-  | "toggle-currency"
-  | { readonly theme: Theme };
+  | { readonly kind: "scan-now" }
+  | { readonly kind: "export-now" }
+  | { readonly kind: "backup-now" }
+  | { readonly kind: "toggle-currency" }
+  | { readonly kind: "theme"; readonly theme: Theme };
 
 /** What choosing an item does (PLAN §7 Cmd-K: go to a screen, apply a filter, run an action). */
 export type PaletteCommand =
@@ -81,18 +81,18 @@ export function buildPaletteItems(options: FilterOptions, filters: Filters): Pal
   ]);
 
   const actions: readonly { id: string; label: string; action: PaletteAction }[] = [
-    { id: "action:scan-now", label: "Scan now", action: "scan-now" },
-    { id: "action:export-now", label: "Export now", action: "export-now" },
-    { id: "action:backup-now", label: "Back up now", action: "backup-now" },
+    { id: "action:scan-now", label: "Scan now", action: { kind: "scan-now" } },
+    { id: "action:export-now", label: "Export now", action: { kind: "export-now" } },
+    { id: "action:backup-now", label: "Back up now", action: { kind: "backup-now" } },
     {
       id: "action:toggle-currency",
       label: `Show amounts in ${otherCurrency(filters.currency)}`,
-      action: "toggle-currency",
+      action: { kind: "toggle-currency" },
     },
     ...THEMES.map((theme) => ({
       id: `action:theme:${theme}`,
       label: THEME_LABELS[theme],
-      action: { theme },
+      action: { kind: "theme" as const, theme },
     })),
   ];
   const action = actions.map(
@@ -128,11 +128,10 @@ export interface PaletteEffects {
 }
 
 function runAction(action: PaletteAction, effects: PaletteEffects): void {
-  if (typeof action === "object") {
-    effects.setTheme(action.theme);
-    return;
-  }
-  switch (action) {
+  switch (action.kind) {
+    case "theme":
+      effects.setTheme(action.theme);
+      return;
     case "scan-now":
       effects.scanNow();
       return;

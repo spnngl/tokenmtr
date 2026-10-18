@@ -1,0 +1,14 @@
+[
+  {
+    "cwd": "/Users/ada/scratch/spike",
+    "events": 37,
+    "api_value_usd_micros": 2410300,
+    "last_at": "2026-05-02T21:14:09Z"
+  },
+  {
+    "cwd": "/tmp/repro-1234",
+    "events": 5,
+    "api_value_usd_micros": 180200,
+    "last_at": "2026-04-29T10:02:00Z"
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "branch": "main",
+    "events": 820,
+    "input_uncached": 180200,
+    "cache_read": 44100300,
+    "cache_write_5m": 940100,
+    "cache_write_1h": 230000,
+    "output": 810400,
+    "reasoning": 50100,
+    "total_tokens": 46261000,
+    "api_value_micros": 82400100,
+    "api_value_usd_micros": 82400100,
+    "paid_micros": 5100000,
+    "subscription_value_micros": 77300100,
+    "subscription_fee_micros": 0,
+    "reported_events": 90,
+    "estimated_events": 728,
+    "unpriced_events": 2,
+    "approximate": false
+  },
+  {
+    "branch": null,
+    "events": 64,
+    "input_uncached": 12100,
+    "cache_read": 2100400,
+    "cache_write_5m": 40200,
+    "cache_write_1h": 0,
+    "output": 30100,
+    "reasoning": 0,
+    "total_tokens": 2182800,
+    "api_value_micros": 3900200,
+    "api_value_usd_micros": 3900200,
+    "paid_micros": 0,
+    "subscription_value_micros": 3900200,
+    "subscription_fee_micros": 0,
+    "reported_events": 0,
+    "estimated_events": 64,
+    "unpriced_events": 0,
+    "approximate": false
+  }
+]

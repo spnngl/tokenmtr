@@ -6,7 +6,7 @@ import { formatPercent } from "./format";
 export type MeterLevel = "ok" | "warning" | "danger";
 
 /** Amber at >= 70%, red at >= 90% (PLAN §7). */
-export function meterLevel(usedFraction: number): MeterLevel {
+function meterLevel(usedFraction: number): MeterLevel {
   if (usedFraction >= 0.9) {
     return "danger";
   }

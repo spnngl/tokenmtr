@@ -2,7 +2,7 @@ import { useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { z } from "zod";
 import { OverviewScreen } from "../../features/overview/overview-screen";
-import { ProjectsScreen } from "../../features/projects/projects-screen";
+import { ProjectDetailScreen, ProjectsScreen } from "../../features/projects/projects-screen";
 import { QuotaScreen } from "../../features/quota/quota-screen";
 import { SessionDetailScreen } from "../../features/sessions/session-detail-screen";
 import { SessionsScreen } from "../../features/sessions/sessions-screen";
@@ -44,4 +44,20 @@ export function SessionDetailRoute(): ReactNode {
     );
   }
   return <SessionDetailScreen agent={params.data.agent} session={params.data.session} />;
+}
+
+const projectParamsSchema = z.object({ project: z.string().min(1) });
+
+export function ProjectDetailRoute(): ReactNode {
+  const params = projectParamsSchema.safeParse(useParams({ strict: false }));
+  if (!params.success) {
+    return (
+      <StateView
+        state={{ kind: "empty", title: "Project not found", hint: "The link is incomplete." }}
+      >
+        {null}
+      </StateView>
+    );
+  }
+  return <ProjectDetailScreen project={params.data.project} />;
 }

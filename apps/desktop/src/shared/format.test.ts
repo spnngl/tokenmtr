@@ -1,92 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Fx,
   formatClock,
+  formatCount,
   formatCurrencyMicros,
   formatDateTime,
   formatDay,
   formatDuration,
-  formatHour,
-  formatMoney,
   formatPercent,
   formatRelativeReset,
   formatRoiMultiple,
   formatTokens,
 } from "./format";
-
-const ecb = (offline: boolean): Fx => ({
-  kind: "ecb",
-  offline,
-  rates: [
-    { date: "2026-03-02", eurPerUsd: 0.9 },
-    { date: "2026-03-03", eurPerUsd: 0.8 },
-  ],
-});
-
-describe("formatMoney", () => {
-  it("formats USD micros as exact dollars", () => {
-    expect(formatMoney(1_234_560_000, "2026-03-04", "USD", ecb(false))).toEqual({
-      approximate: false,
-      text: "$1,234.56",
-    });
-  });
-
-  it("formats zero without a sign", () => {
-    expect(formatMoney(0, "2026-03-04", "USD", ecb(false)).text).toBe("$0.00");
-    expect(formatMoney(-1, "2026-03-04", "USD", ecb(false)).text).toBe("$0.00");
-  });
-
-  it("rounds half away from zero on cents", () => {
-    expect(formatMoney(5_000, "2026-03-04", "USD", ecb(false)).text).toBe("$0.01");
-    expect(formatMoney(4_999, "2026-03-04", "USD", ecb(false)).text).toBe("$0.00");
-    expect(formatMoney(-5_000, "2026-03-04", "USD", ecb(false)).text).toBe("-$0.01");
-  });
-
-  it("formats negative amounts", () => {
-    expect(formatMoney(-2_500_000, "2026-03-04", "USD", ecb(false)).text).toBe("-$2.50");
-  });
-
-  it("converts to EUR with the latest rate dated strictly before the event date", () => {
-    // 2026-03-03 must use the 03-02 rate (0.9), not its own 03-03 rate.
-    expect(formatMoney(10_000_000, "2026-03-03", "EUR", ecb(false))).toEqual({
-      approximate: false,
-      text: "€9.00",
-    });
-    expect(formatMoney(10_000_000, "2026-03-04", "EUR", ecb(false)).text).toBe("€8.00");
-  });
-
-  it("uses a fixed rate exactly", () => {
-    expect(
-      formatMoney(10_000_000, "2026-03-04", "EUR", { kind: "fixed", eurPerUsd: 0.92 }),
-    ).toEqual({ approximate: false, text: "€9.20" });
-  });
-
-  it("flags the last known rate as approximate while offline", () => {
-    expect(formatMoney(10_000_000, "2026-03-09", "EUR", ecb(true))).toEqual({
-      approximate: true,
-      reason: "offline",
-      text: "€8.00",
-    });
-  });
-
-  it("does not flag older rates while offline", () => {
-    expect(formatMoney(10_000_000, "2026-03-03", "EUR", ecb(true)).approximate).toBe(false);
-  });
-
-  it("flags events before the first rate", () => {
-    expect(formatMoney(10_000_000, "2026-01-01", "EUR", ecb(false))).toEqual({
-      approximate: true,
-      reason: "before-first-rate",
-      text: "€9.00",
-    });
-  });
-
-  it("reports a missing rate table", () => {
-    expect(
-      formatMoney(10_000_000, "2026-03-04", "EUR", { kind: "ecb", rates: [], offline: false }),
-    ).toEqual({ approximate: true, reason: "no-rate", text: "\u2014" });
-  });
-});
 
 describe("formatTokens", () => {
   it.each([
@@ -150,14 +74,14 @@ describe("time zone bucketing (D8)", () => {
   });
 
   it("skips the non-existent local hour", () => {
-    expect(formatHour(Date.parse("2026-03-29T00:59:00Z"), paris)).toBe("01:00");
-    expect(formatHour(Date.parse("2026-03-29T01:00:00Z"), paris)).toBe("03:00");
+    expect(formatClock(Date.parse("2026-03-29T00:59:00Z"), paris)).toBe("01:59");
+    expect(formatClock(Date.parse("2026-03-29T01:00:00Z"), paris)).toBe("03:00");
   });
 
   it("repeats the local hour on the fall-back day", () => {
     // 2026-10-25: CEST (+2) becomes CET (+1) at 01:00 UTC.
-    expect(formatHour(Date.parse("2026-10-25T00:30:00Z"), paris)).toBe("02:00");
-    expect(formatHour(Date.parse("2026-10-25T01:30:00Z"), paris)).toBe("02:00");
+    expect(formatClock(Date.parse("2026-10-25T00:30:00Z"), paris)).toBe("02:30");
+    expect(formatClock(Date.parse("2026-10-25T01:30:00Z"), paris)).toBe("02:30");
   });
 
   it("formats wall-clock time", () => {
@@ -178,7 +102,18 @@ describe("formatCurrencyMicros", () => {
 
   it("rounds half away from zero and never prints a negative zero", () => {
     expect(formatCurrencyMicros(5_000, "USD")).toBe("$0.01");
+    expect(formatCurrencyMicros(4_999, "USD")).toBe("$0.00");
+    expect(formatCurrencyMicros(-5_000, "USD")).toBe("-$0.01");
     expect(formatCurrencyMicros(-4_000, "USD")).toBe("$0.00");
+    expect(formatCurrencyMicros(-2_500_000, "EUR")).toBe("-€2.50");
+  });
+});
+
+describe("formatCount", () => {
+  it("groups thousands and dashes a non-number", () => {
+    expect(formatCount(12_345)).toBe("12,345");
+    expect(formatCount(0)).toBe("0");
+    expect(formatCount(Number.NaN)).toBe("\u2014");
   });
 });
 

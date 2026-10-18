@@ -11,7 +11,8 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { AppProvider, bootstrapConfig } from "../../shared/app-context";
+import { bootstrapConfig } from "../../shared/app-context";
+import { AppProvider } from "../../shared/app-provider";
 import { axeViolations } from "../../shared/axe";
 import { createMockDataSource, type MockScenario } from "../../shared/mock";
 import { BillingRoute } from "./billing";
@@ -36,16 +37,16 @@ async function mount(
   });
   await router.load();
   return render(
-    <AppProvider
-      config={{ ...bootstrapConfig, timeZone: "Europe/Paris" }}
-      dataSource={createMockDataSource({ scenario, onAction })}
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <QueryClientProvider
-        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      <AppProvider
+        config={{ ...bootstrapConfig, timeZone: "Europe/Paris" }}
+        dataSource={createMockDataSource({ scenario, onAction })}
       >
         <RouterProvider router={router} />
-      </QueryClientProvider>
-    </AppProvider>,
+      </AppProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -66,11 +67,6 @@ describe.each(ROUTES)("$name route states", ({ component }) => {
   it("error offers Retry", async () => {
     await mount(component, "error");
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
-  });
-
-  it("daemon offline offers to start it", async () => {
-    await mount(component, "offline");
-    expect(await screen.findByRole("button", { name: "Install / start daemon" })).toBeTruthy();
   });
 
   it("populated is accessible", async () => {

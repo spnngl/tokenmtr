@@ -1,0 +1,6 @@
+{
+  "kind": "ready",
+  "last_scan_at": "2026-05-03T14:10:00Z",
+  "scan_interval_secs": 300,
+  "failed_collectors": 1
+}

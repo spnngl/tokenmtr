@@ -1,0 +1,7 @@
+{
+  "agents": ["claude", "pi"],
+  "profiles": ["default", "work"],
+  "models": ["claude-opus-4-1", "claude-sonnet-4-5", "gpt-5"],
+  "projects": ["tokenmtr", "acme-web"],
+  "clients": ["Acme Corp"]
+}

@@ -1,0 +1,77 @@
+{
+  "currency": "USD",
+  "bucket": "day",
+  "group_by": "project",
+  "points": [
+    {
+      "start": "2026-05-02",
+      "minutes": 1440,
+      "events": 610,
+      "input_uncached": 140200,
+      "cache_read": 32100400,
+      "cache_write_5m": 700100,
+      "cache_write_1h": 170000,
+      "output": 620300,
+      "reasoning": 40100,
+      "total_tokens": 33731000,
+      "api_value_micros": 61200400,
+      "api_value_usd_micros": 61200400,
+      "paid_micros": 4100000,
+      "subscription_value_micros": 57100400,
+      "subscription_fee_micros": 3333333,
+      "reported_events": 70,
+      "estimated_events": 538,
+      "unpriced_events": 2,
+      "approximate": false,
+      "cumulative_api_value_micros": 61200400,
+      "cumulative_paid_micros": 4100000,
+      "groups": {
+        "(none)": {
+          "total_tokens": 1231000,
+          "api_value_micros": 2100400,
+          "paid_micros": 0
+        },
+        "tokenmtr": {
+          "total_tokens": 32500000,
+          "api_value_micros": 59100000,
+          "paid_micros": 4100000
+        }
+      }
+    },
+    {
+      "start": "2026-05-03",
+      "minutes": 1440,
+      "events": 422,
+      "input_uncached": 98100,
+      "cache_read": 22040100,
+      "cache_write_5m": 480200,
+      "cache_write_1h": 110000,
+      "output": 401200,
+      "reasoning": 30200,
+      "total_tokens": 23129600,
+      "api_value_micros": 41800300,
+      "api_value_usd_micros": 41800300,
+      "paid_micros": 2900000,
+      "subscription_value_micros": 38900300,
+      "subscription_fee_micros": 3333333,
+      "reported_events": 52,
+      "estimated_events": 369,
+      "unpriced_events": 1,
+      "approximate": true,
+      "cumulative_api_value_micros": 103000700,
+      "cumulative_paid_micros": 7000000,
+      "groups": {
+        "acme-web": {
+          "total_tokens": 4129600,
+          "api_value_micros": 7800300,
+          "paid_micros": 2900000
+        },
+        "tokenmtr": {
+          "total_tokens": 19000000,
+          "api_value_micros": 34000000,
+          "paid_micros": 0
+        }
+      }
+    }
+  ]
+}

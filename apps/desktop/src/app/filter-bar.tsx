@@ -102,7 +102,7 @@ function CustomRangeFields(props: {
 /** Filters bound to the URL search params (PLAN §7): shareable and restorable views. */
 export function FilterBar(): ReactNode {
   const { filters, issues, setFilters } = useFilters();
-  const { timeZone } = useAppConfig();
+  const { timeZone, now } = useAppConfig();
   const { data } = useFilterOptions();
   const options = data ?? EMPTY_FILTER_OPTIONS;
   const update = (patch: Partial<Filters>): void => setFilters({ ...filters, ...patch });
@@ -112,7 +112,7 @@ export function FilterBar(): ReactNode {
       update({ range: { kind: "preset", preset: choice } });
       return;
     }
-    const today = formatDay(Date.now(), timeZone);
+    const today = formatDay(now(), timeZone);
     update({
       range:
         filters.range.kind === "custom"

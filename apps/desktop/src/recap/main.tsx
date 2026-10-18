@@ -2,7 +2,7 @@ import "../shared/styles.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { AppProvider } from "../shared/app-context";
+import { AppProvider } from "../shared/app-provider";
 import { subscribeToShell } from "../shared/events";
 import { createRuntime } from "../shared/runtime";
 import { ThemeProvider } from "../shared/theme";
@@ -14,19 +14,19 @@ if (root === null) {
 }
 
 const queryClient = new QueryClient();
-const runtime = await createRuntime(window.location.search);
+const runtime = createRuntime(window.location.search);
 if (runtime.listen !== undefined) {
-  await subscribeToShell({ listen: runtime.listen, queryClient, window: "recap" });
+  void subscribeToShell({ listen: runtime.listen, queryClient, window: "recap" });
 }
 
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <AppProvider config={runtime.config} dataSource={runtime.dataSource}>
-        <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <AppProvider config={runtime.config} dataSource={runtime.dataSource}>
           <RecapApp />
-        </QueryClientProvider>
-      </AppProvider>
+        </AppProvider>
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 );

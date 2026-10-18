@@ -8,7 +8,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
-import { type Currency, formatCurrencyMicros } from "./format";
+import { type Currency, formatCurrencyMicros, LOCALE } from "./format";
 import { type NavPath, navItem } from "./nav";
 
 /**
@@ -90,7 +90,7 @@ export function Kpi(props: {
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-md border border-border bg-surface-raised p-3">
       <dt className="text-sm text-fg-muted">{props.label}</dt>
-      <dd className="truncate text-xl font-semibold tabular-nums">{props.value}</dd>
+      <dd className="text-xl font-semibold tabular-nums [overflow-wrap:anywhere]">{props.value}</dd>
       {props.detail === undefined ? null : (
         <dd className="text-xs text-fg-muted">{props.detail}</dd>
       )}
@@ -194,7 +194,7 @@ function compare(a: number | string, b: number | string): number {
   if (typeof a === "number" && typeof b === "number") {
     return a - b;
   }
-  return String(a).localeCompare(String(b));
+  return String(a).localeCompare(String(b), LOCALE);
 }
 
 /**

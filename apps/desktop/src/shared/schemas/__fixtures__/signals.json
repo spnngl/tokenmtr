@@ -1,0 +1,28 @@
+{
+  "days": [
+    {
+      "date": "2026-05-02",
+      "api_errors": 3,
+      "compactions": 1
+    },
+    {
+      "date": "2026-05-03",
+      "api_errors": 0,
+      "compactions": 2
+    }
+  ],
+  "api_errors": 3,
+  "compactions": 3,
+  "top_sessions": [
+    {
+      "agent": "claude",
+      "session": "0b7c1d2e-5f60-4a8b-9c1d-2e3f4a5b6c7d",
+      "compactions": 2
+    },
+    {
+      "agent": "pi",
+      "session": "2026-05-02T09-14-00",
+      "compactions": 1
+    }
+  ]
+}

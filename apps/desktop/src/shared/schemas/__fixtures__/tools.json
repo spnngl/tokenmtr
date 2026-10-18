@@ -1,0 +1,30 @@
+{
+  "tools": [
+    {
+      "tool_name": "Bash",
+      "mcp_server": null,
+      "calls": 812,
+      "errors": 41,
+      "error_rate_percent": 5.05,
+      "sessions": 58
+    },
+    {
+      "tool_name": "mcp__linear__get_issue",
+      "mcp_server": "linear",
+      "calls": 24,
+      "errors": 0,
+      "error_rate_percent": 0.0,
+      "sessions": 6
+    }
+  ],
+  "mcp_servers": [
+    {
+      "tool_name": null,
+      "mcp_server": "linear",
+      "calls": 31,
+      "errors": 2,
+      "error_rate_percent": 6.45,
+      "sessions": 7
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { countSchema, dateSchema, timestampSchema } from "./primitives";
 
-export const sinkRunSchema = z.object({
+const sinkRunSchema = z.object({
   dataset: z.string(),
   started_at: timestampSchema,
   finished_at: timestampSchema,
@@ -19,7 +19,7 @@ const sinkStateShape = {
   recent_runs: z.array(sinkRunSchema),
 } as const;
 
-export const sinkHealthSchema = z.discriminatedUnion("state", [
+const sinkHealthSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("healthy"), ...sinkStateShape }),
   z.object({ state: z.literal("lagging"), ...sinkStateShape }),
   z.object({
@@ -37,10 +37,9 @@ export const daemonHealthSchema = z.object({
   last_heartbeat: timestampSchema.nullable(),
   age_secs: z.number().int().nullable(),
 });
-export type DaemonHealth = z.infer<typeof daemonHealthSchema>;
 
-export const HEALTH_LEVELS = ["ok", "warning", "error"] as const;
-export const healthLevelSchema = z.enum(HEALTH_LEVELS);
+const HEALTH_LEVELS = ["ok", "warning", "error"] as const;
+const healthLevelSchema = z.enum(HEALTH_LEVELS);
 export type HealthLevel = z.infer<typeof healthLevelSchema>;
 
 /** Worst of daemon and sinks: the menu-bar status dot. */
@@ -62,7 +61,7 @@ export const ingestStatusSchema = z.object({
 });
 export type IngestStatus = z.infer<typeof ingestStatusSchema>;
 
-export const PARSE_ISSUE_KINDS = [
+const PARSE_ISSUE_KINDS = [
   "format_drift",
   "unknown_version",
   "protected_folder",

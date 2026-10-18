@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
-import { formatCurrencyMicros } from "../../shared/format";
+import { formatCount, formatCurrencyMicros, formatRoiMultiple } from "../../shared/format";
 import type { AdvisorReport, BillingReport, SubscriptionLine } from "../../shared/schemas";
 import { Amount, Badge, type Column, DataTable, Kpi, KpiGrid, Section } from "../../shared/ui";
-import { formatRoi, planLabel, type UntrackedPlan, untrackedPlans } from "./model";
+import { planLabel, type UntrackedPlan, untrackedPlans } from "./model";
 
 interface SubscriptionsPanelProps {
   readonly report: BillingReport;
@@ -52,7 +52,7 @@ function columns(report: BillingReport): readonly Column<SubscriptionLine>[] {
         />
       ),
     },
-    { header: "ROI", numeric: true, cell: (line) => formatRoi(line.roi) },
+    { header: "ROI", numeric: true, cell: (line) => formatRoiMultiple(line.roi) },
   ];
 }
 
@@ -91,7 +91,7 @@ export function SubscriptionsPanel({
           }
           detail="What the usage costs at API rates"
         />
-        <Kpi label="ROI" value={formatRoi(report.roi)} detail="API value over fees" />
+        <Kpi label="ROI" value={formatRoiMultiple(report.roi)} detail="API value over fees" />
         <Kpi
           label="Outside subscriptions"
           value={
@@ -101,7 +101,7 @@ export function SubscriptionsPanel({
               approximate={report.api.approximate}
             />
           }
-          detail={`${report.api.events.toLocaleString("en-US")} pay-as-you-go events`}
+          detail={`${formatCount(report.api.events)} pay-as-you-go events`}
         />
       </KpiGrid>
       {report.subscriptions.length === 0 ? (

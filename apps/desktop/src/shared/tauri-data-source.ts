@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { type Command, ERROR_KINDS } from "./bindings";
+import type { Command } from "./bindings";
 import type { DashboardTarget, DataSource, NotificationPermissionState } from "./data-source";
+import { commandFailure, DataSourceError } from "./errors";
 import type { Filters } from "./filters";
 import {
   advisorReportSchema,
@@ -37,25 +38,6 @@ import {
 /** The transport: Tauri's `invoke` in the app, a stub in tests. */
 export type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
-/** A command failed or answered with a document that does not match its schema. */
-export class DataSourceError extends Error {
-  override readonly name = "DataSourceError";
-}
-
-/** A failed command as the shell serialises it (`CommandError` in `src-tauri/src/error.rs`). */
-export const commandErrorSchema = z.object({ kind: z.enum(ERROR_KINDS), message: z.string() });
-
-function describe(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  const commandError = commandErrorSchema.safeParse(error);
-  if (commandError.success) {
-    return commandError.data.message;
-  }
-  return typeof error === "string" ? error : JSON.stringify(error);
-}
-
 const notificationPermissionSchema = z.enum(["granted", "denied", "undetermined"]);
 
 /**
@@ -70,27 +52,27 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     args: Record<string, unknown>,
     schema: S,
   ): Promise<z.output<S>> {
-    let raw: unknown;
-    try {
-      raw = await invoke(command, args);
-    } catch (error) {
-      throw new DataSourceError(`${command}: ${describe(error)}`);
-    }
+    const raw = await call(command, args);
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {
-      throw new DataSourceError(
-        `${command}: unexpected response\n${z.prettifyError(parsed.error)}`,
-      );
+      const detail = z.prettifyError(parsed.error);
+      // The user sees a sentence; the field-level mismatch goes to the console for bug reports.
+      console.error(`${command}: unexpected response\n${detail}`);
+      throw new DataSourceError(command, { kind: "schema", detail });
     }
     return parsed.data;
   }
 
-  async function act(command: Command, args: Record<string, unknown> = {}): Promise<void> {
+  async function call(command: Command, args: Record<string, unknown> = {}): Promise<unknown> {
     try {
-      await invoke(command, args);
+      return await invoke(command, args);
     } catch (error) {
-      throw new DataSourceError(`${command}: ${describe(error)}`);
+      throw new DataSourceError(command, commandFailure(error));
     }
+  }
+
+  async function act(command: Command, args: Record<string, unknown> = {}): Promise<void> {
+    await call(command, args);
   }
 
   const request = (filters: Filters): Record<string, unknown> => ({

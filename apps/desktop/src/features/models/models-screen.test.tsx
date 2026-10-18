@@ -26,14 +26,15 @@ describe("ModelsScreen", () => {
 
   it("error retries", async () => {
     const onRetry = vi.fn();
-    renderScreen({ kind: "error", message: "Store is locked", onRetry });
+    renderScreen({
+      kind: "error",
+      title: "Could not read the usage database",
+      message: "Store is locked",
+      onRetry,
+    });
+    expect(screen.getByText("Store is locked")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("daemon-offline offers to start it", () => {
-    renderScreen({ kind: "daemon-offline", onStartDaemon: vi.fn() });
-    expect(screen.getByRole("button", { name: "Install / start daemon" })).toBeTruthy();
   });
 
   it("populated flags unpriced and divergent models and keeps the table complete", async () => {

@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Autocomplete,
   Dialog,
@@ -13,7 +13,7 @@ import {
   ModalOverlay,
   SearchField,
 } from "react-aria-components";
-import { useDataAction } from "../shared/actions";
+import { useBackupNow, useExportNow, useScanNow } from "../shared/actions";
 import { Button } from "../shared/button";
 import { EMPTY_FILTER_OPTIONS, useFilterOptions } from "../shared/queries";
 import { useTheme } from "../shared/theme";
@@ -37,7 +37,7 @@ interface PaletteProps {
 }
 
 /** The Cmd-K dialog: a search field filtering one grouped list; Enter or click runs the item. */
-export function Palette({ items, isOpen, onOpenChange, onChoose }: PaletteProps): ReactNode {
+function Palette({ items, isOpen, onOpenChange, onChoose }: PaletteProps): ReactNode {
   const [query, setQuery] = useState("");
   const shown = useMemo(() => filterItems(items, query), [items, query]);
   const choose = (id: PaletteItem["id"]): void => {
@@ -111,7 +111,7 @@ export function Palette({ items, isOpen, onOpenChange, onChoose }: PaletteProps)
   );
 }
 
-/** Opens on Cmd/Ctrl+K from anywhere in the app. */
+/** Opens on Cmd/Ctrl+K from anywhere in the app; `toggle` must be stable (one listener). */
 function useOpenShortcut(toggle: () => void): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -132,14 +132,15 @@ export function CommandPalette(): ReactNode {
   const { data } = useFilterOptions();
   const navigate = useNavigate();
   const { setTheme } = useTheme();
-  const scan = useDataAction((ds) => ds.scanNow());
-  const exportNow = useDataAction((ds) => ds.exportNow());
-  const backup = useDataAction((ds) => ds.backupNow());
+  // Outcomes land in the app's toast region: the palette is closed by the time they arrive.
+  const scan = useScanNow();
+  const exportNow = useExportNow();
+  const backup = useBackupNow();
   const items = useMemo(
     () => buildPaletteItems(data ?? EMPTY_FILTER_OPTIONS, filters),
     [data, filters],
   );
-  useOpenShortcut(() => setOpen((open) => !open));
+  useOpenShortcut(useCallback(() => setOpen((open) => !open), []));
 
   return (
     <>

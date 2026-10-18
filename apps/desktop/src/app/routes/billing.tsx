@@ -1,19 +1,17 @@
 import type { ReactNode } from "react";
 import { BillingScreen } from "../../features/billing/billing-screen";
-import { useDataSource } from "../../shared/app-context";
-import { useAdvisor, useBilling, useBudgets, useSettings } from "../../shared/queries";
-import { joinRemotes, toRemote, useDaemonGate } from "../../shared/use-remote";
+import { useRevealConfig } from "../../shared/actions";
+import { useAdvisor, useBilling, useBudgets } from "../../shared/queries";
+import { joinRemotes, toRemote } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 /** Billing: subscriptions, paid against API value, budgets and the plan advisor. */
 export function BillingRoute(): ReactNode {
   const { filters } = useFilters();
-  const dataSource = useDataSource();
-  const settings = useSettings();
-  const gate = useDaemonGate();
-  const report = toRemote(useBilling(filters), gate);
-  const budgets = toRemote(useBudgets(filters.currency), gate);
-  const advisor = toRemote(useAdvisor(filters), gate);
+  const revealConfig = useRevealConfig();
+  const report = toRemote(useBilling(filters));
+  const budgets = toRemote(useBudgets(filters.currency));
+  const advisor = toRemote(useAdvisor(filters));
   const remote = joinRemotes(
     joinRemotes(report, budgets, (report, budgets) => ({ report, budgets })),
     advisor,
@@ -23,11 +21,7 @@ export function BillingRoute(): ReactNode {
     <BillingScreen
       remote={remote}
       // Subscriptions live in the config file: show it where the user adds the entry.
-      onTrackPlan={() => {
-        if (settings.data !== undefined) {
-          void dataSource.revealPath(settings.data.config_path);
-        }
-      }}
+      onTrackPlan={() => revealConfig.mutate()}
     />
   );
 }

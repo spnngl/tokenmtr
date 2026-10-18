@@ -11,6 +11,15 @@ function searchOf(router: { state: { location: { searchStr: string } } }): URLSe
   return new URLSearchParams(router.state.location.searchStr);
 }
 
+/** The first match: `getAll*`/`findAll*` throw when nothing matches, so it always exists. */
+function first<T>(items: readonly T[]): T {
+  const [item] = items;
+  if (item === undefined) {
+    throw new Error("no match");
+  }
+  return item;
+}
+
 async function heading(name: string): Promise<HTMLElement> {
   return screen.findByRole("heading", { level: 1, name });
 }
@@ -40,9 +49,7 @@ describe("app gate", () => {
     await renderApp("/", { scenario: "onboarding", onAction });
     expect(await screen.findByRole("heading", { name: "Welcome to TokenMtr" })).toBeTruthy();
     expect(screen.getByText("Detected agents")).toBeTruthy();
-    await user.click(
-      screen.getAllByRole("button", { name: "Keep for 10 years" })[0] as HTMLElement,
-    );
+    await user.click(first(screen.getAllByRole("button", { name: "Keep for 10 years" })));
     await user.click(screen.getByRole("button", { name: "Install daemon" }));
     await user.click(screen.getByRole("button", { name: "Allow notifications" }));
     await waitFor(() => {
@@ -100,7 +107,7 @@ describe.each(SCREENS)("$title screen states", ({ url, title }) => {
   it("shows an error with a retry", async () => {
     await renderApp(url, { scenario: "error" });
     await heading(title);
-    expect(await screen.findByText("Could not load data")).toBeTruthy();
+    expect(await screen.findByText("Could not read the usage database")).toBeTruthy();
     expect(screen.getByText(/database is locked/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
@@ -186,7 +193,7 @@ describe("Sessions", () => {
     const user = userEvent.setup();
     await renderApp("/sessions?agent=claude&project=tokenmtr");
     const table = await screen.findByRole("region", { name: "Sessions, newest first" });
-    const link = (await within(table).findAllByRole("link"))[0] as HTMLElement;
+    const link = first(await within(table).findAllByRole("link"));
     const id = link.textContent ?? "";
     await user.click(link);
     expect(await screen.findByRole("heading", { level: 1, name: /^Session / })).toBeTruthy();
@@ -195,6 +202,7 @@ describe("Sessions", () => {
     expect(resume.textContent).toMatch(/^cd \/Users\/dev\/src\/\S+ && claude --resume /);
     await user.click(screen.getByRole("button", { name: "Copy command" }));
     expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+    expect(screen.getByText("Resume command copied").getAttribute("role")).toBe("status");
     expect(await navigator.clipboard.readText()).toBe(resume.textContent);
     expect(screen.getByRole("region", { name: "Session events" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reveal transcript" })).toBeTruthy();
@@ -204,7 +212,7 @@ describe("Sessions", () => {
     const user = userEvent.setup();
     await renderApp("/sessions?agent=pi&project=acme-web");
     const table = await screen.findByRole("region", { name: "Sessions, newest first" });
-    await user.click((await within(table).findAllByRole("link"))[0] as HTMLElement);
+    await user.click(first(await within(table).findAllByRole("link")));
     const resume = await screen.findByText(/pi --session/);
     expect(resume.textContent).toMatch(/^cd \/Users\/dev\/src\/\S+ && pi --session /);
   });
@@ -213,7 +221,7 @@ describe("Sessions", () => {
     const user = userEvent.setup();
     const { router } = await renderApp("/sessions?agent=claude");
     const table = await screen.findByRole("region", { name: "Sessions, newest first" });
-    await user.click((await within(table).findAllByRole("link"))[0] as HTMLElement);
+    await user.click(first(await within(table).findAllByRole("link")));
     await user.click(await screen.findByRole("link", { name: /All sessions/ }));
     await heading("Sessions");
     expect(searchOf(router).get("agent")).toBe("claude");
@@ -228,10 +236,16 @@ describe("Sessions", () => {
 describe("Projects", () => {
   it("groups projects by client and drills into branches", async () => {
     const user = userEvent.setup();
-    await renderApp("/projects");
+    const { router } = await renderApp("/projects?agent=claude");
     expect(await screen.findByRole("heading", { name: "Acme" })).toBeTruthy();
     await user.click(await screen.findByRole("button", { name: /tokenmtr/ }));
     expect(await screen.findByText("main")).toBeTruthy();
+    // The drilldown is a route: linkable, and Back returns to the list with the filters.
+    expect(router.state.location.pathname).toBe("/projects/tokenmtr");
+    expect(searchOf(router).get("agent")).toBe("claude");
+    await user.click(screen.getByRole("button", { name: "All projects" }));
+    await heading("Projects");
+    expect(searchOf(router).get("agent")).toBe("claude");
   });
 
   it("adds a rule for an unresolved directory", async () => {
@@ -275,9 +289,7 @@ describe("Settings", () => {
     const onAction = vi.fn();
     const user = userEvent.setup();
     await renderApp("/settings", { onAction });
-    await user.click(
-      (await screen.findAllByRole("button", { name: "Keep for 10 years" }))[0] as HTMLElement,
-    );
+    await user.click(first(await screen.findAllByRole("button", { name: "Keep for 10 years" })));
     await waitFor(() =>
       expect(onAction).toHaveBeenCalledWith("keepTenYears", ["claude", "default"]),
     );

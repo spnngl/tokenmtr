@@ -8,7 +8,6 @@ import { BILLING_DATA, BUDGET_OVER, BUDGET_PROJECTED } from "./fixtures";
 import {
   type BillingData,
   budgetFraction,
-  formatRoi,
   isOverBudget,
   isProjectedOver,
   untrackedPlans,
@@ -42,11 +41,6 @@ describe("billing model", () => {
     expect(isProjectedOver(BUDGET_OVER)).toBe(false);
   });
 
-  it("formats ROI and its absence", () => {
-    expect(formatRoi(2.84)).toBe("2.8x");
-    expect(formatRoi(null)).toBe("n/a");
-  });
-
   it("finds the detected plan no subscription covers", () => {
     expect(untrackedPlans(BILLING_DATA.advisor, BILLING_DATA.report.subscriptions)).toEqual([
       { agent: "claude-code", profile: "default", plan: "max_5x" },
@@ -67,14 +61,15 @@ describe("BillingScreen", () => {
 
   it("error retries", async () => {
     const onRetry = vi.fn();
-    renderScreen({ kind: "error", message: "Store is locked", onRetry });
+    renderScreen({
+      kind: "error",
+      title: "Could not read the usage database",
+      message: "Store is locked",
+      onRetry,
+    });
+    expect(screen.getByText("Store is locked")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("daemon-offline offers to start it", () => {
-    renderScreen({ kind: "daemon-offline", onStartDaemon: vi.fn() });
-    expect(screen.getByRole("button", { name: "Install / start daemon" })).toBeTruthy();
   });
 
   it("populated shows a budget over 100%, the estimate label and the monthly table", async () => {
@@ -86,6 +81,11 @@ describe("BillingScreen", () => {
     expect(within(over.parentElement ?? container).getByText("128%")).toBeTruthy();
     expect(screen.getByText(/Over budget by \$28\.00/)).toBeTruthy();
     expect(screen.getByText("Projected to exceed")).toBeTruthy();
+    // Without a rate an EUR budget shows its limit only, never placeholder zeros as spend.
+    expect(
+      screen.getByText(/Limit €20\.00, .* Spend shows once the first EUR exchange rate/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("meter", { name: "Daily paid cost" })).toBeNull();
 
     expect(screen.getAllByText("Estimate")).toHaveLength(BILLING_DATA.advisor.length);
     expect(screen.getByText(/needs 14 days of quota history and has 5/i)).toBeTruthy();
