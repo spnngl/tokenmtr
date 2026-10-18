@@ -22,7 +22,7 @@ tokenmtr service install   # start the daemon at login
 tokenmtr status            # daemon and sink health, plus a recap per agent
 ```
 
-Every key of `~/.config/tokenmtr/config.toml` is optional; an empty file is valid. A minimal example that exports usage to CSV files:
+The config file is `~/.config/tokenmtr/config.toml` unless `TOKENMTR_CONFIG` or an absolute `XDG_CONFIG_HOME` points elsewhere (`tokenmtr config path` prints it). Every key is optional; an empty file is valid. A minimal example that exports usage to CSV files:
 
 ```toml
 [[sinks]]
@@ -42,9 +42,10 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | `report` | Write a client report for a month or a date range. |
 | `alerts` | List the alerts that fired. |
 | `backup` | Write a backup now, or list the backups. |
-| `restore` | Replace the store with a backup (the daemon must not run). |
-| `erase` | Delete the store, its backups and the logs. |
+| `restore` | Replace the store with a backup; stops the daemon and restarts the background service afterwards. |
+| `erase` | Delete the store, its backups and the logs (`--delete-config` also the config, `--service` also the background service). |
 | `scan` | Ingest the agents' files now. |
+| `reprice` | Re-estimate unpriced events with the active pricing snapshot (`--all`: every event). |
 | `doctor` | Check the config, the store, the daemon and the agents' files. |
 | `service` | Install, remove or inspect the background service. |
 | `quota` | Show the latest quota windows and the detected plans. |
@@ -52,7 +53,7 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | `pricing` | Show the active pricing snapshot and the models it cannot price. |
 | `config` | Validate or edit the config file. |
 
-`tokenmtr <command> --help` lists each command's options. `status` and `recap` take `--json` for scripts.
+`tokenmtr <command> --help` lists each command's options. `status`, `recap`, `alerts`, `backup`, `doctor`, `quota`, `fx`, `pricing` and `reprice` take `--json`; only `status` and `recap` have a stable format ([docs/cli-json.md](docs/cli-json.md)).
 
 ## Docs
 
@@ -61,9 +62,9 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | [docs/install.md](docs/install.md) | Install, first run, uninstall. |
 | [docs/config.md](docs/config.md) | Every `config.toml` key. |
 | [docs/cli-json.md](docs/cli-json.md) | Stable JSON output of `status` and `recap`. |
-| [docs/status.schema.json](docs/status.schema.json) | JSON Schema of `tokenmtr status --json`. |
+| [docs/status.schema.json](docs/status.schema.json) | JSON Schema of `tokenmtr status --json` and `recap --json`. |
 | [docs/export-schema.md](docs/export-schema.md) | Columns shared by every export sink. |
-| [docs/control-protocol.md](docs/control-protocol.md) | How the CLI and the app talk to the daemon. |
+| [docs/control-protocol.md](docs/control-protocol.md) | How the CLI and the app talk to the daemon, and how the daemon watches files and shuts down. |
 | [docs/adding-a-sink.md](docs/adding-a-sink.md) | Steps to add an export sink. |
 | [docs/adding-a-platform.md](docs/adding-a-platform.md) | Steps to port TokenMtr to another OS. |
 | [docs/release.md](docs/release.md) | Build, sign and ship a release. |
@@ -73,15 +74,19 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 ```sh
 just check   # fmt, clippy, tests, then UI typecheck, lint and tests; run before finishing a change
 just dev     # desktop app with hot reload
+just goldens # regenerate the UI's golden fixtures (apps/desktop/src/shared/schemas/__fixtures__) from the Rust types (UPDATE_GOLDENS=1)
 ```
 
-- Homebrew `cargo` ignores `rust-toolchain.toml`; the workspace needs Rust 1.95 or newer (use rustup's cargo).
+- Homebrew `cargo` ignores `rust-toolchain.toml` and lacks the `x86_64` standard library; the workspace needs Rust 1.95 or newer, so put rustup's `~/.cargo/bin` first in `PATH`.
+- On a fresh clone, run `pnpm -C apps/desktop install && pnpm -C apps/desktop build` before `just check`: the desktop crate embeds the git-ignored `apps/desktop/dist`.
 - `apps/desktop/src-tauri` is outside the workspace's default members; build it with `cargo build -p tokenmtr-desktop`.
 - Test timestamps with explicit time zones: day buckets use the configured IANA zone.
+- UI work starts from the briefs in [apps/desktop/src/shared/BRIEF.md](apps/desktop/src/shared/BRIEF.md).
+- Release builds and their gotchas: [docs/release.md](docs/release.md).
 
 ## Architecture
 
-A Rust workspace. The daemon (`tokenmtr-daemon`) scans the agents' session files through per-agent parsers (`tokenmtr-agents`) into a local SQLite store (`tokenmtr-store`). `tokenmtr-query` turns the store into every figure shown, `tokenmtr-export` pumps rows to the sinks, and `tokenmtr-report` renders reports. The CLI (`apps/cli`) and the Tauri menu-bar app (`apps/desktop`, a React UI over Tauri commands) read the store directly and control the daemon over a local socket ([docs/control-protocol.md](docs/control-protocol.md)). OS services (paths, background service, control transport, secrets) sit behind one trait in `tokenmtr-platform`.
+A Rust workspace. The daemon (`tokenmtr-daemon`) scans the agents' session files through per-agent parsers (`tokenmtr-agents`) into a local SQLite store (`tokenmtr-store`). `tokenmtr-query` turns the store into every figure shown, `tokenmtr-export` pumps rows to the sinks, `tokenmtr-report` renders reports, and `tokenmtr-remote` fetches quota, FX rates and prices. The CLI (`apps/cli`) and the Tauri menu-bar app (`apps/desktop`, a React UI over Tauri commands) share `tokenmtr-app`, read the store directly and control the daemon over a local socket ([docs/control-protocol.md](docs/control-protocol.md)). OS services (paths, background service, control transport, secrets) sit behind one trait in `tokenmtr-platform`. Product names live in `tokenmtr-brand`.
 
 ## License
 

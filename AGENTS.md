@@ -5,14 +5,13 @@ Read `PLAN.md` before any task: it holds every decision (D1–D58), the phase or
 ## Rules
 
 - Write Rust per the `rs-coding` skill and TypeScript per the `ts-coding` skill.
-- Write UI per the `ui-expert` skill, starting from a brief block.
+- Write UI per the `ui-expert` skill, starting from the briefs in `apps/desktop/src/shared/BRIEF.md`.
 - Write any agent-facing document (this file, skills, docs reached by a pointer) per the `writing-for-agents` skill.
-- Keep one source of truth per fact: version in the workspace `Cargo.toml`, brand strings in `tokenmtr-core::brand`, pricing in `pricing/`.
+- Write user-facing docs (`README.md`, `docs/`) without PLAN.md or D-number references: readers do not have PLAN.md, so state the rule itself.
+- Keep one source of truth per fact: version in the workspace `Cargo.toml`, product names in the `tokenmtr-brand` crate (the UI reads them from the generated `bindings.ts`), pricing in `pricing/`.
 - Finish a change when `just check` passes.
 - Commit per phase using the `git-commit` skill; the human pushes.
 
 ## Gotchas
 
-- Homebrew cargo ignores `rust-toolchain.toml`; the workspace targets Rust 1.95+.
-- `apps/desktop/src-tauri` is outside `default-members`; build it with `-p tokenmtr-desktop`.
-- Test timestamps with explicit time zones: day buckets use the configured IANA zone (D8).
+Before building or testing, read the Development section of `README.md`: toolchain, first UI build, desktop crate, time zones. Before a release build, read `docs/release.md`.

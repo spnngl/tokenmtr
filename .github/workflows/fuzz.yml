@@ -9,9 +9,11 @@ on:
       - "fuzz/**"
       - "fixtures/**"
       - "crates/**"
+      - "pricing/**" # embedded by tokenmtr-core
+      - ".github/workflows/fuzz.yml"
 
 jobs:
-  # Stable: seeds plus truncated and bit-flipped variants through every target (D54).
+  # Stable: seeds plus truncated and bit-flipped variants through every target.
   smoke:
     runs-on: macos-14
     steps:
@@ -34,7 +36,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
-      - run: cargo install cargo-fuzz --locked
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
       - name: Run every target for 60 seconds from its seed corpus
         working-directory: fuzz
         run: |

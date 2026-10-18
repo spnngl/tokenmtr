@@ -1,11 +1,17 @@
 # Configuration reference
 
-TokenMtr reads one TOML file, `config.toml` (location: D21 in `PLAN.md`; override with `TOKENMTR_CONFIG`). The `tokenmtr-config` crate parses and validates it.
+TokenMtr reads one TOML file, `config.toml`, from the first of:
+
+1. `$TOKENMTR_CONFIG`, which must be an absolute path;
+2. `$XDG_CONFIG_HOME/tokenmtr/config.toml`, when `XDG_CONFIG_HOME` is absolute;
+3. `~/.config/tokenmtr/config.toml`.
+
+The CLI's `--config <path>` overrides all three; `tokenmtr config path` prints the path in use. The `tokenmtr-config` crate parses and validates the file.
 
 - Every key is optional. An empty file is a valid config that applies all defaults below.
 - Unknown keys are errors.
 - `tokenmtr config check` prints the parsed config, or the first error as `file:line:column: message`.
-- The daemon reloads the file when it changes and keeps the old config when the new one is invalid (D22).
+- The daemon reloads the file when it changes and keeps the old config when the new one is invalid; `tokenmtr doctor` and the app show the rejected file's error.
 
 ## Example
 
@@ -33,7 +39,7 @@ enabled = true                 # ECB fetch
 agents = ["claude", "pi"]      # one recap tab each; default: all enabled agents
 title = "paid_today"           # paid_today | api_today | tightest_quota | none
 shortcut = "Alt+CommandOrControl+U"  # "" disables
-live_window = "10m"            # Live block window (D58)
+live_window = "10m"            # Live block window
 
 [alerts]
 quota_thresholds = [80, 95]    # percent
@@ -54,7 +60,7 @@ keep = 14
 [import]
 claude_stats_cache = true
 
-[[projects]]                   # first match wins; otherwise git resolution (D31)
+[[projects]]                   # first match wins; otherwise git resolution
 match = "~/work/acme-*/**"
 name = "acme"
 client = "Acme Corp"
@@ -75,13 +81,14 @@ model = "my-private-model"
 input_per_m = 3.0
 output_per_m = 15.0
 # cache_read_per_m, cache_write_5m_per_m, cache_write_1h_per_m: optional
+# provider = "bedrock"        # only events served by this provider
 
 [[subscriptions]]
 id = "claude-max"
 provider = "anthropic"
 plan = "max_20x"               # pro | max_5x | max_20x | team | enterprise | custom
 agents = ["claude", "pi"]
-# profiles = ["default"]       # optional narrowing (D28)
+# profiles = ["default"]       # optional narrowing
 # fee = 200.0                  # default from pricing/plans.toml
 fee_currency = "USD"           # USD | EUR
 period = "monthly"             # monthly | yearly
@@ -123,7 +130,7 @@ id = "default"
 [[sinks]]
 id = "local-csv"
 kind = "csv"
-# dir = "~/Library/Application Support/dev.tokenmtr.app/exports"  # default (D21, D50)
+# dir = "~/Library/Application Support/dev.tokenmtr.app/exports"  # default
 mode = "append"                # append | snapshot
 partition = "month"            # month | day | all
 datasets = ["usage_events", "tool_calls", "quota_snapshots", "fx_rates", "subscriptions"]
@@ -138,11 +145,11 @@ interval = "5m"
 [[sinks]]
 id = "shared-jsonl"
 kind = "jsonl"
-dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant access first (D50)
+dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant access first
 mode = "append"
-redact = { cwd = "hash", git_branch = "drop" }   # D40
+redact = { cwd = "hash", git_branch = "drop" }
 
-# [[sinks]]                    # later (Phase 13)
+# [[sinks]]                    # planned, not accepted yet
 # id = "warehouse"
 # kind = "postgres"
 # url_env = "TOKENMTR_PG_URL"   # secrets never live in the file
@@ -161,7 +168,7 @@ redact = { cwd = "hash", git_branch = "drop" }   # D40
 
 ## Keys
 
-Types: `[x]` is a list of `x`. A default of "platform" means the location from D21.
+Types: `[x]` is a list of `x`. A default of "platform" means a path under `~/Library/Application Support/dev.tokenmtr.app/` (store `usage.db`, `backups/`, `exports/`).
 
 ### Top level
 
@@ -173,27 +180,27 @@ Types: `[x]` is a list of `x`. A default of "platform" means the location from D
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `name` | string | host name | Label of this machine in the UI and exports (D30). A blank value means the default. |
+| `name` | string | host name | Label of this machine in the UI and exports; rows also carry a stable `machine_id`. A blank value means the default. |
 
 ### `[display]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `timezone` | `"system"` or IANA name | `"system"` | Zone that buckets days (D8). |
+| `timezone` | `"system"` or IANA name | `"system"` | Zone that buckets days, weeks and months. |
 | `currency` | `"USD"` or `"EUR"` | `"USD"` | Currency shown; the default currency of `[[budgets]]`. |
 
 ### `[quota]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `enabled` | bool | `true` | Poll provider quota (D26). |
+| `enabled` | bool | `true` | Poll Claude's quota windows with the Claude Code sign-in ([install step 6](install.md#6-keychain-access-for-quota)). |
 | `interval` | duration | `"5m"` | Poll interval; at least `"1m"`. |
 
 ### `[fx]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `enabled` | bool | `true` | Fetch ECB rates (D27). |
+| `enabled` | bool | `true` | Fetch the ECB EUR/USD reference rate daily. |
 | `fixed_eur_per_usd` | money amount | unset | Rate that replaces the ECB entirely; must be positive. |
 
 ### `[menubar]`
@@ -201,17 +208,17 @@ Types: `[x]` is a list of `x`. A default of "platform" means the location from D
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `agents` | `[agent]` | all enabled agents | Agents with a recap tab. Non-empty, unique, enabled. |
-| `title` | `paid_today`, `api_today`, `tightest_quota`, `none` | `"paid_today"` | Tray title (D29). |
-| `shortcut` | string | `"Alt+CommandOrControl+U"` | Global shortcut (D44); `""` disables it. The desktop shell parses the syntax. |
-| `live_window` | duration | `"10m"` | Window of the Live block (D58). |
+| `title` | `paid_today`, `api_today`, `tightest_quota`, `none` | `"paid_today"` | Text next to the menu-bar icon. |
+| `shortcut` | string | `"Alt+CommandOrControl+U"` | Global shortcut that shows or hides the recap; `""` disables it. The desktop shell parses the syntax. |
+| `live_window` | duration | `"10m"` | Window of the recap's Live block: tokens per minute, API value per hour and active sessions over this window, shown while it has events. |
 
 ### `[alerts]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `quota_thresholds` | `[percent]` | `[80, 95]` | Quota utilization levels that raise an alert (D36). Stored sorted and unique. |
+| `quota_thresholds` | `[percent]` | `[80, 95]` | Quota utilization levels that raise an alert, once per window and level. Stored sorted and unique. |
 | `quota_reset` | bool | `true` | Announce quota resets. |
-| `budget_thresholds` | `[percent]` | `[80, 100]` | Budget consumption levels that raise an alert (D34). Stored sorted and unique. |
+| `budget_thresholds` | `[percent]` | `[80, 100]` | Budget consumption levels that raise an alert, once per period and level. Stored sorted and unique. |
 | `sink_failing_after` | duration | `"30m"` | How long a sink may fail before alerting. |
 | `daemon_stale_after` | duration | `"15m"` | Heartbeat age that raises `daemon_stale`. |
 
@@ -219,13 +226,13 @@ Types: `[x]` is a list of `x`. A default of "platform" means the location from D
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `headroom` | percent | `80` | Highest scaled utilization a recommended plan may reach (D35). |
+| `headroom` | percent | `80` | Highest scaled utilization a recommended plan may reach. |
 
 ### `[backup]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `enabled` | bool | `true` | Back up the store (D37). |
+| `enabled` | bool | `true` | Back up the store: an integrity-checked, zstd-compressed copy `usage-<UTC timestamp>.db.zst`. `tokenmtr backup now` runs one on demand. |
 | `interval` | duration | `"1d"` | Time between backups. |
 | `keep` | integer | `14` | Backups kept; at least 1. |
 | `dir` | path | platform | Backup directory. |
@@ -234,11 +241,11 @@ Types: `[x]` is a list of `x`. A default of "platform" means the location from D
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `claude_stats_cache` | bool | `true` | Import Claude's stats cache on each scan (D38). |
+| `claude_stats_cache` | bool | `true` | Import Claude's `stats-cache.json` on each scan, for days before the first transcript on disk. |
 
 ### `[[projects]]`
 
-Rules are tried in file order; the first match names the project (D31).
+Rules are tried in file order; the first match names the project. Without a match, the project is the session's git repository (its `origin` remote, else its root path), else the working directory.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -251,7 +258,7 @@ Rules are tried in file order; the first match names the project (D31).
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `id` | id | required | Unique among budgets. |
-| `period` | `day`, `week`, `month` | required | Budget period (D34). |
+| `period` | `day`, `week`, `month` | required | Budget period, calendar-aligned in `display.timezone`. |
 | `amount` | money amount | required | Limit; must be positive. |
 | `currency` | `"USD"` or `"EUR"` | `display.currency` | Currency of `amount`. |
 | `measure` | `paid`, `api_value` | `"paid"` | What the budget counts. |
@@ -266,13 +273,14 @@ Each filter list is non-empty and unique when present.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `pricing.auto_update` | bool | `true` | Refresh the LiteLLM snapshot daily (D11). |
+| `pricing.auto_update` | bool | `true` | Refresh the LiteLLM snapshot daily. A refresh prices only new events; `tokenmtr reprice` re-estimates stored ones. |
 | `overrides[].model` | string | required | Model id exactly as the agent reports it. |
 | `overrides[].input_per_m` | money amount | required | USD per million input tokens. |
 | `overrides[].output_per_m` | money amount | required | USD per million output tokens. |
 | `overrides[].cache_read_per_m` | money amount | unset | USD per million cache-read tokens. |
 | `overrides[].cache_write_5m_per_m` | money amount | unset | USD per million 5-minute cache-write tokens. |
 | `overrides[].cache_write_1h_per_m` | money amount | unset | USD per million 1-hour cache-write tokens. |
+| `overrides[].provider` | string | unset | Apply only to events served by this provider, as LiteLLM names it (`anthropic`, `bedrock`, `vertex_ai`). An override with a provider beats one without for that provider's events. |
 
 ### `[[subscriptions]]`
 
@@ -283,19 +291,23 @@ Each filter list is non-empty and unique when present.
 | `plan` | `pro`, `max_5x`, `max_20x`, `team`, `enterprise`, `custom` | required | Plan. |
 | `agents` | `[agent]` | required | Covered agents; non-empty, enabled. |
 | `profiles` | `[id]` | all | Narrows to these profiles; declared by one of `agents`. |
-| `fee` | money amount | list price | Fee per `period`. Required unless `pricing/plans.toml` lists a price for `plan`, `period` and `fee_currency` (D28). |
+| `fee` | money amount | list price | Fee per `period`. Required unless `pricing/plans.toml` lists a price for `plan`, `period` and `fee_currency`, which it does not for `team`, `enterprise` and `custom`. |
 | `fee_currency` | `"USD"` or `"EUR"` | `"USD"` | Currency of `fee`. |
 | `period` | `monthly`, `yearly` | required | Billing period. |
 | `start` | date | required | First covered day. |
 | `end` | date | unset | First day no longer covered; after `start`. |
 
-Two subscriptions with the same provider, a shared agent, a shared profile and overlapping dates are an error (D28).
+Two subscriptions with the same provider, a shared agent, a shared profile and overlapping dates are an error.
+
+Paid cost is the API cost of events billed as `api` plus each fee prorated per day over its billing period, anchored on `start`. Claude's pay-as-you-go extra usage is not counted.
+
+Known limit: session files do not record whether a call used an API key or a subscription login. An event bills as `subscription` when a subscription matches its provider, agent, profile and day; otherwise it bills as `api`. Declare only the subscriptions you pay for.
 
 ### `[daemon]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `scan_interval` | duration | `"5m"` | Full-sweep interval (D16). |
+| `scan_interval` | duration | `"5m"` | Interval of the full sweep, a safety net behind file system events. |
 | `watch` | bool | `true` | Scan on file system events. |
 | `log_level` | `error`, `warn`, `info`, `debug`, `trace` | `"info"` | Log verbosity. |
 
@@ -315,7 +327,7 @@ Two subscriptions with the same provider, a shared agent, a shared profile and o
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `redact_paths` | bool | `false` | Store a keyed hash (BLAKE3, 16 hex characters, key in the store) instead of each event's `cwd` and `git_branch`, and instead of the cwd and path-derived project key in the project map and parse issues (D13). Projects and clients still resolve from the real cwd, which is never written. Applies to events ingested afterwards: rows already stored keep their paths until you erase the store. Rule changes are not re-resolved for hashed cwds. Agent transcript paths (checkpoints, file issues) stay, and so does the project display name (the directory's name). |
+| `redact_paths` | bool | `false` | Store a keyed hash (BLAKE3, 16 hex characters, key in the store) instead of each event's `cwd` and `git_branch`, and instead of the cwd and path-derived project key in the project map and parse issues. Projects and clients still resolve from the real cwd, which is never written. Applies to events ingested afterwards: rows already stored keep their paths until you erase the store. Rule changes are not re-resolved for hashed cwds. Agent transcript paths (checkpoints, file issues) stay, and so does the project display name (the directory's name). |
 
 ### `[agents.<agent>]`
 
@@ -328,7 +340,7 @@ Two subscriptions with the same provider, a shared agent, a shared profile and o
 | `profiles[].roots` | `[path]` | discovery | Session roots; non-empty. |
 | `profiles[].config_dir` | path | discovery | Claude only. Roots, credentials and stats cache come from here. Exclusive with `roots`. |
 
-Every agent has a `default` profile, added with discovery paths when the file omits it (D30). Profiles of one agent must not use equal or nested paths. Discovery paths of an implicit or path-less profile are not checked.
+Every agent has a `default` profile, added with discovery paths when the file omits it. Profiles of one agent must not use equal or nested paths. Discovery paths of an implicit or path-less profile are not checked.
 
 ### `[[sinks]]`
 
@@ -336,12 +348,12 @@ Every agent has a `default` profile, added with discovery paths when the file om
 | --- | --- | --- | --- |
 | `id` | id | required | Unique among sinks. |
 | `kind` | `csv`, `jsonl`, `sqlite` | required | Sink kind. `csv` and `jsonl` write files. |
-| `interval` | duration | `"5m"` | Minimum time between export runs (D47). |
+| `interval` | duration | `"5m"` | Minimum time between export runs; a run starts only after a write to one of the sink's datasets. |
 | `datasets` | `[dataset]` | all five | Subset of `usage_events`, `tool_calls`, `quota_snapshots`, `fx_rates`, `subscriptions`; non-empty, unique. |
-| `redact` | table of column to mode | none | Column `cwd`, `project`, `client`, `git_branch`, `account` or `session_id`; mode `hash` or `drop` (D40). |
+| `redact` | table of column to mode | none | Column `cwd`, `project`, `client`, `git_branch`, `account` or `session_id`; mode `hash` (BLAKE3 keyed with a per-install secret, 16 hex characters, so grouping still works) or `drop` (empty CSV cell, JSON `null`, SQL `NULL`). |
 | `dir` | path | platform | `csv`, `jsonl` only: output directory. |
-| `mode` | `append`, `snapshot` | `"append"` | `csv`, `jsonl` only (D18). |
-| `partition` | `month`, `day`, `all` | `"month"` | `csv`, `jsonl` only (D18). |
+| `mode` | `append`, `snapshot` | `"append"` | `csv`, `jsonl` only. `append` adds changed rows with their `revision` (keep the highest per id); `snapshot` atomically rewrites each touched partition with one row per id. |
+| `partition` | `month`, `day`, `all` | `"month"` | `csv`, `jsonl` only. Files are named `<dataset>-<partition>.<ext>`, partitioned by row date, e.g. `usage_events-2026-05.csv`. |
 | `path` | path | platform | `sqlite` only: database file. |
 
 A key that does not apply to the sink's `kind` is an error. Two sinks that would write the same files are an error: same `kind`, same `dir` or `path`, and a dataset in common. An unset `dir` or `path` means the exports directory, so two such sinks of one kind clash; give one of them its own `dir` or `path`, or disjoint `datasets`.

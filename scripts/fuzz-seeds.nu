@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# Rebuilds fuzz/seeds/<target>/ from fixtures/ and the crates' test fixtures (D54).
+# Rebuilds fuzz/seeds/<target>/ from fixtures/ and the crates' test fixtures.
 # Run it after a fixture changes, then commit the result.
 
 # Most lines taken from one transcript file; keeps the corpus small.

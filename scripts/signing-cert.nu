@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# Creates the stable self-signed code-signing certificate in the login keychain (D51).
+# Creates the stable self-signed code-signing certificate in the login keychain.
 # Idempotent: does nothing when the certificate already exists. Never run by tests or `just check`.
 #
 #   just signing-cert              create it (macOS asks to trust it: authenticate once)

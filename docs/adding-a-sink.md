@@ -18,11 +18,12 @@ Read first: [export-schema.md](export-schema.md) for the rows a sink receives.
    advance. Delivering a row at its stored or a lower `revision` changes nothing; a higher
    `revision` replaces or supersedes the stored row.
 3. **Use the schema, not literals.** Take column names, order, types and the primary key from
-   `tokenmtr_export::schema(dataset)`; never write a column list by hand.
+   `tokenmtr_export::schema(dataset)`, so a schema change reaches every sink at once.
 4. **Create resources lazily.** `new` touches no disk or network, so a refused path or an
    unreachable server is a failed run (visible in health), not a failed start.
-5. **Map permission errors.** A refused folder returns `SinkError::PermissionDenied` (D50), built
-   with `SinkError::io` for file operations.
+5. **Map permission errors.** A folder macOS refuses (Documents, Desktop, cloud storage, ...)
+   returns `SinkError::PermissionDenied`, built with `SinkError::io` for file operations, so the UI
+   can point the user at the folder grant.
 
 Batches arrive in ascending `revision` order, already redacted, and are never empty.
 
@@ -31,7 +32,8 @@ Batches arrive in ascending `revision` order, already redacted, and are never em
 ### 1. Config
 
 Add a variant to `SinkTarget` in `crates/tokenmtr-config/src/model.rs` with its settings, build it
-in `crates/tokenmtr-config/src/build.rs`, and document the keys in `docs/config.md`.
+in `crates/tokenmtr-config/src/build.rs`, add its arm to `same_files` there (two sinks writing the
+same destination are a `SinkTargetClash`), and document the keys in `docs/config.md`.
 
 Done when `cargo test -p tokenmtr-config` passes, including the config docs test.
 
@@ -47,11 +49,14 @@ Done when `cargo test -p tokenmtr-export spec` passes with a test for your defau
 Create `crates/tokenmtr-export/src/xxx.rs` with `XxxSink` implementing `Sink`. Generate any DDL or
 wire format from `DatasetSchema`; share generators in `sql.rs` when the target speaks SQL.
 
-Done when the sink passes its own tests in `crates/tokenmtr-export/tests/export/xxx.rs`:
+Write its tests in `crates/tokenmtr-export/tests/export/xxx.rs` and register the file with
+`mod xxx;` in `crates/tokenmtr-export/tests/export/main.rs`, the single integration-test binary.
+
+Done when those tests pass:
 
 - the same batch delivered twice leaves one row per primary key;
 - a lower revision never overwrites a higher one, a higher one does;
-- a refused destination returns `PermissionDenied` or `Io`, never panics;
+- a refused destination returns `PermissionDenied` or `Io`;
 - the stored columns equal `schema(dataset).columns` in name, order and type.
 
 ### 4. Dispatch

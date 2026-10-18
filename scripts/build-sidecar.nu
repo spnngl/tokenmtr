@@ -1,4 +1,4 @@
-# Builds the `tokenmtr` CLI and stages it as the Tauri sidecar (D23).
+# Builds the `tokenmtr` CLI and stages it as the Tauri sidecar.
 #
 # The app bundles it as `externalBin` "binaries/tokenmtr"; Tauri wants the file named with the
 # target triple and strips the suffix inside the bundle (`TokenMtr.app/Contents/MacOS/tokenmtr`),

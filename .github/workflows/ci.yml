@@ -19,7 +19,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          package_json_file: apps/desktop/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -28,8 +28,6 @@ jobs:
       - uses: extractions/setup-just@v2
       - run: pnpm -C apps/desktop install --frozen-lockfile
       - run: pnpm -C apps/desktop run build
+      # `cargo test --workspace` includes tokenmtr-desktop, whose `bindings_file_is_current`
+      # test fails when apps/desktop/src/shared/bindings.ts is stale.
       - run: just check
-      - name: bindings.ts is up to date
-        run: |
-          just bindings
-          git diff --exit-code -- apps/desktop/src/shared/bindings.ts

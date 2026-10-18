@@ -1,6 +1,6 @@
 # Control protocol v1
 
-How clients (CLI, menu-bar app) talk to the daemon (D24, D52). Types live in `crates/tokenmtr-control/src/protocol.rs`; that file is the source of truth, this page is the map.
+How clients (CLI, menu-bar app) talk to the daemon. Types live in `crates/tokenmtr-control/src/protocol.rs`; that file is the source of truth, this page is the map.
 
 ## Transport
 
@@ -21,7 +21,7 @@ Each request gets exactly one response, in order.
 
 Limits:
 
-- The client gives up when connect plus handshake take over 2 s, when a quick request (`status`, `reload`, `issues`, `subscribe`, `shutdown`) takes over 10 s, or a work request (`scan_now`, `export_now`, `backup_now`, `refresh_quota`) over 300 s. After a timeout the connection is unusable. Events of a subscription have no timeout.
+- The client gives up when connect plus handshake take over 2 s, when a quick request (`status`, `reload`, `issues`, `subscribe`, `shutdown`) takes over 10 s, or a work request (`scan_now`, `export_now`, `backup_now`, `reprice`, `refresh_quota`) over 300 s. After a timeout the connection is unusable. Events of a subscription have no timeout.
 - The daemon serves at most 16 connections; it closes further ones at once. It drops a client that does not read a response within 1 s.
 - A response that would exceed 1 MiB is replaced by `error` / `failed`.
 - A request still running at shutdown is answered `error` / `shutting_down`.
@@ -32,13 +32,14 @@ Limits:
 | `scan_now {agent?}` | `scanned` | Incremental scan at user-initiated priority. |
 | `export_now {sink?}` | `exported` | Unknown sink: `error` / `bad_request`. A failing sink is reported in its summary, not as `error`. |
 | `backup_now` | `backed_up` | Works when `backup.enabled` is off. |
-| `refresh_quota` | `quota_refreshed` | `error` / `disabled` when `quota.enabled` is off. Per profile `status`: `ok`, `signed_out`, `token_expired`, `malformed`, `network_down`, `failed`. |
+| `reprice {all}` | `repriced {repriced}` | Re-estimates stored events with the active pricing snapshot: the unpriced ones, or every event with `all`. Reported costs never change. |
+| `refresh_quota` | `quota_refreshed` | `error` / `disabled` when `quota.enabled` is off. Per profile `status`: `ok`, `signed_out`, `token_expired`, `forbidden` (HTTP 403), `rate_limited` (HTTP 429), `malformed`, `network_down`, `failed`, `backoff` (skipped after earlier failures; nothing stored). The store keeps only `ok`, `signed_out`, `token_expired` and `failed`: every other failure is stored as `failed`. |
 | `reload` | `reloaded` | Invalid config: `error` / `invalid_config`, the old config stays active. |
 | `issues` | `issues` | Open parse issues and the last `config_error`. |
-| `shutdown` | `shutting_down` | Graceful stop, same as SIGTERM; the process exits 0, so launchd (`KeepAlive { SuccessfulExit = false }`) does not restart it. The answer comes first; the socket is removed, then `daemon.lock` released, when the daemon has stopped (D56). |
+| `shutdown` | `shutting_down` | Graceful stop, same as SIGTERM; the process exits 0, so launchd (`KeepAlive { SuccessfulExit = false }`) does not restart it. The answer comes first; the socket is removed, then `daemon.lock` released, when the daemon has stopped. `restore` and `erase` send it before they take `daemon.lock`. |
 | `subscribe` | `subscribed`, then `event` lines | Events are interleaved with later responses on the same connection; a subscriber that falls behind gets one `store_changed` listing every dataset. |
 
-Errors are `{"type":"error","kind":…,"message":…}` with `kind` one of `bad_request`, `disabled`, `invalid_config`, `failed`, `shutting_down`. Messages never contain credentials (D55).
+Errors are `{"type":"error","kind":…,"message":…}` with `kind` one of `bad_request`, `disabled`, `invalid_config`, `failed`, `shutting_down`. Messages never contain credentials or tokens.
 
 ## Pushed events
 
@@ -47,12 +48,17 @@ Sent as `{"type":"event","event":{…}}` to subscribers only.
 | Event | When |
 | --- | --- |
 | `store_changed {datasets}` | The head revision of a dataset moved. Datasets are collected and sent at most once per second; never while nothing changed. |
-| `alert_fired {alert}` | An alert was written for the first time (D36). Deduplicated alerts are not pushed again. |
+| `alert_fired {alert}` | An alert was written for the first time. Deduplicated alerts are not pushed again. |
 
 Clients re-read the store after `store_changed`; the event carries no row data.
+
+## Daemon behaviour
+
+- File watching: one watcher over every agent root and the config file feeds a bounded channel of 1024 events. When the channel is full, further events are dropped and the next batch runs one full rescan instead, so no change is lost. An agent root that does not exist is checked every 60 s and watched once it appears; while every root exists and no file changes, the watcher never wakes.
+- Shutdown (SIGTERM or `shutdown`): no new work starts, the socket is removed, running scans and reprices stop between two files or pages, sinks get a last export, then `daemon.lock` is released. The whole stop takes at most the shutdown grace (1.2 s); work still running then is abandoned and the last export skipped.
 
 ## Versioning
 
 - `PROTOCOL_VERSION` is bumped for any change an older peer would misread: removing or renaming a message or field, changing a meaning, adding a required field.
 - Adding an optional field is compatible. A new event or an unsolicited response type is not: v1 clients fail to parse it, so it bumps the version. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
-- There is no negotiation: a mismatch ends the connection. Ship the daemon and its clients together (D52).
+- There is no negotiation: a mismatch ends the connection. Ship the daemon and its clients together: they come from one app bundle, and the app shows "Update required" on `incompatible`.

@@ -1,4 +1,4 @@
-# Builds the `.app` and `.dmg` (D51). Run through `just release`, which runs the gates first.
+# Builds the `.app` and `.dmg`. Run through `just release`, which runs the gates first.
 #
 # Signs with the stable local identity from `signing.nu`; create it once with `just signing-cert`.
 # `--unsigned` skips signing for a local test build (the linker's ad-hoc signature only).

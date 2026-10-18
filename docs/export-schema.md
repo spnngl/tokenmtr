@@ -70,6 +70,11 @@ the raw data.
 
 ## Datasets
 
+The tables below are generated from `tokenmtr_export::schema` (a test fails when they drift).
+**Empty** `yes` means the column is nullable: an empty CSV field, JSON `null`, SQL `NULL`. `no`
+means the value is never null; a text column may still hold `''` where its meaning says "empty",
+such as `window_id` of a failed poll.
+
 <!-- schema:start -->
 
 ### `usage_events`
@@ -101,7 +106,7 @@ Primary key: `event_id`. Partitioned by: `at_utc`.
 | `cache_write_1h` | integer | no |  | Input tokens written to the 1-hour cache. |
 | `output` | integer | no |  | Output tokens. |
 | `reasoning` | integer | no |  | Reasoning tokens, when reported separately. |
-| `total_tokens` | integer | no |  | Sum of all token columns. |
+| `total_tokens` | integer | no |  | input_uncached + cache_read + cache_write_5m + cache_write_1h + output; reasoning is part of output. |
 | `cost_reported_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Cost the agent reported, in USD. |
 | `cost_estimated_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Pay-as-you-go cost estimated from `pricing_version`, in USD. |
 | `cost_source` | text | no |  | Which cost is the API value: `reported`, `estimated` or `unpriced`. |
@@ -158,7 +163,7 @@ Primary key: `snapshot_id`. Partitioned by: `fetched_at_utc`.
 | `agent` | text | no |  | Agent id. |
 | `profile` | text | no |  | Agent profile name. |
 | `account` | text | yes | `account` | Account email or organization. |
-| `window_id` | text | no |  | Quota window id, e.g. `five_hour`; empty when the poll failed. |
+| `window_id` | text | no |  | Quota window id, e.g. `five_hour`; `''` (never NULL) when the poll failed. |
 | `window_label` | text | yes |  | Human name of the window, e.g. `5-hour`. |
 | `used_percent` | real | yes |  | Percent of the window used; may exceed 100. |
 | `resets_at_utc` | timestamp (UTC) | yes |  | When the window resets, when the provider says. |
