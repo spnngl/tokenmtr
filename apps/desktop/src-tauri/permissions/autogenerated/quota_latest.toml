@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-quota-latest"
+description = "Enables the quota_latest command without any pre-configured scope."
+commands.allow = ["quota_latest"]
+
+[[permission]]
+identifier = "deny-quota-latest"
+description = "Denies the quota_latest command without any pre-configured scope."
+commands.deny = ["quota_latest"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-keep-ten-years"
+description = "Enables the keep_ten_years command without any pre-configured scope."
+commands.allow = ["keep_ten_years"]
+
+[[permission]]
+identifier = "deny-keep-ten-years"
+description = "Denies the keep_ten_years command without any pre-configured scope."
+commands.deny = ["keep_ten_years"]

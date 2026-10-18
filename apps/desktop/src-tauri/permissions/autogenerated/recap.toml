@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recap"
+description = "Enables the recap command without any pre-configured scope."
+commands.allow = ["recap"]
+
+[[permission]]
+identifier = "deny-recap"
+description = "Denies the recap command without any pre-configured scope."
+commands.deny = ["recap"]

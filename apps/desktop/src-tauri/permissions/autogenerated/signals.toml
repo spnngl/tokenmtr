@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-signals"
+description = "Enables the signals command without any pre-configured scope."
+commands.allow = ["signals"]
+
+[[permission]]
+identifier = "deny-signals"
+description = "Denies the signals command without any pre-configured scope."
+commands.deny = ["signals"]

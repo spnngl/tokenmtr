@@ -4,6 +4,7 @@ import { createHashHistory, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AppProvider } from "../shared/app-context";
+import { subscribeToShell } from "../shared/events";
 import { createRuntime } from "../shared/runtime";
 import { ThemeProvider } from "../shared/theme";
 import { createAppRouter } from "./router";
@@ -14,10 +15,20 @@ if (root === null) {
 }
 
 const queryClient = new QueryClient();
-const runtime = createRuntime(window.location.search);
 // Hash history: the webview loads `index.html`, so path routes would not match (D29 deep links
 // pass `#/route?filters`).
-const router = createAppRouter(createHashHistory());
+const history = createHashHistory();
+const router = createAppRouter(history);
+
+const runtime = await createRuntime(window.location.search);
+if (runtime.listen !== undefined) {
+  await subscribeToShell({
+    listen: runtime.listen,
+    queryClient,
+    window: "main",
+    navigate: (path) => history.push(path),
+  });
+}
 
 createRoot(root).render(
   <StrictMode>

@@ -3,4 +3,6 @@ PLAN*.md
 target/
 node_modules/
 dist/
+# The staged `tokenmtr` sidecar (scripts/build-sidecar.nu).
+apps/desktop/src-tauri/binaries/
 .DS_Store

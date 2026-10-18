@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-install-daemon"
+description = "Enables the install_daemon command without any pre-configured scope."
+commands.allow = ["install_daemon"]
+
+[[permission]]
+identifier = "deny-install-daemon"
+description = "Denies the install_daemon command without any pre-configured scope."
+commands.deny = ["install_daemon"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-budgets"
+description = "Enables the budgets command without any pre-configured scope."
+commands.allow = ["budgets"]
+
+[[permission]]
+identifier = "deny-budgets"
+description = "Denies the budgets command without any pre-configured scope."
+commands.deny = ["budgets"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-series"
+description = "Enables the series command without any pre-configured scope."
+commands.allow = ["series"]
+
+[[permission]]
+identifier = "deny-series"
+description = "Denies the series command without any pre-configured scope."
+commands.deny = ["series"]

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/cli", "apps/desktop/src-tauri"]
-default-members = ["crates/*", "apps/cli"]
+members = ["crates/*", "apps/cli", "apps/desktop/src-tauri", "tests/e2e"]
+default-members = ["crates/*", "apps/cli", "tests/e2e"]
 
 [workspace.package]
 version = "0.1.0"
@@ -56,6 +56,17 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.28", features = ["v7", "serde"] }
 zstd = "0.14"
+
+# desktop shell (apps/desktop/src-tauri)
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-store = "2"
 
 # dev
 assert_cmd = "2.2"

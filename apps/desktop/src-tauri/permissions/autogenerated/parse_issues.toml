@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-parse-issues"
+description = "Enables the parse_issues command without any pre-configured scope."
+commands.allow = ["parse_issues"]
+
+[[permission]]
+identifier = "deny-parse-issues"
+description = "Denies the parse_issues command without any pre-configured scope."
+commands.deny = ["parse_issues"]

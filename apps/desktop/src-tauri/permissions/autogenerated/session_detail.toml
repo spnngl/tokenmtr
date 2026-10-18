@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-session-detail"
+description = "Enables the session_detail command without any pre-configured scope."
+commands.allow = ["session_detail"]
+
+[[permission]]
+identifier = "deny-session-detail"
+description = "Denies the session_detail command without any pre-configured scope."
+commands.deny = ["session_detail"]

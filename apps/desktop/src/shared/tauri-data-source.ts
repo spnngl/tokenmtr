@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type Command, ERROR_KINDS } from "./bindings";
 import type { DashboardTarget, DataSource, NotificationPermissionState } from "./data-source";
 import type { Filters } from "./filters";
 import {
@@ -40,9 +41,16 @@ export class DataSourceError extends Error {
   override readonly name = "DataSourceError";
 }
 
+/** A failed command as the shell serialises it (`CommandError` in `src-tauri/src/error.rs`). */
+export const commandErrorSchema = z.object({ kind: z.enum(ERROR_KINDS), message: z.string() });
+
 function describe(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
+  }
+  const commandError = commandErrorSchema.safeParse(error);
+  if (commandError.success) {
+    return commandError.data.message;
   }
   return typeof error === "string" ? error : JSON.stringify(error);
 }
@@ -57,7 +65,7 @@ const notificationPermissionSchema = z.enum(["granted", "denied", "undetermined"
  */
 export function createTauriDataSource(invoke: Invoke): DataSource {
   async function read<S extends z.ZodType>(
-    command: string,
+    command: Command,
     args: Record<string, unknown>,
     schema: S,
   ): Promise<z.output<S>> {
@@ -76,7 +84,7 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     return parsed.data;
   }
 
-  async function act(command: string, args: Record<string, unknown> = {}): Promise<void> {
+  async function act(command: Command, args: Record<string, unknown> = {}): Promise<void> {
     try {
       await invoke(command, args);
     } catch (error) {

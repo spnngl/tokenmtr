@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-filter-options"
+description = "Enables the filter_options command without any pre-configured scope."
+commands.allow = ["filter_options"]
+
+[[permission]]
+identifier = "deny-filter-options"
+description = "Denies the filter_options command without any pre-configured scope."
+commands.deny = ["filter_options"]

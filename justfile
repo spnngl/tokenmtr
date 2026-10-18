@@ -31,6 +31,14 @@ bench:
 dev:
     pnpm -C {{ui}} tauri dev
 
+# Regenerate apps/desktop/src/shared/bindings.ts (command, event and error names) from the Rust shell.
+bindings:
+    UPDATE_BINDINGS=1 cargo test -p tokenmtr-desktop --lib bindings
+
+# Signed .app and .dmg (docs/release.md): gates, then sidecar and `tauri build` with the local identity.
+release: check
+    nu scripts/release.nu
+
 # Fuzz one target for five minutes (nightly toolchain, D54): just fuzz claude_line
 fuzz target:
     cd fuzz && cargo +nightly fuzz run {{target}} -- -max_total_time=300 "$PWD/seeds/{{target}}"

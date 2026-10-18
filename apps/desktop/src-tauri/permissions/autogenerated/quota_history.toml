@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-quota-history"
+description = "Enables the quota_history command without any pre-configured scope."
+commands.allow = ["quota_history"]
+
+[[permission]]
+identifier = "deny-quota-history"
+description = "Denies the quota_history command without any pre-configured scope."
+commands.deny = ["quota_history"]
