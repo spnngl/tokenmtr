@@ -36,8 +36,9 @@ bindings:
     UPDATE_BINDINGS=1 cargo test -p tokenmtr-desktop --lib bindings
 
 # Signed .app and .dmg (docs/release.md): gates, then sidecar and `tauri build` with the local identity.
-release: check
-    nu scripts/release.nu
+# Extra flags pass through, e.g. `just release --target universal-apple-darwin` or `--unsigned`.
+release *FLAGS: check
+    nu scripts/release.nu {{FLAGS}}
 
 # Fuzz one target for five minutes (nightly toolchain, D54): just fuzz claude_line
 fuzz target:
