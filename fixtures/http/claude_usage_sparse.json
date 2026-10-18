@@ -1,0 +1,6 @@
+{
+  "five_hour": { "utilization": 0.0, "resets_at": null },
+  "seven_day": null,
+  "extra_usage": null,
+  "some_future_field": { "anything": [1, 2, 3] }
+}

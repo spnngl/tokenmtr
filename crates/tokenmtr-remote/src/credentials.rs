@@ -1,0 +1,251 @@
+//! Reading Claude Code's OAuth credentials, read-only (D26, D55).
+//!
+//! The daemon never refreshes or writes the token: Claude Code owns it. The access token lives
+//! only in a [`SecretString`]; no error here carries credential text.
+
+use camino::{Utf8Path, Utf8PathBuf};
+use secrecy::{ExposeSecret, SecretString};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use tokenmtr_platform::{SecretError, SecretStore};
+
+use crate::account::{AccountInfo, plan_from_claude};
+
+/// Keychain service Claude Code uses for the default config dir.
+pub const DEFAULT_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+/// Credentials file name inside a Claude config dir.
+const CREDENTIALS_FILE: &str = ".credentials.json";
+/// Hex characters of the config-dir hash in a non-default Keychain service name.
+const CONFIG_DIR_HASH_LEN: usize = 8;
+
+/// The Keychain service Claude Code uses when `CLAUDE_CONFIG_DIR` is set to `config_dir`:
+/// `Claude Code-credentials-<first 8 hex of sha256(config_dir)>`.
+///
+/// Derived from Claude Code's behaviour as remembered, **not verified on a real install**
+/// (PLAN.md Phase 10 step 1). The hash input is the path string exactly as the variable holds
+/// it (Claude Code also NFC-normalizes it, which only matters for non-ASCII paths). Override
+/// with [`CredentialLocation::with_keychain_service`] when the real name differs.
+#[must_use]
+pub fn keychain_service_for_config_dir(config_dir: &Utf8Path) -> String {
+    let digest = Sha256::digest(config_dir.as_str().as_bytes());
+    let hash: String = digest
+        .iter()
+        .flat_map(|byte| [byte >> 4, byte & 0x0f])
+        .take(CONFIG_DIR_HASH_LEN)
+        .map(|nibble| char::from_digit(u32::from(nibble), 16).unwrap_or('0'))
+        .collect();
+    format!("{DEFAULT_KEYCHAIN_SERVICE}-{hash}")
+}
+
+/// One place a credentials JSON document can be read from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CredentialSource {
+    /// A generic-password Keychain item, by service name.
+    Keychain {
+        /// The service name.
+        service: String,
+    },
+    /// A `.credentials.json` file.
+    File {
+        /// Its path.
+        path: Utf8PathBuf,
+    },
+}
+
+/// Where one Claude profile's credentials may live, in lookup order (first hit wins).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialLocation {
+    sources: Vec<CredentialSource>,
+}
+
+impl CredentialLocation {
+    /// The `default` profile (D26): Keychain `Claude Code-credentials`, then
+    /// `<home>/.claude/.credentials.json`.
+    #[must_use]
+    pub fn default_profile(home: &Utf8Path) -> Self {
+        Self {
+            sources: vec![
+                CredentialSource::Keychain {
+                    service: DEFAULT_KEYCHAIN_SERVICE.to_owned(),
+                },
+                CredentialSource::File {
+                    path: home.join(".claude").join(CREDENTIALS_FILE),
+                },
+            ],
+        }
+    }
+
+    /// Any other profile (D26): `<config_dir>/.credentials.json`, then the Keychain item Claude
+    /// Code names after the config dir ([`keychain_service_for_config_dir`]).
+    #[must_use]
+    pub fn config_dir(config_dir: &Utf8Path) -> Self {
+        Self {
+            sources: vec![
+                CredentialSource::File {
+                    path: config_dir.join(CREDENTIALS_FILE),
+                },
+                CredentialSource::Keychain {
+                    service: keychain_service_for_config_dir(config_dir),
+                },
+            ],
+        }
+    }
+
+    /// Replaces the service name of every Keychain source, for a profile whose item name is
+    /// configured explicitly.
+    #[must_use]
+    pub fn with_keychain_service(mut self, service: &str) -> Self {
+        for source in &mut self.sources {
+            if let CredentialSource::Keychain { service: current } = source {
+                service.clone_into(current);
+            }
+        }
+        self
+    }
+
+    /// The sources in lookup order.
+    #[must_use]
+    pub fn sources(&self) -> &[CredentialSource] {
+        &self.sources
+    }
+}
+
+/// Failure to read credentials. None of the variants carries credential text.
+#[derive(Debug, thiserror::Error)]
+pub enum CredentialsError {
+    /// The secret store refused or failed.
+    #[error(transparent)]
+    Secret(#[from] SecretError),
+    /// The credentials file exists but cannot be read.
+    #[error("cannot read credentials file {path}: {source}")]
+    Io {
+        /// The file.
+        path: Utf8PathBuf,
+        /// The cause.
+        #[source]
+        source: std::io::Error,
+    },
+    /// A credentials document is not the JSON Claude Code writes. The parser's message is
+    /// dropped on purpose: it can quote input.
+    #[error("credentials are not valid Claude Code credentials JSON")]
+    Malformed,
+}
+
+/// `{"claudeAiOauth": {...}}`; every other key is ignored.
+#[derive(Debug, Deserialize)]
+struct RawCredentials {
+    #[serde(rename = "claudeAiOauth")]
+    claude_ai_oauth: Option<RawOauth>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawOauth {
+    access_token: Option<SecretString>,
+    subscription_type: Option<String>,
+    rate_limit_tier: Option<String>,
+}
+
+/// A Claude OAuth access token plus the non-secret account fields stored beside it.
+///
+/// `Debug` is safe to log: [`SecretString`] prints `[REDACTED]`.
+#[derive(Debug)]
+pub struct ClaudeCredentials {
+    access_token: SecretString,
+    account: AccountInfo,
+}
+
+impl ClaudeCredentials {
+    /// Parses one credentials JSON document. `Ok(None)` when it holds no usable
+    /// `claudeAiOauth.accessToken` (signed out).
+    ///
+    /// # Errors
+    /// [`CredentialsError::Malformed`] when the text is not JSON of the expected shape.
+    pub fn parse(json: &str) -> Result<Option<Self>, CredentialsError> {
+        let raw: RawCredentials =
+            serde_json::from_str(json).map_err(|_| CredentialsError::Malformed)?;
+        let Some(oauth) = raw.claude_ai_oauth else {
+            return Ok(None);
+        };
+        let Some(access_token) = oauth
+            .access_token
+            .filter(|t| !t.expose_secret().trim().is_empty())
+        else {
+            return Ok(None);
+        };
+        let plan = plan_from_claude(
+            oauth.subscription_type.as_deref(),
+            oauth.rate_limit_tier.as_deref(),
+        );
+        Ok(Some(Self {
+            access_token,
+            account: AccountInfo {
+                email: None,
+                organization: None,
+                plan,
+                rate_limit_tier: oauth.rate_limit_tier,
+            },
+        }))
+    }
+
+    /// Reads the first source of `location` that holds credentials. Blocking: the Keychain may
+    /// prompt, so call from a blocking context.
+    ///
+    /// A source that fails does not hide a later one that works; when nothing works, the first
+    /// failure is returned, otherwise `Ok(None)` (signed out).
+    ///
+    /// # Errors
+    /// The first [`CredentialsError`] when no source yielded credentials and one failed.
+    pub fn load(
+        location: &CredentialLocation,
+        secrets: &dyn SecretStore,
+    ) -> Result<Option<Self>, CredentialsError> {
+        let mut first_error = None;
+        for source in location.sources() {
+            match Self::read_source(source, secrets) {
+                Ok(Some(credentials)) => return Ok(Some(credentials)),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "credential source unreadable");
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        first_error.map_or(Ok(None), Err)
+    }
+
+    fn read_source(
+        source: &CredentialSource,
+        secrets: &dyn SecretStore,
+    ) -> Result<Option<Self>, CredentialsError> {
+        match source {
+            CredentialSource::Keychain { service } => secrets
+                .get(service)?
+                .map_or(Ok(None), |text| Self::parse(text.expose_secret())),
+            CredentialSource::File { path } => match std::fs::read_to_string(path) {
+                Ok(text) => {
+                    let text = SecretString::from(text);
+                    Self::parse(text.expose_secret())
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(source) => Err(CredentialsError::Io {
+                    path: path.clone(),
+                    source,
+                }),
+            },
+        }
+    }
+
+    /// The bearer token.
+    #[must_use]
+    pub fn access_token(&self) -> &SecretString {
+        &self.access_token
+    }
+
+    /// Plan and tier from the credentials; email and organization come from the profile
+    /// endpoint.
+    #[must_use]
+    pub fn account(&self) -> &AccountInfo {
+        &self.account
+    }
+}
