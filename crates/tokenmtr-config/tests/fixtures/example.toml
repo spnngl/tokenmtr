@@ -82,6 +82,9 @@ log_level = "info"
 [store]
 # path = "~/Library/Application Support/dev.tokenmtr.app/usage.db"  # platform default
 
+[logging]
+format = "text"                   # text | json
+
 [privacy]
 redact_paths = false
 

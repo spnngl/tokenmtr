@@ -9,7 +9,7 @@ use jiff::tz::TimeZone;
 use serde_json::json;
 use tempfile::TempDir;
 use tokenmtr_core::{AgentId, ProfileId, UsageEvent};
-use tokenmtr_store::{Dataset, Revision, Store, StoreRead as _, Versioned};
+use tokenmtr_store::{Dataset, IssueKind, Revision, Store, StoreRead as _, Versioned};
 
 use super::{
     IngestError, IngestSettings, Ingestor, ParseReason, ScanMode, ScanPriority, ScanReport,
@@ -42,10 +42,14 @@ impl Machine {
     }
 
     fn with_rules(rules_toml: &str) -> Self {
+        Self::with_privacy(rules_toml, false)
+    }
+
+    fn with_privacy(rules_toml: &str, redact_paths: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = utf8_dir(&dir);
         let store = Store::open(&root.join("store.db")).unwrap();
-        let ingestor = ingestor(&root, rules_toml);
+        let ingestor = ingestor(&root, rules_toml, redact_paths);
         Self {
             _dir: dir,
             root,
@@ -64,7 +68,7 @@ impl Machine {
 
     /// Replaces the ingestor, as a daemon restart with a changed config would.
     fn reconfigure(&mut self, rules_toml: &str) {
-        self.ingestor = ingestor(&self.root, rules_toml);
+        self.ingestor = ingestor(&self.root, rules_toml, false);
     }
 
     fn scan(&mut self) -> ScanReport {
@@ -96,7 +100,7 @@ impl Machine {
     }
 }
 
-fn ingestor(root: &Utf8Path, rules_toml: &str) -> Ingestor {
+fn ingestor(root: &Utf8Path, rules_toml: &str, redact_paths: bool) -> Ingestor {
     let claude = Profile::new(
         ProfileId::default_profile(),
         vec![root.join("claude").join("projects")],
@@ -115,6 +119,7 @@ fn ingestor(root: &Utf8Path, rules_toml: &str) -> Ingestor {
         zone: TimeZone::UTC,
         import_claude_stats_cache: true,
         protected: vec![root.join("protected")],
+        redact_paths,
     };
     Ingestor::open(settings, &root.join("store.db")).unwrap()
 }
@@ -433,6 +438,73 @@ fn a_rule_change_moves_only_the_events_of_the_affected_cwds() {
             .as_str()
             .starts_with("/work/")
     }));
+}
+
+#[test]
+fn redacted_paths_never_reach_the_store_and_projects_still_resolve() {
+    let rule = "[[projects]]\nmatch = \"/work/a/**\"\nname = \"alpha\"\nclient = \"acme\"\n";
+    let mut machine = Machine::with_privacy(rule, true);
+    session_file(&machine, "sa", 0..3, "/work/a/app");
+    session_file(&machine, "sb", 0..2, "/definitely/not/here");
+    machine.scan();
+    let key = machine.store.redaction_key().clone();
+
+    let events = machine.events();
+    assert_eq!(events.len(), 5);
+    for event in &events {
+        let row = &event.row;
+        assert_eq!(row.git_branch.as_deref(), Some(key.hash("main").as_str()));
+        let cwd = row.cwd.as_ref().unwrap().as_str();
+        if cwd == key.hash("/work/a/app") {
+            assert_eq!(row.project.as_ref().unwrap().as_str(), "alpha");
+            assert_eq!(row.client.as_deref(), Some("acme"));
+        } else {
+            assert_eq!(cwd, key.hash("/definitely/not/here"));
+            assert_eq!(
+                row.project.as_ref().unwrap().as_str(),
+                key.hash("/definitely/not/here"),
+                "a path-derived project key is hashed too"
+            );
+        }
+    }
+    let projects = machine.store.projects().unwrap();
+    assert_eq!(projects.len(), 2);
+    assert!(projects.iter().all(|p| p.repo_root.is_none()));
+    assert!(projects.iter().any(|p| p.name == "alpha"));
+    let issues = machine.store.open_parse_issues().unwrap();
+    let missing: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == IssueKind::MissingCwd)
+        .collect();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0].subject, key.hash("/definitely/not/here"));
+
+    // Not one byte of the database files (main file and write-ahead log) holds a real cwd.
+    // (The configured rule glob `/work/a/**` is stored as the reason of a match: it is config.)
+    for entry in fs::read_dir(&machine.root).unwrap() {
+        let path = entry.unwrap().path();
+        let is_store = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("store.db"));
+        if is_store && path.is_file() {
+            let bytes = fs::read(&path).unwrap();
+            for needle in [&b"/work/a/app"[..], b"definitely/not/here"] {
+                let hit = bytes
+                    .windows(needle.len())
+                    .position(|window| window == needle);
+                assert!(
+                    hit.is_none(),
+                    "{path:?} holds {:?} near {:?}",
+                    String::from_utf8_lossy(needle),
+                    hit.map(|at| String::from_utf8_lossy(
+                        &bytes[at.saturating_sub(80)..(at + 80).min(bytes.len())]
+                    )
+                    .into_owned())
+                );
+            }
+        }
+    }
 }
 
 #[test]

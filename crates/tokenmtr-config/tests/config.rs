@@ -10,8 +10,8 @@ use camino::Utf8Path;
 use jiff::SignedDuration;
 use jiff::civil::date;
 use tokenmtr_config::{
-    ConfigDocument, ConfigError, ConfigFormat, FileFormat, LineCol, Partition, ProfileLocation,
-    RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
+    ConfigDocument, ConfigError, ConfigFormat, FileFormat, LineCol, LogFormat, Partition,
+    ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
 };
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, EurMicros, Money, Plan, ProfileId, ProjectKey, ProviderId,
@@ -147,12 +147,21 @@ fn an_empty_file_is_the_default_config() {
     assert!(config.subscriptions.is_empty() && config.sinks.is_empty());
     assert!(config.pricing.auto_update);
     assert!(!config.privacy.redact_paths);
+    assert_eq!(config.logging.format, LogFormat::Text);
     assert!(config.store.path.is_none());
     for agent in [AgentId::CLAUDE, AgentId::PI] {
         let profiles = &config.agents[&agent].profiles;
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].id, ProfileId::default_profile());
     }
+}
+
+#[test]
+fn the_log_format_is_text_or_json() {
+    let config = parse("[logging]\nformat = \"json\"\n").unwrap();
+    assert_eq!(config.logging.format, LogFormat::Json);
+    assert!(parse("[logging]\nformat = \"xml\"\n").is_err());
+    assert!(parse("[logging]\nlevel = \"info\"\n").is_err());
 }
 
 #[test]

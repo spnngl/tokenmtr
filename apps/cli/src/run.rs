@@ -7,16 +7,18 @@ use std::time::Duration;
 use anyhow::{Context, ensure};
 use camino::Utf8Path;
 use secrecy::SecretString;
-use tokenmtr_config::LogLevel;
+use tokenmtr_config::{LogFormat, LogLevel};
 use tokenmtr_daemon::{Daemon, Settings};
 use tokenmtr_platform::{
     Paths, Platform, PlatformKind, SecretError, SecretStore, ThreadPriority, set_thread_priority,
 };
 use tokenmtr_remote::Endpoints;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 /// Worker threads of the daemon runtime: the work is I/O waits and short transactions (D47).
 const WORKER_THREADS: usize = 2;
@@ -111,12 +113,25 @@ async fn wait_for_signal() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A log layer writing `format` lines to `writer`.
+fn fmt_layer<S, W>(format: LogFormat, writer: W, ansi: bool) -> Box<dyn Layer<S> + Send + Sync>
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
+{
+    let layer = tracing_subscriber::fmt::layer().with_writer(writer);
+    match format {
+        LogFormat::Text => layer.with_ansi(ansi).boxed(),
+        LogFormat::Json => layer.json().boxed(),
+    }
+}
+
 /// Logs to a daily rolling file in the platform log directory (and to stderr on a terminal).
 /// `RUST_LOG` wins over the configured level. The returned guard flushes the file on drop.
 fn init_tracing(paths: &Paths, config_path: &Utf8Path) -> anyhow::Result<WorkerGuard> {
-    // The daemon reports an invalid config itself; here only the level matters.
-    let level = tokenmtr_config::load(config_path)
-        .map(|config| config.daemon.log_level)
+    // The daemon reports an invalid config itself; here only the log settings matter.
+    let (level, format) = tokenmtr_config::load(config_path)
+        .map(|config| (config.daemon.log_level, config.logging.format))
         .unwrap_or_default();
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(level_directive(level)));
@@ -127,12 +142,10 @@ fn init_tracing(paths: &Paths, config_path: &Utf8Path) -> anyhow::Result<WorkerG
         .build(paths.logs_dir())
         .context("cannot open the log directory")?;
     let (file, guard) = tracing_appender::non_blocking(appender);
-    let to_file = tracing_subscriber::fmt::layer()
-        .with_ansi(false)
-        .with_writer(file);
+    let to_file = fmt_layer(format, file, false);
     let to_terminal = std::io::stderr()
         .is_terminal()
-        .then(|| tracing_subscriber::fmt::layer().with_writer(std::io::stderr));
+        .then(|| fmt_layer(format, std::io::stderr, true));
     tracing_subscriber::registry()
         .with(filter)
         .with(to_file)
@@ -149,5 +162,62 @@ fn level_directive(level: LogLevel) -> &'static str {
         LogLevel::Info => "info",
         LogLevel::Debug => "debug",
         LogLevel::Trace => "trace",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::sync::{Arc, Mutex};
+
+    use tracing_subscriber::Registry;
+
+    use super::*;
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for Capture {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn logged(format: LogFormat) -> String {
+        let capture = Capture::default();
+        let writer = capture.clone();
+        let layer = fmt_layer::<Registry, _>(format, move || writer.clone(), false);
+        tracing::subscriber::with_default(Registry::default().with(layer), || {
+            tracing::info!(rows = 3, "scan finished");
+            tracing::warn!("second line");
+        });
+        let bytes = capture.0.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn json_format_writes_one_parsable_object_per_line() {
+        let text = logged(LogFormat::Json);
+        let lines: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["level"], "INFO");
+        assert_eq!(lines[0]["fields"]["message"], "scan finished");
+        assert_eq!(lines[0]["fields"]["rows"], 3);
+        assert_eq!(lines[1]["level"], "WARN");
+    }
+
+    #[test]
+    fn text_format_is_not_json() {
+        let text = logged(LogFormat::Text);
+        assert!(text.contains("scan finished") && text.contains("rows=3"));
+        assert!(serde_json::from_str::<serde_json::Value>(text.lines().next().unwrap()).is_err());
     }
 }

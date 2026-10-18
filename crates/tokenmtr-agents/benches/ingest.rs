@@ -152,6 +152,7 @@ fn ingestor(config_dir: &Utf8Path, store_path: &Utf8Path) -> Ingestor {
         zone: TimeZone::UTC,
         import_claude_stats_cache: false,
         protected: Vec::new(),
+        redact_paths: false,
     };
     Ingestor::open(settings, store_path).expect("open ingestor")
 }

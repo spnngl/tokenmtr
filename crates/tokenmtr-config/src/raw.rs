@@ -18,8 +18,8 @@ use tokenmtr_core::{
 };
 
 use crate::model::{
-    ClientName, Dataset, FileMode, LogLevel, MenubarTitle, Partition, Percent, RedactColumn,
-    RedactMode,
+    ClientName, Dataset, FileMode, LogFormat, LogLevel, MenubarTitle, Partition, Percent,
+    RedactColumn, RedactMode,
 };
 
 /// Why a duration string is rejected.
@@ -163,6 +163,7 @@ pub struct RawConfig {
     pub pricing: RawPricing,
     pub subscriptions: Vec<RawSubscription>,
     pub daemon: RawDaemon,
+    pub logging: RawLogging,
     pub store: RawStore,
     pub privacy: RawPrivacy,
     pub agents: RawAgents,
@@ -325,6 +326,12 @@ pub struct RawDaemon {
     pub scan_interval: Option<RawDuration>,
     pub watch: Option<bool>,
     pub log_level: Option<LogLevel>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RawLogging {
+    pub format: Option<LogFormat>,
 }
 
 #[derive(Debug, Default, Deserialize)]

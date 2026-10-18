@@ -31,6 +31,8 @@ pub struct IngestSettings {
     pub import_claude_stats_cache: bool,
     /// macOS protected folders the doctor reports cwds under (D50).
     pub protected: Vec<Utf8PathBuf>,
+    /// `privacy.redact_paths` (D13): store keyed hashes instead of cwds and git branches.
+    pub redact_paths: bool,
 }
 
 impl IngestSettings {
@@ -76,7 +78,8 @@ impl IngestSettings {
                 TimeZoneSetting::Named(zone) => zone.clone(),
             },
             import_claude_stats_cache: config.import.claude_stats_cache,
-            protected: paths.protected().into(),
+            protected: paths.protected(),
+            redact_paths: config.privacy.redact_paths,
         }
     }
 }

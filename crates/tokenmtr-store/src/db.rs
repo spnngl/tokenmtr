@@ -64,6 +64,23 @@ pub(crate) fn reject_newer_schema(conn: &Connection) -> Result<u32, StoreError> 
     Ok(found)
 }
 
+/// Takes an exclusive advisory lock on `<db>-lock`; it is held while the returned file lives,
+/// which a connection setup keeps for its duration.
+///
+/// The app, the CLI and the daemon may all open a fresh database at once, and `SQLite`'s own locks
+/// do not serialise that: `to_latest` reads `user_version` before its transaction (`table meta
+/// already exists`), and switching to WAL can report `database is locked`. The lock goes when the
+/// file closes, also when the process dies.
+fn lock_setup(db: &Utf8Path) -> Result<std::fs::File, StoreError> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(format!("{db}-lock"))?;
+    file.lock()?;
+    Ok(file)
+}
+
 /// Runs `PRAGMA integrity_check`; anything but a single `ok` is an error (D37).
 pub(crate) fn check_integrity(conn: &Connection) -> Result<(), StoreError> {
     let mut statement = conn.prepare("PRAGMA integrity_check")?;
@@ -385,6 +402,7 @@ impl Store {
         if let Some(parent) = path.parent().filter(|p| !p.as_str().is_empty()) {
             std::fs::create_dir_all(parent)?;
         }
+        let _setup_lock = lock_setup(path)?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         reject_newer_schema(&conn)?;

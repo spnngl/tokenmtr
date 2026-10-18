@@ -15,7 +15,6 @@ tokenmtr-core.workspace = true
 tokenmtr-platform.workspace = true
 tokenmtr-store.workspace = true
 
-blake3.workspace = true
 camino.workspace = true
 csv.workspace = true
 jiff.workspace = true

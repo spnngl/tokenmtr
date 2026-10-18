@@ -13,14 +13,10 @@ use tokenmtr_store::RedactionKey;
 use crate::schema::{ExportRow, Value, schema};
 use crate::sink::ExportBatch;
 
-/// Hex characters kept from the keyed hash.
-const HASH_HEX_CHARS: usize = 16;
-
-/// The keyed hash of `value`: 16 lowercase hex characters.
+/// The keyed hash of `value`: 16 lowercase hex characters ([`RedactionKey::hash`]).
 #[must_use]
 pub fn hash_value(key: &RedactionKey, value: &str) -> String {
-    let hex = blake3::keyed_hash(key.as_bytes(), value.as_bytes()).to_hex();
-    hex.as_str()[..HASH_HEX_CHARS].to_owned()
+    key.hash(value)
 }
 
 /// A sink's redaction rules bound to the install key.

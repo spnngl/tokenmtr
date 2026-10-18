@@ -97,8 +97,8 @@ pub(crate) struct Runtime {
 
 /// Shared by every task; always behind an [`Arc`].
 ///
-/// Lock order, outermost first: `ingestor`, `sinks`, `store`. `reader`, `run` and `active` are
-/// leaf locks: never hold one while taking another lock.
+/// Lock order, outermost first: `ingestor`, `sinks`, `store`. `reader`, `beat`, `run` and
+/// `active` are leaf locks: never hold one while taking another lock.
 pub(crate) struct Ctx {
     pub settings: Settings,
     pub store_path: Utf8PathBuf,
@@ -106,6 +106,9 @@ pub(crate) struct Ctx {
     pub store: Mutex<Store>,
     /// A second connection: queries, backups and head checks never wait for a write.
     pub reader: Mutex<StoreReader>,
+    /// A third connection that only writes the heartbeat: a scan, export or backup holding
+    /// `store` for minutes never delays it, so the app does not see a stale daemon (D36).
+    pub beat: Mutex<Store>,
     pub ingestor: Mutex<Ingestor>,
     pub sinks: Mutex<Vec<ConfiguredSink>>,
     pub active: RwLock<Arc<Active>>,

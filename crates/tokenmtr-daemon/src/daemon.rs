@@ -131,11 +131,12 @@ async fn build(
     let path = store_path(&settings.paths, &config);
     let open_path = path.clone();
     let open_ingest = ingest.clone();
-    let (store, reader, ingestor) = tokio::task::spawn_blocking(move || {
+    let (store, beat, reader, ingestor) = tokio::task::spawn_blocking(move || {
         let store = Store::open(&open_path)?;
+        let beat = Store::open(&open_path)?;
         let reader = StoreReader::open(&open_path)?;
         let ingestor = Ingestor::open(open_ingest, &open_path)?;
-        Ok::<_, DaemonError>((store, reader, ingestor))
+        Ok::<_, DaemonError>((store, beat, reader, ingestor))
     })
     .await??;
 
@@ -148,6 +149,7 @@ async fn build(
         settings,
         store_path: path,
         store: Mutex::new(store),
+        beat: Mutex::new(beat),
         reader: Mutex::new(reader),
         ingestor: Mutex::new(ingestor),
         sinks: Mutex::new(sinks),
@@ -190,7 +192,7 @@ async fn run_job(ctx: Arc<Ctx>, job: Job) {
         Job::Heartbeat => {
             let beat = ctx
                 .blocking(ThreadPriority::Background, |ctx| {
-                    lock(&ctx.store).set_heartbeat()
+                    lock(&ctx.beat).set_heartbeat()
                 })
                 .await;
             match beat {
@@ -281,3 +283,6 @@ async fn run_job(ctx: Arc<Ctx>, job: Job) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

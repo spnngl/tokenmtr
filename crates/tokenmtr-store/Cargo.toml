@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 tokenmtr-core.workspace = true
 
+blake3.workspace = true
 camino.workspace = true
 jiff.workspace = true
 rusqlite.workspace = true

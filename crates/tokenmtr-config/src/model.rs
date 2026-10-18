@@ -441,6 +441,24 @@ pub enum LogLevel {
     Trace,
 }
 
+/// Line format of the daemon log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogFormat {
+    /// Human-readable lines.
+    #[default]
+    Text,
+    /// One JSON object per line.
+    Json,
+}
+
+/// `[logging]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoggingConfig {
+    /// Line format of the log file and of the terminal output.
+    pub format: LogFormat,
+}
+
 /// `[daemon]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DaemonConfig {
@@ -497,6 +515,8 @@ pub struct Config {
     pub subscriptions: Vec<Subscription>,
     /// `[daemon]`.
     pub daemon: DaemonConfig,
+    /// `[logging]`.
+    pub logging: LoggingConfig,
     /// `[store]`.
     pub store: StoreConfig,
     /// `[privacy]`.

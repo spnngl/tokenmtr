@@ -96,6 +96,9 @@ log_level = "info"
 [store]
 # path = "~/Library/Application Support/dev.tokenmtr.app/usage.db"  # platform default
 
+[logging]
+format = "text"                   # text | json
+
 [privacy]
 redact_paths = false
 
@@ -296,6 +299,12 @@ Two subscriptions with the same provider, a shared agent, a shared profile and o
 | `watch` | bool | `true` | Scan on file system events. |
 | `log_level` | `error`, `warn`, `info`, `debug`, `trace` | `"info"` | Log verbosity. |
 
+### `[logging]`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `format` | `text`, `json` | `"text"` | Line format of the daemon log, file and terminal: `json` writes one JSON object per line. The level is `daemon.log_level`. |
+
 ### `[store]`
 
 | Key | Type | Default | Meaning |
@@ -306,7 +315,7 @@ Two subscriptions with the same provider, a shared agent, a shared profile and o
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `redact_paths` | bool | `false` | Hash paths at ingest (D13). |
+| `redact_paths` | bool | `false` | Store a keyed hash (BLAKE3, 16 hex characters, key in the store) instead of each event's `cwd` and `git_branch`, and instead of the cwd and path-derived project key in the project map and parse issues (D13). Projects and clients still resolve from the real cwd, which is never written. Applies to events ingested afterwards: rows already stored keep their paths until you erase the store. Rule changes are not re-resolved for hashed cwds. Agent transcript paths (checkpoints, file issues) stay, and so does the project display name (the directory's name). |
 
 ### `[agents.<agent>]`
 

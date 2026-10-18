@@ -108,6 +108,32 @@ mod api;
 mod perf;
 
 #[test]
+fn concurrent_first_opens_all_succeed_on_one_identity() {
+    const THREADS: usize = 8;
+    for _ in 0..10 {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Utf8PathBuf::from_path_buf(dir.path().join("fresh.db")).unwrap();
+        let barrier = std::sync::Barrier::new(THREADS);
+        let machines: Vec<MachineId> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..THREADS)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        Store::open(&path).unwrap().machine_id()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(machines.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(
+            Store::open(&path).unwrap().schema_version().unwrap(),
+            SCHEMA_VERSION
+        );
+    }
+}
+
+#[test]
 fn open_seeds_identity_and_reopens_with_the_same_one() {
     let Fixture {
         _dir, path, store, ..

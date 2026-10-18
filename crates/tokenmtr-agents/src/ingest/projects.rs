@@ -4,13 +4,14 @@
 //! stored answer no longer holds and rewrites the project and client of their events; the store
 //! bumps a revision only on rows that really change, so sinks re-export just those.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
-use tokenmtr_core::{AgentId, ProjectKey};
+use tokenmtr_core::{AgentId, ProjectKey, UsageEvent};
 use tokenmtr_store::{
-    IssueKind, ParseIssue, ProjectResolution, ProjectSource, Store, StoreRead as _,
+    IssueKind, ParseIssue, ProjectResolution, ProjectSource, RedactionKey, Store, StoreRead as _,
 };
 
 use super::error::IngestError;
@@ -22,17 +23,44 @@ pub type Assignment = (ProjectKey, Option<String>);
 /// Resolutions loaded from the store, extended as new cwds appear.
 pub struct ProjectCache {
     map: HashMap<Utf8PathBuf, ProjectResolution>,
+    /// Set under `privacy.redact_paths`: the key that replaces every stored path (D13).
+    redaction: Option<RedactionKey>,
 }
 
 impl ProjectCache {
-    /// Loads every stored resolution.
-    pub fn load(store: &Store) -> Result<Self, IngestError> {
+    /// Loads every stored resolution. With `redaction`, the cache is keyed by hashed cwds and
+    /// nothing path-like reaches the store.
+    pub fn load(store: &Store, redaction: Option<RedactionKey>) -> Result<Self, IngestError> {
         let map = store
             .projects()?
             .into_iter()
             .map(|resolution| (resolution.cwd.clone(), resolution))
             .collect();
-        Ok(Self { map })
+        Ok(Self { map, redaction })
+    }
+
+    /// What the store holds for `cwd`: the cwd, or its keyed hash under redaction.
+    fn stored_cwd<'a>(&self, cwd: &'a Utf8Path) -> Cow<'a, Utf8Path> {
+        match &self.redaction {
+            Some(key) => Cow::Owned(Utf8PathBuf::from(key.hash(cwd.as_str()))),
+            None => Cow::Borrowed(cwd),
+        }
+    }
+
+    /// Sets the project and client of `event` from `assignment`, then replaces its cwd and git
+    /// branch by their keyed hashes under redaction.
+    pub fn label(&self, event: &mut UsageEvent, assignment: Option<Assignment>) {
+        if let Some((project, client)) = assignment {
+            event.project = Some(project);
+            event.client = client;
+        }
+        if let Some(key) = &self.redaction {
+            event.cwd = event
+                .cwd
+                .take()
+                .map(|cwd| Utf8PathBuf::from(key.hash(cwd.as_str())));
+            event.git_branch = event.git_branch.take().map(|branch| key.hash(&branch));
+        }
     }
 
     /// The project and client of `cwd`: from the cache, else resolved now and stored. A cwd that
@@ -46,28 +74,50 @@ impl ProjectCache {
         cwd: &Utf8Path,
         now: Timestamp,
     ) -> Result<Option<Assignment>, IngestError> {
-        if let Some(known) = self.map.get(cwd) {
+        let stored_cwd = self.stored_cwd(cwd);
+        if let Some(known) = self.map.get(&*stored_cwd) {
             return Ok(Some((known.project.clone(), known.client.clone())));
         }
+        // Resolve from the real cwd, then hide it: rules and git need the real path.
         let Some(found) = resolver.resolve(cwd, now) else {
             return Ok(None);
         };
-        store.save_project(&found.resolution)?;
+        let Some(resolution) = self.redacted(found.resolution) else {
+            return Ok(None);
+        };
+        store.save_project(&resolution)?;
         if let Some(problem) = found.problem {
-            store.record_parse_issue(&cwd_issue(agent, cwd, problem, now))?;
+            store.record_parse_issue(&cwd_issue(agent, &stored_cwd, problem, now))?;
         }
-        let assignment = (
-            found.resolution.project.clone(),
-            found.resolution.client.clone(),
-        );
-        self.map.insert(cwd.to_owned(), found.resolution);
+        let assignment = (resolution.project.clone(), resolution.client.clone());
+        self.map.insert(stored_cwd.into_owned(), resolution);
         Ok(Some(assignment))
+    }
+
+    /// `resolution` with every path replaced by its keyed hash, when redacting. The display
+    /// name stays (it is the project's name); the repository root is dropped, and a project key
+    /// that is a path (no remote, no rule) is hashed. `None` only if the hash were blank.
+    fn redacted(&self, mut resolution: ProjectResolution) -> Option<ProjectResolution> {
+        let Some(key) = &self.redaction else {
+            return Some(resolution);
+        };
+        resolution.cwd = Utf8PathBuf::from(key.hash(resolution.cwd.as_str()));
+        resolution.repo_root = None;
+        if matches!(
+            resolution.source,
+            ProjectSource::RepoRoot | ProjectSource::Cwd
+        ) {
+            resolution.project =
+                ProjectKey::try_from(key.hash(resolution.project.as_str())).ok()?;
+        }
+        Some(resolution)
     }
 
     /// Re-resolves the cwds whose stored resolution a rule change invalidated (all of them when
     /// `all`), saves the new answers and rewrites the events of cwds whose project or client
     /// moved. Returns the number of cwds that changed project or client and the number of events
-    /// rewritten.
+    /// rewritten. Does nothing under redaction: the store no longer holds the real cwds, so a
+    /// rule change applies to cwds first seen afterwards.
     pub fn reresolve(
         &mut self,
         store: &mut Store,
@@ -75,6 +125,9 @@ impl ProjectCache {
         all: bool,
         now: Timestamp,
     ) -> Result<(u64, u64), IngestError> {
+        if self.redaction.is_some() {
+            return Ok((0, 0));
+        }
         let candidates: Vec<Utf8PathBuf> = self
             .map
             .iter()

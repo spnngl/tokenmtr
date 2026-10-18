@@ -37,7 +37,7 @@ pub struct EraseReport {
     pub service_removed: bool,
 }
 
-/// Deletes the store, its `-wal`/`-shm`/`-journal` files, the backups and the logs, and per
+/// Deletes the store, its `-wal`/`-shm`/`-journal`/`-lock` files, the backups and the logs, and per
 /// `scope` the config and the service (D56).
 ///
 /// # Errors
@@ -62,7 +62,7 @@ pub fn erase(
     ensure_daemon_stopped(transport)?;
 
     let store = store_path(paths, config);
-    for suffix in ["", "-wal", "-shm", "-journal"] {
+    for suffix in ["", "-wal", "-shm", "-journal", "-lock"] {
         remove_file(&Utf8PathBuf::from(format!("{store}{suffix}")), &mut report)?;
     }
     for backup in backup_files(&backup_dir(paths, config)) {

@@ -54,7 +54,7 @@ pub fn diagnose(
         store_error: None,
         daemon_running: daemon_running(transport),
         service: service.status().ok().map(|status| label(status).to_owned()),
-        protected_folders: paths.protected().to_vec(),
+        protected_folders: paths.protected(),
         ingest: None,
     };
     let config = match load_config(config_path, env) {

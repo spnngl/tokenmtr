@@ -185,7 +185,11 @@ impl Ingestor {
         let now = (self.clock)();
         apply_priority(request.priority);
         self.pricer.refresh(store, now)?;
-        let mut cache = ProjectCache::load(store)?;
+        let redaction = self
+            .settings
+            .redact_paths
+            .then(|| store.redaction_key().clone());
+        let mut cache = ProjectCache::load(store, redaction)?;
         let (cwds_reresolved, events_reassigned) =
             cache.reresolve(store, &self.resolver, request.mode == ScanMode::Full, now)?;
 
@@ -751,10 +755,7 @@ impl Run<'_> {
             parsed.source_file = task.file.id;
             let estimate = self.pricer.price(self.reader, &mut parsed)?;
             let mut event = parsed.into_usage_event(&self.machine, estimate);
-            if let Some((project, client)) = assignment {
-                event.project = Some(project);
-                event.client = client;
-            }
+            self.cache.label(&mut event, assignment);
             self.states[slot].pending.events.push(event);
             if self.states[slot].pending.events.len() >= CHUNK {
                 self.flush(slot)?;

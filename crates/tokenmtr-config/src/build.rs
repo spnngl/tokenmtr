@@ -20,9 +20,9 @@ use crate::error::{ConfigPath, Rejection, Violation};
 use crate::model::{
     AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry, BudgetScope,
     CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset, DisplayConfig,
-    FileFormat, FileSink, FxConfig, ImportConfig, MachineConfig, MenubarConfig, MenubarTitle,
-    Percent, PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule,
-    QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig, TimeZoneSetting,
+    FileFormat, FileSink, FxConfig, ImportConfig, LoggingConfig, MachineConfig, MenubarConfig,
+    MenubarTitle, Percent, PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation,
+    ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig, TimeZoneSetting,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
@@ -96,6 +96,9 @@ impl Config {
                 scan_interval: duration_or(raw.daemon.scan_interval, SignedDuration::from_mins(5)),
                 watch: raw.daemon.watch.unwrap_or(true),
                 log_level: raw.daemon.log_level.unwrap_or_default(),
+            },
+            logging: LoggingConfig {
+                format: raw.logging.format.unwrap_or_default(),
             },
             store: StoreConfig {
                 path: optional_path(

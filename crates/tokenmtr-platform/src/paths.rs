@@ -27,9 +27,63 @@ pub enum PathsError {
     },
 }
 
+/// Where an operating system keeps application files and which folders it guards. One variant
+/// per platform of [`PlatformKind`](crate::PlatformKind): everything OS-specific about
+/// [`Paths`] lives in these arms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Layout {
+    /// macOS: `~/Library` and the TCC-protected folders (D50).
+    #[cfg(target_os = "macos")]
+    MacOs,
+}
+
+/// The directories a [`Layout`] derives from the home directory.
+struct Dirs {
+    data: Utf8PathBuf,
+    logs: Utf8PathBuf,
+    cache: Utf8PathBuf,
+}
+
+impl Layout {
+    /// The layout of the OS this build targets.
+    #[cfg(target_os = "macos")]
+    const CURRENT: Self = Self::MacOs;
+
+    fn dirs(self, home: &Utf8Path) -> Dirs {
+        match self {
+            #[cfg(target_os = "macos")]
+            Self::MacOs => {
+                let library = home.join("Library");
+                Dirs {
+                    data: library.join("Application Support").join(BUNDLE_ID),
+                    logs: library.join("Logs").join(CONFIG_DIR_NAME),
+                    cache: library.join("Caches").join(BUNDLE_ID),
+                }
+            }
+        }
+    }
+
+    fn protected(self, home: &Utf8Path) -> Vec<Utf8PathBuf> {
+        match self {
+            #[cfg(target_os = "macos")]
+            Self::MacOs => {
+                let library = home.join("Library");
+                vec![
+                    home.join("Documents"),
+                    home.join("Desktop"),
+                    home.join("Downloads"),
+                    library.join("Mobile Documents"),
+                    library.join("CloudStorage"),
+                ]
+            }
+        }
+    }
+}
+
 /// Resolved default locations. Construct once at startup and pass by reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
+    layout: Layout,
     home: Utf8PathBuf,
     config_dir: Utf8PathBuf,
     config_file: Utf8PathBuf,
@@ -77,13 +131,15 @@ impl Paths {
         let config_dir = xdg_config
             .unwrap_or_else(|| home.join(".config"))
             .join(CONFIG_DIR_NAME);
-        let library = home.join("Library");
+        let layout = Layout::CURRENT;
+        let dirs = layout.dirs(&home);
         Ok(Self {
+            layout,
             config_file: config_override.unwrap_or_else(|| config_dir.join(CONFIG_FILE_NAME)),
             config_dir,
-            data_dir: library.join("Application Support").join(BUNDLE_ID),
-            logs_dir: library.join("Logs").join(CONFIG_DIR_NAME),
-            cache_dir: library.join("Caches").join(BUNDLE_ID),
+            data_dir: dirs.data,
+            logs_dir: dirs.logs,
+            cache_dir: dirs.cache,
             home,
         })
     }
@@ -130,17 +186,11 @@ impl Paths {
         self.data_dir.join("exports")
     }
 
-    /// Folders macOS guards with per-app consent prompts (D50).
+    /// Folders the OS guards with per-app consent prompts (D50): on macOS Documents, Desktop,
+    /// Downloads, iCloud Drive and cloud storage.
     #[must_use]
-    pub fn protected(&self) -> [Utf8PathBuf; 5] {
-        let library = self.home.join("Library");
-        [
-            self.home.join("Documents"),
-            self.home.join("Desktop"),
-            self.home.join("Downloads"),
-            library.join("Mobile Documents"),
-            library.join("CloudStorage"),
-        ]
+    pub fn protected(&self) -> Vec<Utf8PathBuf> {
+        self.layout.protected(&self.home)
     }
 
     /// Whether `path` is one of the [`Paths::protected`] folders or lies under one.
@@ -220,6 +270,15 @@ mod tests {
             paths(&[("HOME", "/h"), (CONFIG_ENV, "c.toml")]),
             Err(PathsError::NotAbsolute { .. })
         ));
+    }
+
+    #[test]
+    fn protected_lists_every_folder_under_home() {
+        let p = paths(&[("HOME", "/Users/me")]).unwrap();
+        let protected = p.protected();
+        assert_eq!(protected.len(), 5);
+        assert!(protected.iter().all(|folder| folder.starts_with(p.home())));
+        assert!(protected.iter().all(|folder| p.is_protected(folder)));
     }
 
     #[test]

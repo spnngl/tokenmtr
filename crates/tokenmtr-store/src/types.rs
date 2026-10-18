@@ -171,7 +171,19 @@ impl RedactionKey {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// The first 16 hex characters of the blake3 hash of `value` keyed with this key (D40).
+    /// Equal inputs give equal hashes, and without the key nobody can test hashes against a list
+    /// of known values.
+    #[must_use]
+    pub fn hash(&self, value: &str) -> String {
+        let hex = blake3::keyed_hash(&self.0, value.as_bytes()).to_hex();
+        hex.as_str()[..REDACTION_HASH_CHARS].to_owned()
+    }
 }
+
+/// Hex characters kept from a keyed hash.
+const REDACTION_HASH_CHARS: usize = 16;
 
 impl fmt::Debug for RedactionKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
