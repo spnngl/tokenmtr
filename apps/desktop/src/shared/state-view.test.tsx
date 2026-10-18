@@ -49,6 +49,22 @@ describe("StateView", () => {
     expect(screen.queryByText("Usage content")).toBeNull();
   });
 
+  it("incompatible names both versions and offers Restart daemon", async () => {
+    const onRestartDaemon = vi.fn();
+    renderState({
+      kind: "incompatible",
+      appVersion: "0.2.0",
+      daemonVersion: "0.1.0",
+      onRestartDaemon,
+    });
+    expect(screen.getByText("Update required")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("0.2.0");
+    expect(screen.getByRole("alert").textContent).toContain("0.1.0");
+    expect(screen.queryByText("Usage content")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Restart daemon" }));
+    expect(onRestartDaemon).toHaveBeenCalledOnce();
+  });
+
   it("partial keeps the content and links to parse issues", () => {
     renderState({ kind: "partial", failedCollectors: 2, issuesHref: "#/settings" });
     expect(screen.getByText("Usage content")).toBeTruthy();
@@ -73,6 +89,12 @@ describe("StateView", () => {
     { kind: "empty", title: "No agents found", hint: "Start a session." },
     { kind: "error", message: "Boom", onRetry: () => undefined },
     { kind: "daemon-offline", onStartDaemon: () => undefined },
+    {
+      kind: "incompatible",
+      appVersion: "0.2.0",
+      daemonVersion: "0.1.0",
+      onRestartDaemon: () => undefined,
+    },
     { kind: "partial", failedCollectors: 1, issuesHref: "#/settings" },
     { kind: "stale", lastScan: "1h ago", onScanNow: () => undefined },
   ])("has no axe violations for $kind", async (state) => {

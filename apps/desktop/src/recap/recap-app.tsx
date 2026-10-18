@@ -1,20 +1,16 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { useAppConfig, useDataSource } from "../shared/app-context";
-import type { Period } from "../shared/recap-model";
+import { useRecap } from "../shared/queries";
+import type { Period } from "../shared/schemas";
 import { StateView } from "../shared/state-view";
 import { Recap } from "./recap";
 
 /** Loads the recap for the chosen period and wires the footer actions to the data source. */
 export function RecapApp(): ReactNode {
-  const { timeZone, defaultCurrency, fx } = useAppConfig();
+  const { timeZone, defaultCurrency, now } = useAppConfig();
   const dataSource = useDataSource();
   const [period, setPeriod] = useState<Period>("today");
-  const query = useQuery({
-    queryKey: ["recap", period],
-    queryFn: () => dataSource.recap(period),
-    placeholderData: keepPreviousData,
-  });
+  const query = useRecap(period, defaultCurrency);
 
   if (query.data === undefined) {
     return (
@@ -31,10 +27,10 @@ export function RecapApp(): ReactNode {
   }
   return (
     <Recap
-      model={query.data}
-      currency={defaultCurrency}
-      fx={fx}
+      snapshot={query.data}
+      period={period}
       timeZone={timeZone}
+      now={now()}
       onPeriodChange={setPeriod}
       onOpenDashboard={(agent) => void dataSource.openDashboard({ route: "/", agent })}
       onOpenSettings={() => void dataSource.openDashboard({ route: "/settings", agent: null })}

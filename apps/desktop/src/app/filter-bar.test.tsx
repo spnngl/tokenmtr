@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppProvider, bootstrapConfig } from "../shared/app-context";
 import { axeViolations } from "../shared/axe";
-import { emptyDataSource } from "../shared/data-source";
+import { createMockDataSource } from "../shared/mock";
 import { ThemeProvider } from "../shared/theme";
 import { createAppRouter } from "./router";
 
@@ -16,7 +16,7 @@ async function renderApp(url: string) {
   await router.load();
   const view = render(
     <ThemeProvider>
-      <AppProvider config={bootstrapConfig} dataSource={emptyDataSource}>
+      <AppProvider config={bootstrapConfig} dataSource={createMockDataSource()}>
         <QueryClientProvider client={new QueryClient()}>
           <RouterProvider router={router} />
         </QueryClientProvider>

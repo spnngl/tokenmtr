@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   type Fx,
   formatClock,
+  formatCurrencyMicros,
+  formatDateTime,
   formatDay,
   formatDuration,
   formatHour,
   formatMoney,
   formatPercent,
   formatRelativeReset,
+  formatRoiMultiple,
   formatTokens,
 } from "./format";
 
@@ -164,5 +167,33 @@ describe("time zone bucketing (D8)", () => {
 
   it("rejects an invalid zone instead of falling back to the system zone", () => {
     expect(() => formatDay(0, "Not/AZone")).toThrow(RangeError);
+  });
+});
+
+describe("formatCurrencyMicros", () => {
+  it("formats converted amounts without applying a rate", () => {
+    expect(formatCurrencyMicros(1_234_560_000, "USD")).toBe("$1,234.56");
+    expect(formatCurrencyMicros(1_234_560_000, "EUR")).toBe("€1,234.56");
+  });
+
+  it("rounds half away from zero and never prints a negative zero", () => {
+    expect(formatCurrencyMicros(5_000, "USD")).toBe("$0.01");
+    expect(formatCurrencyMicros(-4_000, "USD")).toBe("$0.00");
+  });
+});
+
+describe("formatRoiMultiple", () => {
+  it("shows one decimal and a dash without a subscription", () => {
+    expect(formatRoiMultiple(4)).toBe("4.0×");
+    expect(formatRoiMultiple(0.46)).toBe("0.5×");
+    expect(formatRoiMultiple(null)).toBe("—");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("uses the given zone for both the day and the clock", () => {
+    const instant = Date.parse("2026-06-15T23:30:00Z");
+    expect(formatDateTime(instant, "Europe/Paris")).toBe("2026-06-16 01:30");
+    expect(formatDateTime(instant, "America/New_York")).toBe("2026-06-15 19:30");
   });
 });

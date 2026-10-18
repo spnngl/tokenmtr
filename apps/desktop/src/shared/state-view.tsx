@@ -1,4 +1,12 @@
-import { CircleAlert, Clock, Inbox, LoaderCircle, ServerOff, TriangleAlert } from "lucide-react";
+import {
+  CircleAlert,
+  Clock,
+  Download,
+  Inbox,
+  LoaderCircle,
+  ServerOff,
+  TriangleAlert,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-aria-components";
 import { Button } from "./button";
@@ -13,6 +21,12 @@ export type ViewState =
   | { readonly kind: "empty"; readonly title: string; readonly hint: string }
   | { readonly kind: "error"; readonly message: string; readonly onRetry: () => void }
   | { readonly kind: "daemon-offline"; readonly onStartDaemon: () => void }
+  | {
+      readonly kind: "incompatible";
+      readonly appVersion: string;
+      readonly daemonVersion: string;
+      readonly onRestartDaemon: () => void;
+    }
   | { readonly kind: "partial"; readonly failedCollectors: number; readonly issuesHref: string }
   | { readonly kind: "stale"; readonly lastScan: string; readonly onScanNow: () => void };
 
@@ -112,6 +126,20 @@ export function StateView({ state, children }: StateViewProps): ReactNode {
           action={
             <Button variant="primary" onPress={state.onStartDaemon}>
               Install / start daemon
+            </Button>
+          }
+        />
+      );
+    case "incompatible":
+      return (
+        <Panel
+          role="alert"
+          icon={<Download className="size-6 text-warning" aria-hidden />}
+          title="Update required"
+          body={`The app is ${state.appVersion} but the daemon is ${state.daemonVersion}. Restart the daemon after updating so both run the same version.`}
+          action={
+            <Button variant="primary" onPress={state.onRestartDaemon}>
+              Restart daemon
             </Button>
           }
         />

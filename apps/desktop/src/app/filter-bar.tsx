@@ -1,8 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Input, Label, TextField } from "react-aria-components";
-import { useAppConfig, useDataSource } from "../shared/app-context";
-import { EMPTY_FILTER_OPTIONS, type FilterOptions } from "../shared/data-source";
+import { useAppConfig } from "../shared/app-context";
 import {
   BILLING_MODES,
   type BillingMode,
@@ -12,6 +10,8 @@ import {
   type Range,
 } from "../shared/filters";
 import { type Currency, formatDay } from "../shared/format";
+import { EMPTY_FILTER_OPTIONS, useFilterOptions } from "../shared/queries";
+import type { FilterOptions } from "../shared/schemas";
 import { SegmentedControl } from "../shared/segmented-control";
 import { FilterSelect } from "./filter-select";
 import { useFilters } from "./use-filters";
@@ -103,11 +103,7 @@ function CustomRangeFields(props: {
 export function FilterBar(): ReactNode {
   const { filters, issues, setFilters } = useFilters();
   const { timeZone } = useAppConfig();
-  const dataSource = useDataSource();
-  const { data } = useQuery({
-    queryKey: ["filter-options"],
-    queryFn: () => dataSource.filterOptions(),
-  });
+  const { data } = useFilterOptions();
   const options = data ?? EMPTY_FILTER_OPTIONS;
   const update = (patch: Partial<Filters>): void => setFilters({ ...filters, ...patch });
 

@@ -1,0 +1,126 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { expect, type Page, test } from "@playwright/test";
+
+/**
+ * Phase 12 screenshots: every full-app screen at 1280 and 390 px, the menu-bar recap at 360 px
+ * (All, claude, pi), and the special states (empty, offline, incompatible, onboarding), each in
+ * light and dark. Output: `e2e/screenshots/<theme>/<name>.png`. Run: `pnpm exec playwright test`.
+ */
+const OUT = join(import.meta.dirname, "screenshots");
+const THEMES = ["light", "dark"] as const;
+
+const SCREENS = [
+  "overview",
+  "quota",
+  "billing",
+  "sessions",
+  "insights",
+  "models",
+  "projects",
+  "reports",
+  "export",
+  "settings",
+] as const;
+
+const ROUTES: Record<(typeof SCREENS)[number], string> = {
+  overview: "/",
+  quota: "/quota",
+  billing: "/billing",
+  sessions: "/sessions",
+  insights: "/insights",
+  models: "/models",
+  projects: "/projects",
+  reports: "/reports",
+  export: "/export",
+  settings: "/settings",
+};
+
+const STATES = ["empty", "offline", "incompatible", "onboarding", "partial", "stale"] as const;
+
+const VIEWPORTS = [
+  { name: "1280", width: 1280, height: 800 },
+  { name: "390", width: 390, height: 844 },
+] as const;
+
+async function settle(page: Page): Promise<void> {
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("Loading", { exact: true })).toHaveCount(0);
+  // Charts render after the first layout pass.
+  await page.waitForTimeout(300);
+}
+
+async function shoot(page: Page, theme: string, name: string): Promise<void> {
+  const dir = join(OUT, theme);
+  mkdirSync(dir, { recursive: true });
+  await page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
+}
+
+for (const theme of THEMES) {
+  test.describe(`${theme} theme`, () => {
+    test.use({ colorScheme: theme, reducedMotion: "reduce" });
+
+    for (const viewport of VIEWPORTS) {
+      test.describe(`${viewport.name}px app`, () => {
+        test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+        for (const screen of SCREENS) {
+          test(`screen ${screen}`, async ({ page }) => {
+            await page.goto(`/?mock=populated#${ROUTES[screen]}`);
+            await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+            await settle(page);
+            await shoot(page, theme, `${viewport.name}-${screen}`);
+          });
+        }
+
+        for (const state of STATES) {
+          test(`state ${state}`, async ({ page }) => {
+            await page.goto(`/?mock=${state}#/`);
+            await settle(page);
+            await shoot(page, theme, `${viewport.name}-state-${state}`);
+          });
+        }
+
+        test("command palette", async ({ page }) => {
+          await page.goto("/?mock=populated#/");
+          await settle(page);
+          await page.getByRole("button", { name: /Search/ }).click();
+          await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
+          await shoot(page, theme, `${viewport.name}-palette`);
+        });
+
+        test("session drilldown", async ({ page }) => {
+          await page.goto("/?mock=populated#/sessions?agent=claude&project=tokenmtr&z=");
+          // Hash history appends `?mock=...` to the last hash param, hence the throwaway `z`.
+          await page
+            .getByRole("region", { name: "Sessions, newest first" })
+            .getByRole("link")
+            .first()
+            .click();
+          await expect(page.getByRole("heading", { level: 1, name: /^Session / })).toBeVisible();
+          await settle(page);
+          await shoot(page, theme, `${viewport.name}-session-detail`);
+        });
+      });
+    }
+
+    test.describe("recap 360px", () => {
+      test.use({ viewport: { width: 360, height: 640 } });
+
+      for (const tab of ["All", "claude", "pi"] as const) {
+        test(`tab ${tab}`, async ({ page }) => {
+          await page.goto("/tray.html?mock=populated");
+          await page.getByRole("tab", { name: tab }).click();
+          await settle(page);
+          await shoot(page, theme, `360-recap-${tab}`);
+        });
+      }
+
+      test("empty and offline", async ({ page }) => {
+        await page.goto("/tray.html?mock=empty");
+        await settle(page);
+        await shoot(page, theme, "360-recap-empty");
+      });
+    });
+  });
+}

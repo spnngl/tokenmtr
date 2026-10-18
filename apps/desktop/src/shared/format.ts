@@ -122,7 +122,20 @@ export function formatMoney(
   return { approximate: false, text };
 }
 
+/**
+ * Formats an amount the backend already converted into `currency` (query results carry
+ * `*_micros` plus a root `currency`). Unlike `formatMoney` it applies no FX rate.
+ */
+export function formatCurrencyMicros(micros: number, currency: Currency): string {
+  return formatCents(roundHalfAwayFromZero(micros / MICROS_PER_CENT), currency);
+}
+
 const TOKEN_UNITS = ["", "K", "M", "B", "T"] as const;
+
+/** ROI is API value over fees paid: "4.0×"; `null` (no fee to compare with) is a dash. */
+export function formatRoiMultiple(roi: number | null): string {
+  return roi === null ? "—" : `${roi.toFixed(1)}×`;
+}
 
 /** `999` -> "999", `1_234` -> "1.2K", `3_400_000` -> "3.4M". One decimal, trailing `.0` dropped. */
 export function formatTokens(count: number): string {
@@ -254,4 +267,9 @@ export function formatHour(instantMs: number, timeZone: string): string {
 export function formatClock(instantMs: number, timeZone: string): string {
   const { hour, minute } = zonedParts(instantMs, timeZone);
   return `${hour}:${minute}`;
+}
+
+/** `2026-06-15 14:05` in `timeZone`. */
+export function formatDateTime(instantMs: number, timeZone: string): string {
+  return `${formatDay(instantMs, timeZone)} ${formatClock(instantMs, timeZone)}`;
 }

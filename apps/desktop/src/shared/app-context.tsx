@@ -9,6 +9,8 @@ export interface AppConfig {
   /** `display.currency`: the filter bar's initial currency. */
   readonly defaultCurrency: Currency;
   readonly fx: Fx;
+  /** Epoch milliseconds; injectable so fixtures and tests pin the clock. */
+  readonly now: () => number;
 }
 
 /**
@@ -19,6 +21,7 @@ export const bootstrapConfig: AppConfig = {
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   defaultCurrency: "USD",
   fx: { kind: "ecb", rates: [], offline: false },
+  now: () => Date.now(),
 };
 
 interface AppContextValue {

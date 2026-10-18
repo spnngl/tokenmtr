@@ -4,9 +4,22 @@ import {
   createRouter,
   type RouterHistory,
 } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { Layout } from "./layout";
-import { NAV_ITEMS } from "./nav";
-import { PlaceholderPage } from "./placeholder-page";
+import { NAV_ITEMS, type NavPath } from "./nav";
+import { BillingRoute } from "./routes/billing";
+import { ExportRoute } from "./routes/export";
+import { InsightsRoute } from "./routes/insights";
+import { ModelsRoute } from "./routes/models";
+import { ReportsRoute } from "./routes/reports";
+import {
+  OverviewRoute,
+  ProjectsRoute,
+  QuotaRoute,
+  SessionDetailRoute,
+  SessionsRoute,
+  SettingsRoute,
+} from "./routes/screens";
 
 /**
  * Search params stay plain strings: filters are parsed by `parseFilters`, so the router must not
@@ -29,15 +42,31 @@ function stringifySearch(search: Record<string, unknown>): string {
 
 const rootRoute = createRootRoute({ component: Layout });
 
-const routeTree = rootRoute.addChildren(
-  NAV_ITEMS.map((item) =>
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path: item.to,
-      component: () => <PlaceholderPage item={item} />,
-    }),
-  ),
+/** Every nav path needs a component: the compiler flags a screen without one. */
+const SCREENS: Record<NavPath, () => ReactNode> = {
+  "/": OverviewRoute,
+  "/quota": QuotaRoute,
+  "/billing": BillingRoute,
+  "/sessions": SessionsRoute,
+  "/insights": InsightsRoute,
+  "/models": ModelsRoute,
+  "/projects": ProjectsRoute,
+  "/reports": ReportsRoute,
+  "/export": ExportRoute,
+  "/settings": SettingsRoute,
+};
+
+const screenRoutes = NAV_ITEMS.map((item) =>
+  createRoute({ getParentRoute: () => rootRoute, path: item.to, component: SCREENS[item.to] }),
 );
+
+const sessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions/$agent/$session",
+  component: SessionDetailRoute,
+});
+
+const routeTree = rootRoute.addChildren([...screenRoutes, sessionDetailRoute]);
 
 /** One route per screen in `NAV_ITEMS`. Tests pass a memory history. Return type is inferred: it is the router's full generic type. */
 export function createAppRouter(history: RouterHistory) {

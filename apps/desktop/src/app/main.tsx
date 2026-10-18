@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { AppProvider, bootstrapConfig } from "../shared/app-context";
-import { emptyDataSource } from "../shared/data-source";
+import { AppProvider } from "../shared/app-context";
+import { createRuntime } from "../shared/runtime";
 import { ThemeProvider } from "../shared/theme";
 import { createAppRouter } from "./router";
 
@@ -14,14 +14,15 @@ if (root === null) {
 }
 
 const queryClient = new QueryClient();
+const runtime = createRuntime(window.location.search);
 // Hash history: the webview loads `index.html`, so path routes would not match (D29 deep links
-// pass `#/route?filters`). Phase 11 replaces these values with the daemon's config.
+// pass `#/route?filters`).
 const router = createAppRouter(createHashHistory());
 
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <AppProvider config={bootstrapConfig} dataSource={emptyDataSource}>
+      <AppProvider config={runtime.config} dataSource={runtime.dataSource}>
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
         </QueryClientProvider>

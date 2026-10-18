@@ -3,8 +3,10 @@ import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Dialog, DialogTrigger, Modal, ModalOverlay } from "react-aria-components";
 import { Button } from "../shared/button";
+import { AppBanners, AppGate } from "./app-gate";
 import { FilterBar } from "./filter-bar";
 import { NAV_ITEMS } from "./nav";
+import { CommandPalette } from "./palette";
 
 function NavList({ onNavigate }: { readonly onNavigate?: () => void }): ReactNode {
   return (
@@ -59,7 +61,10 @@ function NavDrawer(): ReactNode {
   );
 }
 
-/** Full-app shell: sidebar (drawer when narrow), filter bar, and the routed screen. */
+/**
+ * Full-app shell: sidebar (drawer when narrow), top bar with the command palette, then the gate:
+ * filter bar and routed screen when the app can show data, otherwise the state that explains why not.
+ */
 export function Layout(): ReactNode {
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
@@ -70,14 +75,23 @@ export function Layout(): ReactNode {
         <NavList />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-border bg-surface-raised p-2 md:hidden">
-          <NavDrawer />
-          <Brand />
+        <header className="flex items-center gap-2 border-b border-border bg-surface-raised p-2">
+          <div className="flex items-center gap-2 md:hidden">
+            <NavDrawer />
+            <Brand />
+          </div>
+          <div className="ml-auto">
+            <CommandPalette />
+          </div>
         </header>
-        <FilterBar />
-        <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:p-6">
-          <Outlet />
-        </main>
+        <AppGate>
+          <FilterBar />
+          <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:p-6">
+            <AppBanners>
+              <Outlet />
+            </AppBanners>
+          </main>
+        </AppGate>
       </div>
     </div>
   );

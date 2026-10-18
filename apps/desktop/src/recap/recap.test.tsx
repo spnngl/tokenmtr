@@ -1,18 +1,30 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { AppProvider, bootstrapConfig } from "../shared/app-context";
 import { axeViolations } from "../shared/axe";
+import { createMockDataSource, type MockScenario } from "../shared/mock";
+import { MOCK_TIME_ZONE, NOW_MS } from "../shared/mock/seed";
+import type { RecapSnapshot } from "../shared/schemas";
+import { ThemeProvider } from "../shared/theme";
 import { Recap, type RecapProps } from "./recap";
-import { MODEL } from "./recap-fixtures";
+import { RecapApp } from "./recap-app";
 
 afterEach(cleanup);
 
+let snapshot: RecapSnapshot;
+
+beforeAll(async () => {
+  snapshot = await createMockDataSource().recap("today", "USD");
+});
+
 function renderRecap(overrides: Partial<RecapProps> = {}) {
   const props: RecapProps = {
-    model: MODEL,
-    currency: "USD",
-    fx: { kind: "fixed", eurPerUsd: 0.9 },
-    timeZone: "Europe/Paris",
+    snapshot,
+    period: "today",
+    timeZone: MOCK_TIME_ZONE,
+    now: NOW_MS,
     onPeriodChange: vi.fn(),
     onOpenDashboard: vi.fn(),
     onOpenSettings: vi.fn(),
@@ -27,7 +39,7 @@ describe("Recap", () => {
     const user = userEvent.setup();
     renderRecap();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "Claude", "pi"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "claude", "pi", "aider"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
 
     await user.tab();
@@ -36,18 +48,53 @@ describe("Recap", () => {
     expect(document.activeElement).toBe(tabs[1]);
     expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
     await user.keyboard("{End}");
-    expect(tabs[2]?.getAttribute("aria-selected")).toBe("true");
+    expect(tabs[3]?.getAttribute("aria-selected")).toBe("true");
     await user.keyboard("{ArrowRight}");
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("hides blocks an agent cannot report", async () => {
+  it("shows quota meters with the ETA on the All tab", () => {
+    renderRecap();
+    const quota = screen.getByRole("region", { name: "Quota" });
+    expect(within(quota).getByText(/100% at 15:40 at this pace/)).toBeTruthy();
+    expect(within(quota).getByText(/resets in 2h 15m/)).toBeTruthy();
+  });
+
+  it("shows projected spend and the footer health with its reason", () => {
+    renderRecap();
+    const money = screen.getByRole("region", { name: "Money" });
+    expect(within(money).getByText("Projected spend")).toBeTruthy();
+    expect(screen.getByText("1 sink failing")).toBeTruthy();
+  });
+
+  it("shows the Live block only where the data has it", async () => {
     const user = userEvent.setup();
     renderRecap();
-    expect(screen.getAllByRole("region", { name: "Quota" }).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("tab", { name: "claude" }));
+    const live = screen.getByRole("region", { name: "Live" });
+    expect(live.textContent).toContain("12.5K");
+    expect(live.textContent).toContain("$3.20");
 
     await user.click(screen.getByRole("tab", { name: "pi" }));
+    expect(screen.queryByRole("region", { name: "Live" })).toBeNull();
+  });
+
+  it("flags a budget over 100% with its true percentage", async () => {
+    const user = userEvent.setup();
+    renderRecap();
+    await user.click(screen.getByRole("tab", { name: "claude" }));
+    const budgets = screen.getByRole("region", { name: "Budgets" });
+    expect(within(budgets).getByText(/^1\d\d%$/)).toBeTruthy();
+  });
+
+  it("an agent with every capability off shows no quota block and no error", async () => {
+    const user = userEvent.setup();
+    renderRecap();
+    await user.click(screen.getByRole("tab", { name: "aider" }));
     expect(screen.queryByRole("region", { name: "Quota" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("region", { name: "Money" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Tokens" })).toBeTruthy();
   });
 
   it("reports period changes", async () => {
@@ -63,7 +110,7 @@ describe("Recap", () => {
     await user.click(screen.getByRole("button", { name: "Open dashboard" }));
     expect(props.onOpenDashboard).toHaveBeenLastCalledWith(null);
 
-    await user.click(screen.getByRole("tab", { name: "Claude" }));
+    await user.click(screen.getByRole("tab", { name: "claude" }));
     await user.click(screen.getByRole("button", { name: "Open dashboard" }));
     expect(props.onOpenDashboard).toHaveBeenLastCalledWith("claude");
   });
@@ -78,7 +125,7 @@ describe("Recap", () => {
   });
 
   it("shows the empty state when no agent exists", () => {
-    renderRecap({ model: { ...MODEL, tabs: [] } });
+    renderRecap({ snapshot: { ...snapshot, tabs: [] } });
     expect(screen.getByText("No agents found")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
   });
@@ -86,5 +133,55 @@ describe("Recap", () => {
   it("has no axe violations", async () => {
     const { container } = renderRecap();
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+function renderApp(
+  scenario: MockScenario,
+  onAction?: (action: string, args: readonly unknown[]) => void,
+) {
+  const dataSource = createMockDataSource({
+    scenario,
+    ...(onAction === undefined ? {} : { onAction }),
+  });
+  const config = { ...bootstrapConfig, timeZone: MOCK_TIME_ZONE, now: () => NOW_MS };
+  return render(
+    <ThemeProvider>
+      <AppProvider config={config} dataSource={dataSource}>
+        <QueryClientProvider
+          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        >
+          <RecapApp />
+        </QueryClientProvider>
+      </AppProvider>
+    </ThemeProvider>,
+  );
+}
+
+describe("RecapApp", () => {
+  it("loads the recap from the data source", async () => {
+    renderApp("populated");
+    expect(await screen.findByRole("tab", { name: "All" })).toBeTruthy();
+  });
+
+  it("shows loading, then an error with retry", async () => {
+    renderApp("loading");
+    expect(screen.getByRole("status").getAttribute("aria-busy")).toBe("true");
+    cleanup();
+    renderApp("error");
+    expect((await screen.findByRole("alert")).textContent).toContain("database is locked");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("shows the empty state before any usage exists", async () => {
+    renderApp("empty");
+    expect(await screen.findByText("No agents found")).toBeTruthy();
+  });
+
+  it("scans from the footer", async () => {
+    const onAction = vi.fn();
+    renderApp("populated", onAction);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Scan now" }));
+    expect(onAction).toHaveBeenCalledWith("scanNow", []);
   });
 });

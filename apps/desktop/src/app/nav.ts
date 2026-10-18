@@ -62,7 +62,7 @@ export const NAV_ITEMS = [
     to: "/projects",
     label: "Projects",
     icon: FolderKanban,
-    summary: "Cost per project and client, with branch and worktree drilldowns.",
+    summary: "Cost per project and client, with a branch drilldown.",
   },
   {
     to: "/reports",
@@ -83,3 +83,14 @@ export const NAV_ITEMS = [
     summary: "Config, agents, daemon, currency, theme and parse issues.",
   },
 ] as const satisfies readonly NavItem[];
+
+export type NavPath = (typeof NAV_ITEMS)[number]["to"];
+
+/** The nav entry of a screen. @throws {Error} when `to` is not in `NAV_ITEMS`. */
+export function navItem(to: NavPath): NavItem {
+  const item = NAV_ITEMS.find((candidate) => candidate.to === to);
+  if (item === undefined) {
+    throw new Error(`no nav item for ${to}`);
+  }
+  return item;
+}
