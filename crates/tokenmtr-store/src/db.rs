@@ -51,6 +51,57 @@ const MMAP_SIZE: i64 = 268_435_456;
 /// WAL pages before an automatic checkpoint.
 const WAL_AUTOCHECKPOINT: i64 = 4000;
 
+/// Bytes of WAL kept after a checkpoint: a large scan's WAL shrinks back, the usual few MiB stay
+/// allocated.
+const JOURNAL_SIZE_LIMIT: i64 = 67_108_864;
+
+/// Page cache of the writer, in KiB (`cache_size` takes negative values as KiB). Committing a few
+/// thousand new events dirties pages all over the `usage_event` indexes; with the 2 MiB default
+/// they spill to the WAL before the commit.
+const WRITER_CACHE_KIB: i64 = 32_768;
+
+/// Prepared statements kept per connection; a scan alone uses more than the default 16.
+const STATEMENT_CACHE: usize = 64;
+
+/// Settings both connection kinds share. `temp_store` stays at its default: `MEMORY` made the
+/// sorting queries (tools, quota history) about 5% slower.
+fn tune(conn: &Connection) -> Result<(), StoreError> {
+    conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+    conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
+    Ok(())
+}
+
+/// Refreshes the query planner's statistics where they are missing or stale.
+///
+/// `0x10002` analyzes every table that was never analyzed or grew or shrank tenfold since;
+/// otherwise it only reads row counts. The mask leaves out `0x10`, which caps the rows each index
+/// is sampled on: sampled statistics of the low-cardinality `agent` column made the planner read
+/// an agent's whole history through `usage_event_agent_profile_at` for a 30-day range.
+/// `analysis_limit` stays at its default 0 (no sampling) for the same reason; a full `ANALYZE` of
+/// a store with a million events takes about half a second.
+///
+/// The bundled `SQLite` also writes `sqlite_stat4` samples. With them, every statement that binds
+/// an indexed column is prepared again whenever its parameters change, which made each dashboard
+/// query 10 to 30% slower and made none faster; they are deleted, the per-index averages in
+/// `sqlite_stat1` stay. `ANALYZE sqlite_schema` reloads this connection's statistics without them.
+fn optimize(conn: &Connection) -> Result<(), StoreError> {
+    conn.execute_batch("PRAGMA optimize = 0x10002")?;
+    let has_stat4: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_schema WHERE name = 'sqlite_stat4')",
+        [],
+        |row| row.get(0),
+    )?;
+    // Checked first so that a run with nothing to do takes no write lock.
+    if has_stat4
+        && conn.query_row("SELECT EXISTS (SELECT 1 FROM sqlite_stat4)", [], |row| {
+            row.get(0)
+        })?
+    {
+        conn.execute_batch("DELETE FROM sqlite_stat4; ANALYZE sqlite_schema;")?;
+    }
+    Ok(())
+}
+
 fn user_version(conn: &Connection) -> Result<u32, StoreError> {
     Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
 }
@@ -454,12 +505,17 @@ impl Store {
         }
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", true)?;
-        conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+        tune(&conn)?;
+        conn.pragma_update(None, "cache_size", -WRITER_CACHE_KIB)?;
         conn.pragma_update(None, "wal_autocheckpoint", WAL_AUTOCHECKPOINT)?;
+        conn.pragma_update(None, "journal_size_limit", JOURNAL_SIZE_LIMIT)?;
         // macOS ignores plain fsync; make commits and checkpoints durable.
         conn.pragma_update(None, "fullfsync", true)?;
         conn.pragma_update(None, "checkpoint_fullfsync", true)?;
         migrations().to_latest(&mut conn)?;
+        // Statistics for a store that has none yet (new, or upgraded from a build without them),
+        // and for indexes a migration just added.
+        optimize(&conn)?;
         let identity = meta::load_identity(&conn)?;
         Ok(Self {
             conn,
@@ -743,10 +799,29 @@ impl Store {
         Ok(value)
     }
 
+    /// Refreshes the query planner's statistics of the tables that need them; [`Store::open`]
+    /// does too. Cheap when no table does: it reads row counts. The daemon runs it daily and after
+    /// a large scan; dropping the store runs it too, so a one-off writer such as a direct scan
+    /// leaves statistics behind.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    pub fn optimize(&self) -> Result<(), StoreError> {
+        optimize(&self.conn)
+    }
+
     /// The connection, for tests that need raw SQL.
     #[cfg(test)]
     pub(crate) fn raw(&mut self) -> &mut Connection {
         &mut self.conn
+    }
+}
+
+impl Drop for Store {
+    fn drop(&mut self) {
+        // Best effort: statistics are an optimization, and a failure here has no caller to
+        // report to. The next open or daily run retries.
+        let _ = self.optimize();
     }
 }
 
@@ -792,7 +867,9 @@ impl StoreReader {
             });
         }
         conn.pragma_update(None, "query_only", true)?;
-        conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+        // No `PRAGMA optimize` here: a read-only connection cannot write statistics. The writer
+        // keeps them current.
+        tune(&conn)?;
         let identity = meta::load_identity(&conn)?;
         Ok(Self { conn, identity })
     }

@@ -352,7 +352,7 @@ fn live_events(
     window: SignedDuration,
 ) -> Result<Vec<UsageEvent>, QueryError> {
     let since = now.checked_sub(window)?;
-    let mut statement = reader.connection().prepare(
+    let mut statement = reader.connection().prepare_cached(
         "SELECT agent, session, at_us, input_uncached, cache_read, cache_write_5m, \
          cache_write_1h, output, reasoning, cost_api_usd_micros FROM usage_event \
          WHERE at_us > ? AND at_us <= ? AND kind <> 'daily_aggregate'",
@@ -440,23 +440,36 @@ fn live(
     Ok(total)
 }
 
+/// The newest live event; walks `usage_event_at` backwards to the first live row.
+pub(crate) const LAST_ACTIVITY: &str = "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0";
+
+/// The newest live event of agent `?1`. `agent = ?` alone picks the `(agent, dedup_key)` index
+/// and reads every row of the agent. Instead, this skips from profile to profile on
+/// `usage_event_agent_profile_at` and takes each profile's newest live row.
+pub(crate) const LAST_ACTIVITY_OF_AGENT: &str = "WITH RECURSIVE p(profile) AS ( \
+       SELECT MIN(profile) FROM usage_event WHERE agent = ?1 \
+       UNION ALL \
+       SELECT (SELECT MIN(profile) FROM usage_event WHERE agent = ?1 AND profile > p.profile) \
+       FROM p WHERE p.profile IS NOT NULL) \
+     SELECT MAX((SELECT MAX(at_us) FROM usage_event \
+                 WHERE agent = ?1 AND profile = p.profile AND superseded = 0)) \
+     FROM p WHERE p.profile IS NOT NULL";
+
 fn last_activity(
     reader: &StoreReader,
     selection: Selection,
 ) -> Result<Option<Timestamp>, QueryError> {
     let (sql, params) = match selection {
-        Selection::All => (
-            "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0",
-            Vec::new(),
-        ),
+        Selection::All => (LAST_ACTIVITY, Vec::new()),
         Selection::Agent(agent) => (
-            "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0 AND agent = ?",
+            LAST_ACTIVITY_OF_AGENT,
             vec![Value::Text(agent.as_str().to_owned())],
         ),
     };
     let at: Option<i64> = reader
         .connection()
-        .query_row(sql, params_from_iter(params), |row| row.get(0))?;
+        .prepare_cached(sql)?
+        .query_row(params_from_iter(params), |row| row.get(0))?;
     at.map(|us| Timestamp::from_microsecond(us).map_err(|_| QueryError::decode("timestamp", us)))
         .transpose()
 }

@@ -1321,3 +1321,40 @@ fn stored_subscriptions_and_rates_load_into_the_context() {
     assert_eq!(rates.len(), 2);
     assert_eq!(rates[0].eur_per_usd_scaled, 900_000_000);
 }
+
+/// The query plan of `sql`, one line per step; every parameter is `claude`.
+fn plan(reader: &StoreReader, sql: &str) -> String {
+    let mut statement = reader
+        .connection()
+        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+        .unwrap();
+    let params = std::iter::repeat_n("claude", statement.parameter_count());
+    let steps: Vec<String> = statement
+        .query_map(rusqlite::params_from_iter(params), |row| row.get(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    steps.join("\n")
+}
+
+#[test]
+fn per_agent_lookups_seek_their_index_instead_of_scanning() {
+    let seed = Seed::new();
+    seed.put(&[seed.ev("a", ts("2026-03-01T10:00:00Z"))]);
+    let reader = seed.reader();
+    for (sql, index) in [
+        (recap::LAST_ACTIVITY, "usage_event_at"),
+        (
+            recap::LAST_ACTIVITY_OF_AGENT,
+            "usage_event_agent_profile_at",
+        ),
+        (quota::LATEST_POLLS, "quota_snapshot_profile_fetched"),
+        (health::LATEST_INGEST_RUN, "ingest_run_agent_started"),
+    ] {
+        let plan = plan(&reader, sql);
+        assert!(plan.contains(index), "{sql}\n{plan}");
+        assert!(!plan.contains("SCAN usage_event"), "{sql}\n{plan}");
+        assert!(!plan.contains("SCAN quota_snapshot"), "{sql}\n{plan}");
+        assert!(!plan.contains("SCAN ingest_run"), "{sql}\n{plan}");
+    }
+}

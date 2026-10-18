@@ -22,4 +22,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 camino.workspace = true
+divan.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "queries"
+harness = false

@@ -89,6 +89,8 @@ pub(crate) struct Runtime {
     pub pending_changed: BTreeSet<Dataset>,
     pub last_publish: Option<Instant>,
     pub last_scan_at: Option<Timestamp>,
+    /// When scans last refreshed the store's planner statistics; never, since start, when `None`.
+    pub optimized_at: Option<Instant>,
     pub config_error: Option<String>,
     /// The config file as last loaded; a file event with the same bytes needs no reload.
     pub config_bytes: Option<Vec<u8>>,

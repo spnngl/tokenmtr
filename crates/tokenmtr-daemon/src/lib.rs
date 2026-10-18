@@ -1,4 +1,5 @@
-//! The `TokenMtr` daemon: the only process that writes the store.
+//! The `TokenMtr` daemon: the store's writer while it runs. Other writers (`tokenmtr-app` erase,
+//! restore, direct scans) take the daemon lock, so they run only when no daemon does.
 //!
 //! [`Daemon::start`] runs everything inside the caller's tokio runtime:
 //!

@@ -577,3 +577,42 @@ fn issue_kind_names_match_the_stored_text() {
         assert_eq!(kind.as_str(), enum_text(&kind).unwrap());
     }
 }
+
+#[test]
+fn optimize_keeps_index_averages_and_drops_samples() {
+    let mut f = fixture();
+    let machine = f.store.machine_id();
+    let events: Vec<_> = (0..50)
+        .map(|n| event(&machine, &format!("k{n}"), 1))
+        .collect();
+    f.store.upsert_events(&events).unwrap();
+    f.store.optimize().unwrap();
+    let conn = f.store.raw();
+    let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+    assert!(count("SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl = 'usage_event'") > 0);
+    assert_eq!(count("SELECT COUNT(*) FROM sqlite_stat4"), 0);
+}
+
+#[test]
+fn unresolved_cwds_skip_from_directory_to_directory() {
+    let mut f = fixture();
+    let mut statement = f
+        .store
+        .raw()
+        .prepare(&format!(
+            "EXPLAIN QUERY PLAN {}",
+            crate::project::UNRESOLVED
+        ))
+        .unwrap();
+    let plan = statement
+        .query_map([], |r| r.get::<_, String>(3))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .join("\n");
+    assert!(
+        plan.contains("COVERING INDEX usage_event_cwd (cwd>?)"),
+        "{plan}"
+    );
+    assert!(!plan.contains("SCAN usage_event"), "{plan}");
+}

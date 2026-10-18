@@ -4,7 +4,7 @@
 //! calendar fields are derived in Rust from the cell start: every real UTC offset is a multiple
 //! of 15 minutes, so a cell never straddles a local hour or day, and DST days keep their length.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
 use jiff::Timestamp;
@@ -141,10 +141,6 @@ fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
     Timestamp::from_microsecond(us).map_err(|_| QueryError::decode("timestamp", us))
 }
 
-fn count(row: &rusqlite::Row<'_>, i: usize) -> Result<u64, QueryError> {
-    to_count(row.get(i)?)
-}
-
 /// A closed set stored by its snake-case name (a serde unit enum such as `CostSource`).
 pub(crate) fn closed<T: serde::de::DeserializeOwned>(
     what: &'static str,
@@ -191,57 +187,188 @@ fn query_cells(
     scope: Scope,
 ) -> Result<Vec<Cell>, QueryError> {
     let (k1, k2) = dim.columns();
-    let mut sql = format!(
-        "SELECT at_us - ((at_us % {CELL_US}) + {CELL_US}) % {CELL_US} AS cell, agent, profile, \
-         provider, {k1}, {k2}, COUNT(*), SUM(input_uncached), SUM(cache_read), \
-         SUM(cache_write_5m), SUM(cache_write_1h), SUM(output), SUM(reasoning), \
-         COALESCE(SUM(cost_api_usd_micros), 0), SUM(cost_source = 'reported'), \
-         SUM(cost_source = 'estimated'), SUM(cost_source = 'unpriced'), SUM(approximate), \
-         MIN(at_us), MAX(at_us) FROM usage_event WHERE "
-    );
     let (conditions, params) = where_sql(ctx, filters, scope)?;
-    sql.push_str(&conditions);
-    sql.push_str(" GROUP BY 1, 2, 3, 4");
-    if dim != Dim::None {
-        sql.push_str(", 5");
-    }
-    if dim == Dim::Project {
-        sql.push_str(", 6");
-    }
-    let mut statement = reader.connection().prepare(&sql)?;
+    let sql = format!(
+        "SELECT at_us, agent, profile, provider, {k1}, {k2}, input_uncached, cache_read, \
+         cache_write_5m, cache_write_1h, output, reasoning, cost_reported_usd_micros, \
+         cost_estimated_usd_micros, approximate FROM usage_event WHERE {conditions}"
+    );
+    let mut statement = reader.connection().prepare_cached(&sql)?;
     let mut rows = statement.query(rusqlite::params_from_iter(params))?;
-    let mut cells = Vec::new();
+    // Groups by cell start; a cell holds a handful of groups, searched linearly.
+    let mut groups: HashMap<i64, Vec<Group>> = HashMap::new();
     while let Some(row) = rows.next()? {
-        let agent: String = row.get(1)?;
-        let profile: String = row.get(2)?;
-        let provider: Option<String> = row.get(3)?;
-        cells.push(Cell {
-            start: micros_ts(row.get(0)?)?,
-            agent: parse("agent", &agent)?,
-            profile: parse("profile", &profile)?,
-            provider: provider
+        let at: i64 = row.get(0)?;
+        let key = GroupKey {
+            agent: text(row, 1)?.ok_or_else(|| QueryError::decode("agent", "NULL"))?,
+            profile: text(row, 2)?.ok_or_else(|| QueryError::decode("profile", "NULL"))?,
+            provider: text(row, 3)?,
+            k1: text(row, 4)?,
+            k2: text(row, 5)?,
+        };
+        let cell = groups.entry(at - at.rem_euclid(CELL_US)).or_default();
+        let i = cell.iter().position(|g| g.key() == key).unwrap_or_else(|| {
+            cell.push(Group::new(&key, at));
+            cell.len() - 1
+        });
+        cell[i].add(row, at)?;
+    }
+    let mut cells = groups
+        .into_iter()
+        .flat_map(|(start, groups)| groups.into_iter().map(move |g| g.into_cell(start)))
+        .collect::<Result<Vec<_>, _>>()?;
+    cells.sort_unstable_by(|a, b| {
+        (
+            a.start,
+            a.agent,
+            a.profile.as_ref(),
+            &a.provider,
+            &a.k1,
+            &a.k2,
+        )
+            .cmp(&(
+                b.start,
+                b.agent,
+                b.profile.as_ref(),
+                &b.provider,
+                &b.k1,
+                &b.k2,
+            ))
+    });
+    Ok(cells)
+}
+
+/// A nullable text column, borrowed from the row.
+fn text<'r>(row: &'r rusqlite::Row<'_>, i: usize) -> Result<Option<&'r str>, QueryError> {
+    row.get_ref(i)?
+        .as_str_or_null()
+        .map_err(|e| QueryError::decode("text", e))
+}
+
+/// The grouping columns of one `usage_event` row, borrowed from the row.
+#[derive(PartialEq, Eq)]
+struct GroupKey<'a> {
+    agent: &'a str,
+    profile: &'a str,
+    provider: Option<&'a str>,
+    k1: Option<&'a str>,
+    k2: Option<&'a str>,
+}
+
+/// The running sums of one group, before parsing into a [`Cell`].
+struct Group {
+    agent: String,
+    profile: String,
+    provider: Option<String>,
+    k1: Option<String>,
+    k2: Option<String>,
+    events: u64,
+    tokens: TokenCounts,
+    cost_usd: i64,
+    reported: u64,
+    estimated: u64,
+    unpriced: u64,
+    approximate: u64,
+    first_at: i64,
+    last_at: i64,
+}
+
+impl Group {
+    fn new(key: &GroupKey<'_>, at: i64) -> Self {
+        Self {
+            agent: key.agent.to_owned(),
+            profile: key.profile.to_owned(),
+            provider: key.provider.map(str::to_owned),
+            k1: key.k1.map(str::to_owned),
+            k2: key.k2.map(str::to_owned),
+            events: 0,
+            tokens: TokenCounts::default(),
+            cost_usd: 0,
+            reported: 0,
+            estimated: 0,
+            unpriced: 0,
+            approximate: 0,
+            first_at: at,
+            last_at: at,
+        }
+    }
+
+    fn key(&self) -> GroupKey<'_> {
+        GroupKey {
+            agent: &self.agent,
+            profile: &self.profile,
+            provider: self.provider.as_deref(),
+            k1: self.k1.as_deref(),
+            k2: self.k2.as_deref(),
+        }
+    }
+
+    /// Adds a row of [`query_cells`]'s statement: the six token columns from column 6, then the
+    /// reported and estimated costs (the reported cost wins, as in `cost_api_usd_micros`) and
+    /// `approximate`.
+    fn add(&mut self, row: &rusqlite::Row<'_>, at: i64) -> Result<(), QueryError> {
+        self.events += 1;
+        let t = &mut self.tokens;
+        let sums = [
+            &mut t.input_uncached,
+            &mut t.cache_read,
+            &mut t.cache_write_5m,
+            &mut t.cache_write_1h,
+            &mut t.output,
+            &mut t.reasoning,
+        ];
+        for (i, sum) in sums.into_iter().enumerate() {
+            *sum = sum.saturating_add(to_count(row.get(6 + i)?)?);
+        }
+        let reported: Option<i64> = row.get(12)?;
+        let estimated: Option<i64> = row.get(13)?;
+        match (reported, estimated) {
+            (Some(usd), _) => {
+                self.reported += 1;
+                self.cost_usd = self.cost_usd.saturating_add(usd);
+            }
+            (None, Some(usd)) => {
+                self.estimated += 1;
+                self.cost_usd = self.cost_usd.saturating_add(usd);
+            }
+            (None, None) => self.unpriced += 1,
+        }
+        if row.get::<_, bool>(14)? {
+            self.approximate += 1;
+        }
+        self.first_at = self.first_at.min(at);
+        self.last_at = self.last_at.max(at);
+        Ok(())
+    }
+
+    fn into_cell(self, start: i64) -> Result<Cell, QueryError> {
+        Ok(Cell {
+            start: micros_ts(start)?,
+            agent: parse("agent", &self.agent)?,
+            profile: parse("profile", &self.profile)?,
+            provider: self
+                .provider
                 .as_deref()
                 .map(|p| parse("provider", p))
                 .transpose()?,
-            k1: row.get(4)?,
-            k2: row.get(5)?,
-            events: count(row, 6)?,
-            input_uncached: count(row, 7)?,
-            cache_read: count(row, 8)?,
-            cache_write_5m: count(row, 9)?,
-            cache_write_1h: count(row, 10)?,
-            output: count(row, 11)?,
-            reasoning: count(row, 12)?,
-            cost_usd: row.get(13)?,
-            reported: count(row, 14)?,
-            estimated: count(row, 15)?,
-            unpriced: count(row, 16)?,
-            approximate: count(row, 17)?,
-            first_at: micros_ts(row.get(18)?)?,
-            last_at: micros_ts(row.get(19)?)?,
-        });
+            k1: self.k1,
+            k2: self.k2,
+            events: self.events,
+            input_uncached: self.tokens.input_uncached,
+            cache_read: self.tokens.cache_read,
+            cache_write_5m: self.tokens.cache_write_5m,
+            cache_write_1h: self.tokens.cache_write_1h,
+            output: self.tokens.output,
+            reasoning: self.tokens.reasoning,
+            cost_usd: self.cost_usd,
+            reported: self.reported,
+            estimated: self.estimated,
+            unpriced: self.unpriced,
+            approximate: self.approximate,
+            first_at: micros_ts(self.first_at)?,
+            last_at: micros_ts(self.last_at)?,
+        })
     }
-    Ok(cells)
 }
 
 /// First matching subscription wins, like `tokenmtr_core::billing_mode`: coverage uses the

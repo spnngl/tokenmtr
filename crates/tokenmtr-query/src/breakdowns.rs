@@ -212,7 +212,7 @@ pub fn models(
     }
     let whole: i64 = by_model.values().map(|u| u.api_value_micros).sum();
     let (conditions, params) = where_sql(ctx, filters, Scope::All)?;
-    let mut statement = reader.connection().prepare(&format!(
+    let mut statement = reader.connection().prepare_cached(&format!(
         "SELECT model, SUM(cost_reported_usd_micros), SUM(cost_estimated_usd_micros) \
          FROM usage_event WHERE {conditions} AND cost_reported_usd_micros IS NOT NULL \
          AND cost_estimated_usd_micros IS NOT NULL GROUP BY model"
@@ -290,7 +290,7 @@ pub fn projects(
             .add(row);
     }
     let whole: i64 = by_key.values().map(|u| u.api_value_micros).sum();
-    let mut statement = reader.connection().prepare(
+    let mut statement = reader.connection().prepare_cached(
         "SELECT project, MIN(name) FROM project_map WHERE project IS NOT NULL GROUP BY project",
     )?;
     let names: HashMap<String, Option<String>> = statement
@@ -388,7 +388,7 @@ pub fn unresolved_cwds(
 ) -> Result<Vec<UnresolvedCwd>, QueryError> {
     let (conditions, mut params) = where_sql(ctx, filters, Scope::Traffic)?;
     params.push(Value::Integer(i64::from(limit)));
-    let mut statement = reader.connection().prepare(&format!(
+    let mut statement = reader.connection().prepare_cached(&format!(
         "SELECT cwd, COUNT(*), COALESCE(SUM(cost_api_usd_micros), 0), MAX(at_us) FROM usage_event \
          WHERE {conditions} AND cwd IN (SELECT cwd FROM project_map WHERE source = 'cwd') \
          GROUP BY cwd ORDER BY 3 DESC, 1 LIMIT ?"
@@ -560,7 +560,7 @@ fn session_metas(
                 Value::Text(session.clone()),
             ]
         });
-        let mut statement = reader.connection().prepare(&sql)?;
+        let mut statement = reader.connection().prepare_cached(&sql)?;
         let mut rows = statement.query(params_from_iter(params))?;
         while let Some(row) = rows.next()? {
             let agent: String = row.get(0)?;
@@ -655,7 +655,7 @@ pub fn session_detail(
         Value::Text(agent.as_str().to_owned()),
         Value::Text(session.as_str().to_owned()),
     ];
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare_cached(
         "SELECT at_us, model, kind, git_branch, total_tokens, output, \
          COALESCE(cost_api_usd_micros, 0), cost_source FROM usage_event \
          WHERE agent = ? AND session = ? ORDER BY at_us, id LIMIT ?",
@@ -685,7 +685,7 @@ pub fn session_detail(
     }
     let events_truncated = i64::try_from(events.len()).unwrap_or(i64::MAX) > DETAIL_LIMIT;
     events.truncate(usize::try_from(DETAIL_LIMIT).unwrap_or(0));
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare_cached(
         "SELECT at_us, tool_name, mcp_server, is_error FROM tool_call \
          WHERE agent = ? AND session = ? ORDER BY at_us, tool_use_id",
     )?;
@@ -700,7 +700,7 @@ pub fn session_detail(
             is_error: is_error.map(|v| v != 0),
         });
     }
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare_cached(
         "SELECT at_us, kind FROM session_signal WHERE agent = ? AND session = ? ORDER BY at_us",
     )?;
     let mut rows = statement.query(params_from_iter(params.iter()))?;
@@ -816,7 +816,7 @@ fn tool_rows(
     params: Vec<Value>,
     split: impl Fn(Option<String>, Option<String>) -> (Option<String>, Option<String>),
 ) -> Result<Vec<ToolRow>, QueryError> {
-    let mut statement = reader.connection().prepare(&format!(
+    let mut statement = reader.connection().prepare_cached(&format!(
         "SELECT {columns}, COUNT(*), COALESCE(SUM(is_error = 1), 0), \
          COUNT(DISTINCT agent || char(0) || session) FROM tool_call WHERE {conditions} \
          GROUP BY {columns} ORDER BY 3 DESC, 1, 2"
@@ -934,7 +934,7 @@ pub fn signals(
         Value::Integer(to.as_microsecond()),
     ];
     filters.sql_agents(&mut conditions, &mut params);
-    let mut statement = reader.connection().prepare(&format!(
+    let mut statement = reader.connection().prepare_cached(&format!(
         "SELECT at_us - ((at_us % 900000000) + 900000000) % 900000000, kind, COUNT(*) \
          FROM session_signal WHERE {conditions} GROUP BY 1, 2"
     ))?;
@@ -972,7 +972,7 @@ pub fn signals(
             _ => {}
         }
     }
-    let mut statement = reader.connection().prepare(&format!(
+    let mut statement = reader.connection().prepare_cached(&format!(
         "SELECT agent, session, COUNT(*) FROM session_signal WHERE {conditions} \
          AND kind = 'compaction' GROUP BY agent, session ORDER BY 3 DESC, 1, 2 LIMIT 10"
     ))?;

@@ -113,6 +113,19 @@ pub struct QuotaMeter {
 
 const ETA_LOOKBACK: SignedDuration = SignedDuration::from_hours(8 * 24);
 
+/// `agent, profile, fetched_at_us` of the newest poll of each profile of agent `?1`, open to
+/// more `AND` conditions. `GROUP BY agent, profile` reads every snapshot; this skips from profile
+/// to profile on `quota_snapshot_profile_fetched` and seeks each profile's newest poll instead.
+pub(crate) const LATEST_POLLS: &str = "WITH RECURSIVE p(profile) AS ( \
+       SELECT MIN(profile) FROM quota_snapshot WHERE agent = ?1 \
+       UNION ALL \
+       SELECT (SELECT MIN(profile) FROM quota_snapshot WHERE agent = ?1 AND profile > p.profile) \
+       FROM p WHERE p.profile IS NOT NULL) \
+     SELECT agent, profile, fetched FROM ( \
+       SELECT ?1 AS agent, profile, (SELECT MAX(fetched_at_us) FROM quota_snapshot \
+                                     WHERE agent = ?1 AND profile = p.profile) AS fetched \
+       FROM p WHERE p.profile IS NOT NULL) WHERE 1 = 1";
+
 /// The latest poll of every polled agent profile (restricted by the filters' agents/profiles),
 /// with a per-window exhaustion ETA from the last eight days of polls.
 ///
@@ -124,18 +137,24 @@ pub fn quota_latest(
     ctx: &QueryContext,
     filters: &Filters,
 ) -> Result<Vec<QuotaMeter>, QueryError> {
-    let mut sql =
-        String::from("SELECT agent, profile, MAX(fetched_at_us) FROM quota_snapshot WHERE 1 = 1");
-    let mut params = Vec::new();
-    filters.sql_agent_profile(&mut sql, &mut params);
-    sql.push_str(" GROUP BY agent, profile ORDER BY agent, profile");
-    let latest: Vec<(String, String, i64)> = reader
-        .connection()
-        .prepare(&sql)?
-        .query_map(params_from_iter(params), |row| {
+    let mut sql = String::from(LATEST_POLLS);
+    let mut filter_params = Vec::new();
+    filters.sql_agent_profile(&mut sql, &mut filter_params);
+    sql.push_str(" ORDER BY profile");
+    let mut statement = reader.connection().prepare_cached(&sql)?;
+    let mut agents = AgentId::KNOWN.to_vec();
+    agents.sort_unstable_by_key(|a| a.as_str());
+    let mut latest: Vec<(String, String, i64)> = Vec::new();
+    for agent in agents {
+        let params = std::iter::once(Value::Text(agent.as_str().to_owned()))
+            .chain(filter_params.iter().cloned());
+        let rows = statement.query_map(params_from_iter(params), |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
-        .collect::<Result<_, _>>()?;
+        })?;
+        for row in rows {
+            latest.push(row?);
+        }
+    }
     let mut meters = Vec::new();
     for (agent_text, profile, at_us) in latest {
         let agent = parse_agent(&agent_text)?;

@@ -147,12 +147,19 @@ pub(crate) fn reassign(
     Ok(changed)
 }
 
+/// Distinct unresolved working directories. `SELECT DISTINCT cwd` reads every entry of
+/// `usage_event_cwd`; skipping from one directory to the next costs one seek per directory.
+pub(crate) const UNRESOLVED: &str = "WITH RECURSIVE c(cwd) AS ( \
+       SELECT MIN(cwd) FROM usage_event \
+       UNION ALL \
+       SELECT (SELECT MIN(cwd) FROM usage_event WHERE cwd > c.cwd) FROM c \
+       WHERE c.cwd IS NOT NULL) \
+     SELECT cwd FROM c \
+     WHERE cwd IS NOT NULL AND cwd NOT IN (SELECT cwd FROM project_map) ORDER BY cwd";
+
 /// Distinct working directories of stored events that have no resolution yet, ordered.
 pub(crate) fn unresolved(conn: &Connection) -> Result<Vec<Utf8PathBuf>, StoreError> {
-    let mut statement = conn.prepare_cached(
-        "SELECT DISTINCT cwd FROM usage_event \
-         WHERE cwd IS NOT NULL AND cwd NOT IN (SELECT cwd FROM project_map) ORDER BY cwd",
-    )?;
+    let mut statement = conn.prepare_cached(UNRESOLVED)?;
     let cwds = statement
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;

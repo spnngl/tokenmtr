@@ -198,35 +198,37 @@ pub struct IngestStatus {
     pub open_issues: u64,
 }
 
+/// The latest ingest run of agent `?1` and its open-issue count: one seek on
+/// `ingest_run_agent_started`.
+pub(crate) const LATEST_INGEST_RUN: &str = "SELECT finished_at_us, files_parsed, lines_read, events_found, events_changed, \
+     (SELECT COUNT(*) FROM parse_issue WHERE agent = ?1 AND resolved_at_us IS NULL) \
+     FROM ingest_run WHERE agent = ?1 ORDER BY started_at_us DESC, id DESC LIMIT 1";
+
 /// The latest ingest run per agent, with open-issue counts.
 ///
 /// # Errors
 ///
 /// Store, SQL or decode failures.
 pub fn ingest_status(reader: &StoreReader) -> Result<Vec<IngestStatus>, QueryError> {
-    let mut statement = reader.connection().prepare(
-        "SELECT r.agent, r.finished_at_us, r.files_parsed, r.lines_read, r.events_found, \
-         r.events_changed, (SELECT COUNT(*) FROM parse_issue p WHERE p.agent = r.agent \
-         AND p.resolved_at_us IS NULL) FROM ingest_run r WHERE r.id = \
-         (SELECT id FROM ingest_run WHERE agent = r.agent ORDER BY started_at_us DESC, id DESC LIMIT 1) \
-         ORDER BY r.agent",
-    )?;
-    let mut rows = statement.query([])?;
+    let mut statement = reader.connection().prepare_cached(LATEST_INGEST_RUN)?;
+    let mut agents = AgentId::KNOWN.to_vec();
+    agents.sort_unstable_by_key(|a| a.as_str());
     let mut out = Vec::new();
-    while let Some(row) = rows.next()? {
-        let agent: String = row.get(0)?;
+    for agent in agents {
+        let mut rows = statement.query([agent.as_str()])?;
+        let Some(row) = rows.next()? else {
+            continue;
+        };
         let [files, lines, found, changed, open]: [i64; 5] = [
+            row.get(1)?,
             row.get(2)?,
             row.get(3)?,
             row.get(4)?,
             row.get(5)?,
-            row.get(6)?,
         ];
         out.push(IngestStatus {
-            agent: agent
-                .parse()
-                .map_err(|_| QueryError::decode("agent", &agent))?,
-            last_run_at: micros_ts(row.get(1)?)?,
+            agent,
+            last_run_at: micros_ts(row.get(0)?)?,
             files_parsed: to_count(files)?,
             lines_read: to_count(lines)?,
             events_found: to_count(found)?,
@@ -268,7 +270,7 @@ pub fn parse_issues(
     include_resolved: bool,
     limit: u32,
 ) -> Result<Vec<ParseIssueView>, QueryError> {
-    let mut statement = reader.connection().prepare(
+    let mut statement = reader.connection().prepare_cached(
         "SELECT agent, kind, subject, occurrences, sample, first_seen_us, last_seen_us, \
          resolved_at_us FROM parse_issue WHERE (? OR resolved_at_us IS NULL) \
          ORDER BY last_seen_us DESC, id DESC LIMIT ?",
@@ -316,7 +318,7 @@ pub fn alerts(
     since: Timestamp,
     limit: u32,
 ) -> Result<Vec<AlertView>, QueryError> {
-    let mut statement = reader.connection().prepare(
+    let mut statement = reader.connection().prepare_cached(
         "SELECT fired_at_us, dedup_key, payload FROM alert WHERE fired_at_us >= ? \
          ORDER BY fired_at_us DESC, id DESC LIMIT ?",
     )?;
@@ -358,7 +360,7 @@ pub struct BackupView {
 ///
 /// Store, SQL or decode failures.
 pub fn backup_runs(reader: &StoreReader, limit: u32) -> Result<Vec<BackupView>, QueryError> {
-    let mut statement = reader.connection().prepare(
+    let mut statement = reader.connection().prepare_cached(
         "SELECT started_at_us, finished_at_us, path, size_bytes, error FROM backup_run \
          ORDER BY started_at_us DESC, id DESC LIMIT ?",
     )?;
@@ -394,7 +396,7 @@ pub struct FxRateView {
 ///
 /// Store, SQL or decode failures.
 pub fn fx_rates(reader: &StoreReader, range: DateRange) -> Result<Vec<FxRateView>, QueryError> {
-    let mut statement = reader.connection().prepare(
+    let mut statement = reader.connection().prepare_cached(
         "SELECT date, eur_per_usd_scaled, source FROM fx_rate WHERE date >= ? AND date < ? \
          ORDER BY date",
     )?;

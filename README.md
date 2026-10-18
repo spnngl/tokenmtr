@@ -81,6 +81,7 @@ just goldens # regenerate the UI's golden fixtures (apps/desktop/src/shared/sche
 - On a fresh clone, run `pnpm -C apps/desktop install && pnpm -C apps/desktop build` before `just check`: the desktop crate embeds the git-ignored `apps/desktop/dist`.
 - `apps/desktop/src-tauri` is outside the workspace's default members; build it with `cargo build -p tokenmtr-desktop`.
 - Test timestamps with explicit time zones: day buckets use the configured IANA zone.
+- `just bench` includes the store and query benchmarks (`crates/tokenmtr-query/benches/queries.rs`): they build a store of 1,000,000 events first (about a minute, ~700 MB in a temp dir). Set `TOKENMTR_BENCH_STORE=<file>` to keep and reuse it, `TOKENMTR_BENCH_EVENTS` to change its size; run long groups with `--sample-count 10`.
 - UI work starts from the briefs in [apps/desktop/src/shared/BRIEF.md](apps/desktop/src/shared/BRIEF.md).
 - Release builds and their gotchas: [docs/release.md](docs/release.md).
 
