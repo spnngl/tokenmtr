@@ -136,6 +136,8 @@ pub enum DriftReason {
     UnmappedLine,
     /// Failed usage-bearing lines exceeded the threshold.
     SkippedOverThreshold,
+    /// A `stats-cache.json` lacks the expected shape, or some of its day rows do.
+    StatsCacheShape,
 }
 
 /// A problem worth showing in the UI. Never holds line content (D13, D42).

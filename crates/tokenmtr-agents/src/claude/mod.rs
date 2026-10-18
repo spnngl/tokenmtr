@@ -1,17 +1,20 @@
 //! Claude Code collector (§5): profiles, transcript discovery and parsing.
 
 mod line;
+pub mod stats_cache;
 
 use camino::Utf8Path;
+use jiff::tz::TimeZone;
 use tokenmtr_core::{AgentId, Capabilities, ProfileId};
 
-use crate::AgentSource;
 use crate::batch::ParseBatch;
+use crate::drift::{DriftReason, ParseIssue};
 use crate::drift::{DriftStats, LineClass, ParseOutcome};
 use crate::error::AgentError;
 use crate::jsonl::{self, NeedleSet};
 use crate::skeleton::KeySkeleton;
 use crate::source::{ByteOffset, Profile, SourceFile};
+use crate::{AgentSource, Aggregates};
 
 pub use line::{LineContext, LineReport, parse_line};
 
@@ -138,6 +141,51 @@ impl AgentSource for ClaudeSource {
     fn line_needles(&self) -> &'static [&'static [u8]] {
         LINE_NEEDLES
     }
+
+    fn aggregates(&self, profile: &Profile, zone: &TimeZone) -> Result<Aggregates, AgentError> {
+        let mut out = Aggregates::default();
+        for dir in config_dirs(profile) {
+            let path = dir.join(STATS_CACHE_FILE);
+            let body = match std::fs::read(&path) {
+                Ok(body) => body,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(err) => {
+                    let reason = err.to_string();
+                    out.issues
+                        .push((path.clone(), ParseIssue::Unreadable { path, reason }));
+                    continue;
+                }
+            };
+            let cache = stats_cache::parse(&body, &profile.id, zone);
+            if !cache.recognised || cache.bad_rows > 0 {
+                let lines = cache.bad_rows.max(1);
+                out.issues.push((
+                    path,
+                    ParseIssue::FormatDrift {
+                        reason: DriftReason::StatsCacheShape,
+                        lines,
+                        sample: None,
+                    },
+                ));
+            } else {
+                out.clean.push(path);
+            }
+            out.events.extend(cache.events);
+        }
+        Ok(out)
+    }
+}
+
+/// File name of Claude's lifetime statistics, inside the config dir.
+const STATS_CACHE_FILE: &str = "stats-cache.json";
+
+/// Claude config dirs of `profile`: the parent of every root named `projects`.
+pub fn config_dirs(profile: &Profile) -> impl Iterator<Item = &Utf8Path> {
+    profile
+        .roots
+        .iter()
+        .filter(|root| root.file_name() == Some("projects"))
+        .filter_map(|root| root.parent())
 }
 
 /// Whether dotted numeric version `version` is newer than `known`. Text that is not dotted

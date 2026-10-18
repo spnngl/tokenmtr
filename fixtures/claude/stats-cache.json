@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "lastComputedDate": "2025-09-10",
+  "dailyActivity": [{ "date": "2025-09-01", "messageCount": 12 }],
+  "dailyModelTokens": [
+    {
+      "date": "2025-09-01",
+      "tokensByModel": { "claude-sonnet-4-5": 1000, "claude-opus-4-1": 200 }
+    },
+    { "date": "2025-09-02", "tokensByModel": { "claude-sonnet-4-5": 500 } },
+    { "tokensByModel": { "claude-sonnet-4-5": 9 } }
+  ],
+  "modelUsage": {
+    "claude-sonnet-4-5": {
+      "inputTokens": 100,
+      "outputTokens": 200,
+      "cacheReadInputTokens": 5000,
+      "cacheCreationInputTokens": 700,
+      "webSearchRequests": 0
+    },
+    "claude-opus-4-1": {
+      "inputTokens": 10,
+      "outputTokens": 10,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+    }
+  }
+}

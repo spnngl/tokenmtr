@@ -25,12 +25,17 @@ pub mod claude;
 mod discover;
 mod drift;
 mod error;
+pub mod ingest;
 pub mod jsonl;
 pub mod pi;
+pub mod project;
 mod skeleton;
 mod source;
+#[cfg(test)]
+mod testkit;
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
+use jiff::tz::TimeZone;
 use tokenmtr_core::{AgentId, Capabilities, ParsedEvent};
 
 pub use batch::{BatchParts, ParseBatch, ParsedSignal, ParsedToolCall, ParsedToolResult};
@@ -45,6 +50,17 @@ pub use jsonl::NeedleSet;
 pub use pi::PiSource;
 pub use skeleton::KeySkeleton;
 pub use source::{ByteOffset, Profile, SourceFile};
+
+/// Coarse per-day history an agent can offer (D38).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Aggregates {
+    /// `EventKind::DailyAggregate` events.
+    pub events: Vec<ParsedEvent>,
+    /// Files that did not match the expected shape, with the issue to record against each.
+    pub issues: Vec<(Utf8PathBuf, ParseIssue)>,
+    /// Files that matched, so an issue recorded against them earlier can be closed.
+    pub clean: Vec<Utf8PathBuf>,
+}
 
 /// Behaviour every agent implements (D4).
 pub trait AgentSource {
@@ -73,9 +89,11 @@ pub trait AgentSource {
     /// Lines without any of these byte strings are skipped unparsed (D48).
     fn line_needles(&self) -> &'static [&'static [u8]];
 
-    /// Coarse history for days without transcripts (D38). Default: none.
-    fn aggregates(&self, _profile: &Profile) -> Result<Vec<ParsedEvent>, AgentError> {
-        Ok(Vec::new())
+    /// Coarse history for days without transcripts (D38), with timestamps at 12:00 in `zone`.
+    /// The caller keeps only the days before the profile's earliest transcript event. Default:
+    /// none.
+    fn aggregates(&self, _profile: &Profile, _zone: &TimeZone) -> Result<Aggregates, AgentError> {
+        Ok(Aggregates::default())
     }
 }
 
@@ -137,10 +155,10 @@ impl AgentSource for AgentKind {
         }
     }
 
-    fn aggregates(&self, profile: &Profile) -> Result<Vec<ParsedEvent>, AgentError> {
+    fn aggregates(&self, profile: &Profile, zone: &TimeZone) -> Result<Aggregates, AgentError> {
         match self {
-            Self::Claude(source) => source.aggregates(profile),
-            Self::Pi(source) => source.aggregates(profile),
+            Self::Claude(source) => source.aggregates(profile, zone),
+            Self::Pi(source) => source.aggregates(profile, zone),
         }
     }
 }
