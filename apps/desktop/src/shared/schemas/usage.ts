@@ -48,7 +48,7 @@ const seriesPointSchema = z.object({
 });
 export type SeriesPoint = z.infer<typeof seriesPointSchema>;
 
-/** At most ~400 points: the backend picks the bucket (D47). */
+/** At most ~400 points: the backend picks the bucket. */
 export const seriesSchema = z.object({
   currency: currencySchema,
   bucket: bucketSchema,
@@ -57,7 +57,11 @@ export const seriesSchema = z.object({
 });
 export type Series = z.infer<typeof seriesSchema>;
 
-export const modelRowSchema = z.object({
+/** A breakdown table whose money columns are in `currency`. */
+const breakdownOf = <Row extends z.ZodType>(row: Row) =>
+  z.object({ currency: currencySchema, rows: z.array(row) });
+
+const modelRowSchema = z.object({
   model: z.string(),
   ...usageShape,
   share_percent: z.number(),
@@ -66,8 +70,10 @@ export const modelRowSchema = z.object({
   divergent: z.boolean(),
 });
 export type ModelRow = z.infer<typeof modelRowSchema>;
+export const modelsSchema = breakdownOf(modelRowSchema);
+export type Models = z.infer<typeof modelsSchema>;
 
-export const projectRowSchema = z.object({
+const projectRowSchema = z.object({
   project: z.string().nullable(),
   name: z.string().nullable(),
   client: z.string().nullable(),
@@ -75,9 +81,13 @@ export const projectRowSchema = z.object({
   share_percent: z.number(),
 });
 export type ProjectRow = z.infer<typeof projectRowSchema>;
+export const projectsSchema = breakdownOf(projectRowSchema);
+export type Projects = z.infer<typeof projectsSchema>;
 
-export const branchRowSchema = z.object({ branch: z.string().nullable(), ...usageShape });
+const branchRowSchema = z.object({ branch: z.string().nullable(), ...usageShape });
 export type BranchRow = z.infer<typeof branchRowSchema>;
+export const branchesSchema = breakdownOf(branchRowSchema);
+export type Branches = z.infer<typeof branchesSchema>;
 
 /** A working directory no project rule matched (Projects: "Add rule"). */
 export const unresolvedCwdSchema = z.object({
@@ -116,10 +126,21 @@ export type SessionPage = z.infer<typeof sessionPageSchema>;
 
 const COST_SOURCES = ["reported", "estimated", "unpriced"] as const;
 
+/** What produced a usage event (`EventKind` in `tokenmtr-core`). */
+const EVENT_KINDS = [
+  "message",
+  "tool_result",
+  "compaction",
+  "branch_summary",
+  "auxiliary",
+  "daily_aggregate",
+] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
 const sessionEventSchema = z.object({
   at: timestampSchema,
   model: z.string(),
-  kind: z.string(),
+  kind: z.enum(EVENT_KINDS),
   git_branch: z.string().nullable(),
   total_tokens: countSchema,
   output: countSchema,

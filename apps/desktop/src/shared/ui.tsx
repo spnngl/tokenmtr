@@ -108,7 +108,7 @@ interface ChartFrameProps {
   readonly title: string;
   /** What the chart shows, in a sentence: the text alternative of the picture. */
   readonly description: string;
-  /** Number of plotted points, exposed for tests and the D47 budget. */
+  /** Number of plotted points, exposed for tests and the ~400-point budget. */
   readonly points: number;
   /** The same data as a table (`DataTable`), shown on demand. */
   readonly table: ReactNode;
@@ -119,7 +119,7 @@ interface ChartFrameProps {
 
 /**
  * Accessible chart wrapper: a figure with a caption, a description, and the data as a table
- * behind a disclosure (PLAN §7: every chart has one). The picture itself is hidden from assistive
+ * behind a disclosure (every chart has one). The picture itself is hidden from assistive
  * tech so the table, which carries every value, is the only thing it reads.
  */
 export function ChartFrame({

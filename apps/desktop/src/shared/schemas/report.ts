@@ -2,7 +2,7 @@ import { z } from "zod";
 import { currencySchema, dateSchema } from "./primitives";
 
 /**
- * Reports (D46): the argument of the Tauri commands `generate_report` and `save_report`
+ * Reports: the argument of the Tauri commands `generate_report` and `save_report`
  * (`ReportWire` in `src-tauri/src/request.rs`) and the answer of `generate_report`.
  */
 

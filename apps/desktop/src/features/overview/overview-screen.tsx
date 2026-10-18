@@ -170,12 +170,12 @@ function CostFrame(props: {
   );
 }
 
-function TopModels({ currency }: { readonly currency: Currency }): ReactNode {
+function TopModels(): ReactNode {
   const { filters, setFilters } = useFilters();
   return (
     <Card title="Top models">
       <RemoteView remote={toRemote(useModels(filters))} size="section">
-        {(models) =>
+        {({ currency, rows: models }) =>
           models.length === 0 ? (
             <p className="text-sm text-fg-muted">No model usage in this range.</p>
           ) : (
@@ -203,12 +203,12 @@ function TopModels({ currency }: { readonly currency: Currency }): ReactNode {
   );
 }
 
-function TopProjects({ currency }: { readonly currency: Currency }): ReactNode {
+function TopProjects(): ReactNode {
   const { filters, setFilters } = useFilters();
   return (
     <Card title="Top projects">
       <RemoteView remote={toRemote(useProjects(filters))} size="section">
-        {(projects) =>
+        {({ currency, rows: projects }) =>
           projects.length === 0 ? (
             <p className="text-sm text-fg-muted">No project usage in this range.</p>
           ) : (
@@ -284,7 +284,7 @@ function QuotaSection(): ReactNode {
   );
 }
 
-/** Overview (PLAN §7): quota, headline figures, daily cost, top models and projects, activity. */
+/** Overview: quota, headline figures, daily cost, top models and projects, activity. */
 export function OverviewScreen(): ReactNode {
   const { filters } = useFilters();
   return (
@@ -300,9 +300,8 @@ export function OverviewScreen(): ReactNode {
             <Kpis totals={totals} />
             <CostCard />
             <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-              {/* Model and project rows carry no currency: the totals say which one answered. */}
-              <TopModels currency={totals.currency} />
-              <TopProjects currency={totals.currency} />
+              <TopModels />
+              <TopProjects />
             </div>
             <Activity />
           </>

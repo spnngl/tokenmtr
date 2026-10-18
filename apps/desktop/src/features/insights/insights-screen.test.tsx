@@ -21,10 +21,9 @@ function renderScreen(remote: Remote<InsightsData>) {
 }
 
 const EMPTY: InsightsData = {
-  currency: "USD",
   tools: { tools: [], mcp_servers: [] },
   signals: { days: [], api_errors: 0, compactions: 0, top_sessions: [] },
-  branches: [],
+  branches: { currency: "USD", rows: [] },
   heatmap: { currency: "USD", cells: [] },
 };
 

@@ -3,6 +3,7 @@ import { useInstallDaemon, useRestartDaemon, useScanNow } from "../shared/action
 import { useAppConfig } from "../shared/app-context";
 import { errorText } from "../shared/errors";
 import { formatDuration } from "../shared/format";
+import { MoveToApplicationsHint } from "../shared/move-to-applications";
 import { useAppState } from "../shared/queries";
 import type { AppState } from "../shared/schemas";
 import { StateView, type ViewState } from "../shared/state-view";
@@ -10,7 +11,7 @@ import { Onboarding } from "./onboarding";
 
 type ReadyState = Extract<AppState, { kind: "ready" }>;
 
-/** A scan older than twice the interval means the daemon is not keeping up (PLAN §7 "stale"). */
+/** A scan older than twice the interval means the daemon is not keeping up: the view is stale. */
 const STALE_FACTOR = 2;
 
 /** `null` while the data is fresh, or when no scan ever ran (the empty state explains that). */
@@ -26,7 +27,7 @@ export function staleSince(state: ReadyState, nowMs: number): string | null {
 
 /**
  * Replaces the screens when the app cannot show data: loading, failed, daemon offline, daemon
- * version mismatch (D52) and first run. Otherwise renders `children`.
+ * version mismatch and first run. Otherwise renders `children`.
  */
 export function AppGate({ children }: { readonly children: ReactNode }): ReactNode {
   const query = useAppState();
@@ -51,7 +52,7 @@ export function AppGate({ children }: { readonly children: ReactNode }): ReactNo
       return <Onboarding state={state} />;
     case "daemon_offline":
       return (
-        <div className="p-4 md:p-6">
+        <div className="flex flex-col gap-4 p-4 md:p-6">
           <StateView
             state={{
               kind: "daemon-offline",
@@ -59,6 +60,7 @@ export function AppGate({ children }: { readonly children: ReactNode }): ReactNo
               isPending: startDaemon.isPending,
             }}
           />
+          <MoveToApplicationsHint error={startDaemon.error} />
         </div>
       );
     case "incompatible":

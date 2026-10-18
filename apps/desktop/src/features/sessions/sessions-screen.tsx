@@ -153,7 +153,7 @@ function SessionsTable(): ReactNode {
   );
 }
 
-/** Sessions (PLAN §7): server-paged, newest first; sorting reorders the loaded page. */
+/** Sessions: server-paged, newest first; sorting reorders the loaded page. */
 export function SessionsScreen(): ReactNode {
   const { filters } = useFilters();
   return (

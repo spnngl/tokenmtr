@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BRAND } from "../../shared/brand";
 import { Button } from "../../shared/button";
 import { formatCount, formatDuration } from "../../shared/format";
 import type { SinkHealth, SinkRun } from "../../shared/schemas";
@@ -98,7 +99,7 @@ export function SinkCard({ sink, timeZone, onRetry, busy }: SinkCardProps): Reac
           macOS may be blocking this folder (Documents, Desktop, Downloads, iCloud Drive or cloud
           storage). Point the sink at a folder outside them, or grant access in System Settings,
           Privacy and Security, Full Disk Access (or Files and Folders) by adding
-          TokenMtr.app/Contents/MacOS/tokenmtr.
+          {`${BRAND.displayName}.app/Contents/MacOS/${BRAND.cliName}`}.
         </p>
       ) : null}
       {sink.recent_runs.length === 0 ? (

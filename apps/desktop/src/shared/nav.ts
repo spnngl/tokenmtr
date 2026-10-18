@@ -16,7 +16,7 @@ export interface NavItem {
   readonly to: string;
   readonly label: string;
   readonly icon: LucideIcon;
-  /** One line on what the screen shows (PLAN §7). */
+  /** One line on what the screen shows. */
   readonly summary: string;
 }
 

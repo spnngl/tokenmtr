@@ -2,7 +2,7 @@ import { z } from "zod";
 import { CURRENCIES, type Currency, type IsoDate } from "./format";
 
 /**
- * The filter model of the full app (PLAN §7). It lives in the URL search params, so views are
+ * The filter model of the full app. It lives in the URL search params, so views are
  * shareable and restorable. `null` means "all" for the free-form dimensions.
  */
 

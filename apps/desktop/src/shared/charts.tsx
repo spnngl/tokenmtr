@@ -19,7 +19,7 @@ import type { QuotaHistory, Series } from "./schemas";
  * Charts are SVG, decorative to assistive tech (`ChartFrame` hides them and pairs each with a
  * table; `accessibilityLayer={false}` keeps Recharts from adding focusable, announced nodes inside
  * that hidden region), and never
- * animate (D47: no animation while hidden or under reduced motion; none is simplest to keep so).
+ * animate (no animation while hidden or under reduced motion; none is simplest to keep so).
  * Backends send at most ~400 points, so nothing is thinned here.
  */
 
@@ -125,7 +125,7 @@ export function CostChart({ series, currency }: CostChartProps): ReactNode {
 }
 
 /**
- * Utilization of one quota window over time, in `timeZone` (D8); each reset is a vertical marker.
+ * Utilization of one quota window over time, in `timeZone`; each reset is a vertical marker.
  */
 export function QuotaHistoryChart({
   history,

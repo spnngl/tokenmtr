@@ -12,12 +12,12 @@ import {
   formatPercent,
   formatTokens,
 } from "../../shared/format";
-import { useBranches, useOverview, useProjects, useUnresolvedCwds } from "../../shared/queries";
+import { useBranches, useProjects, useUnresolvedCwds } from "../../shared/queries";
 import { RankedBars } from "../../shared/ranked-bars";
 import { CardRemote, NO_USAGE_COPY, RemoteView } from "../../shared/remote-view";
 import type { ProjectRow, UnresolvedCwd } from "../../shared/schemas";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
-import { joinRemotes, toRemote } from "../../shared/use-remote";
+import { toRemote } from "../../shared/use-remote";
 
 const NO_CLIENT = "No client";
 
@@ -65,13 +65,7 @@ function ProjectBars(props: {
 export function ProjectDetailScreen({ project }: { readonly project: string }): ReactNode {
   const { filters } = useFilters();
   const navigate = useNavigate();
-  const scoped = { ...filters, project };
-  // Branch rows carry no currency: the totals of the same request say which one answered (D27).
-  const remote = joinRemotes(
-    toRemote(useBranches(scoped)),
-    toRemote(useOverview(scoped)),
-    (rows, totals) => ({ rows, currency: totals.currency }),
-  );
+  const remote = toRemote(useBranches({ ...filters, project }));
   return (
     <>
       <div>
@@ -177,16 +171,11 @@ function UnresolvedCard(): ReactNode {
   );
 }
 
-/** Projects (PLAN §7): cost per project grouped by client, branch drilldown, unresolved cwds. */
+/** Projects: cost per project grouped by client, branch drilldown, unresolved cwds. */
 export function ProjectsScreen(): ReactNode {
   const { filters } = useFilters();
   const navigate = useNavigate();
-  // Project rows carry no currency: the totals of the same filters say which one answered (D27).
-  const remote = joinRemotes(
-    toRemote(useProjects(filters)),
-    toRemote(useOverview(filters)),
-    (rows, totals) => ({ rows, currency: totals.currency }),
-  );
+  const remote = toRemote(useProjects(filters));
   const open = (project: string): void => {
     void navigate({
       to: "/projects/$project",

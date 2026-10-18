@@ -60,10 +60,10 @@ export interface MockOptions {
   readonly scenario?: MockScenario;
   /** Simulated response time; defaults to none so tests stay synchronous-ish. */
   readonly latencyMs?: number;
-  /** Observes every action the UI triggers, e.g. `scanNow`. */
+  /** Observes every action the UI triggers, e.g. `scanNow`; throwing makes the action fail. */
   readonly onAction?: (action: string, args: readonly unknown[]) => void;
   /**
-   * No FX rate is known: like the backend (D27), a EUR request is answered in USD with
+   * No FX rate is known: like the backend, a EUR request is answered in USD with
    * `currency_fallback` set.
    */
   readonly noFxRates?: boolean;
@@ -102,7 +102,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
   const answered = (requested: Currency): Currency =>
     options.noFxRates === true ? "USD" : requested;
 
-  const act = (action: string, ...args: readonly unknown[]): Promise<void> => {
+  const act = async (action: string, ...args: readonly unknown[]): Promise<void> => {
     options.onAction?.(action, args);
     return read(() => undefined);
   };
@@ -208,12 +208,24 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           groupBy,
         ),
       ),
-    models: (filters) =>
-      read(() => modelsOf(empty ? [] : factsFor(filters), answered(filters.currency))),
-    projects: (filters) =>
-      read(() => projectsOf(empty ? [] : factsFor(filters), answered(filters.currency))),
-    branches: (filters) =>
-      read(() => branchesOf(empty ? [] : factsFor(filters), answered(filters.currency))),
+    models: (filters) => {
+      const currency = answered(filters.currency);
+      return read(() => ({ currency, rows: modelsOf(empty ? [] : factsFor(filters), currency) }));
+    },
+    projects: (filters) => {
+      const currency = answered(filters.currency);
+      return read(() => ({
+        currency,
+        rows: projectsOf(empty ? [] : factsFor(filters), currency),
+      }));
+    },
+    branches: (filters) => {
+      const currency = answered(filters.currency);
+      return read(() => ({
+        currency,
+        rows: branchesOf(empty ? [] : factsFor(filters), currency),
+      }));
+    },
     unresolvedCwds: () => read(() => (empty ? [] : [...UNRESOLVED])),
     heatmap: (filters) =>
       read(() => heatmapOf(empty ? [] : factsFor(filters), answered(filters.currency))),
@@ -261,7 +273,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       return act("installDaemon");
     },
     restartDaemon: () => act("restartDaemon"),
-    revealPath: (path) => act("revealPath", path),
+    revealPath: (target) => act("revealPath", target),
     addProjectRule: (cwd) => act("addProjectRule", cwd),
     keepTenYears: (agent, profile) => {
       tenYears.add(`${agent}:${profile}`);

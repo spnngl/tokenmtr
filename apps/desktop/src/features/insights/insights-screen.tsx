@@ -13,7 +13,7 @@ interface InsightsScreenProps {
   readonly timeZone: string;
 }
 
-/** The Insights page: tools, signals, branches and the activity heatmap, in every §7 state. */
+/** The Insights page: tools, signals, branches and the activity heatmap, in every view state. */
 export function InsightsScreen({ remote, timeZone }: InsightsScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
@@ -33,7 +33,7 @@ export function InsightsScreen({ remote, timeZone }: InsightsScreenProps): React
           <div className="flex flex-col gap-8">
             <ToolsPanel report={data.tools} />
             <SignalsPanel report={data.signals} />
-            <BranchesPanel rows={data.branches} currency={data.currency} />
+            <BranchesPanel rows={data.branches.rows} currency={data.branches.currency} />
             <HeatmapPanel heatmap={data.heatmap} timeZone={timeZone} />
           </div>
         )}

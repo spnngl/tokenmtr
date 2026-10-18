@@ -10,7 +10,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** Footer status (PLAN §7): the worst of daemon and sinks, named so the dot is never alone. */
+/** Footer status: the worst of daemon and sinks, named so the dot is never alone. */
 export function summarizeHealth(system: SystemHealth): HealthSummary {
   const { level, daemon, sinks } = system;
   if (daemon.state !== "running") {

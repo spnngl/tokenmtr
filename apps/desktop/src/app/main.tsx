@@ -15,7 +15,7 @@ if (root === null) {
 }
 
 const queryClient = new QueryClient();
-// Hash history: the webview loads `index.html`, so path routes would not match (D29 deep links
+// Hash history: the webview loads `index.html`, so path routes would not match (deep links
 // pass `#/route?filters`).
 const history = createHashHistory();
 const router = createAppRouter(history);

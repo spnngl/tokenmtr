@@ -14,7 +14,7 @@ export type PaletteAction =
   | { readonly kind: "toggle-currency" }
   | { readonly kind: "theme"; readonly theme: Theme };
 
-/** What choosing an item does (PLAN §7 Cmd-K: go to a screen, apply a filter, run an action). */
+/** What choosing an item does (Cmd-K: go to a screen, apply a filter, run an action). */
 export type PaletteCommand =
   | { readonly kind: "go"; readonly to: NavPath }
   | { readonly kind: "filter"; readonly dimension: PaletteDimension; readonly value: string | null }

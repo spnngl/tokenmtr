@@ -6,7 +6,7 @@ import type {
   AppState,
   Backup,
   BillingReport,
-  BranchRow,
+  Branches,
   Budget,
   FilterOptions,
   FxRateView,
@@ -14,10 +14,10 @@ import type {
   GroupBy,
   Heatmap,
   IngestStatus,
-  ModelRow,
+  Models,
   ParseIssue,
   Period,
-  ProjectRow,
+  Projects,
   QuotaHistory,
   QuotaMeter,
   RecapSnapshot,
@@ -35,6 +35,16 @@ import type {
 } from "./schemas";
 
 export type NotificationPermissionState = "granted" | "denied" | "undetermined";
+
+/**
+ * What `revealPath` shows in Finder (`RevealTarget` in `src-tauri/src/request.rs`): a place the
+ * shell resolves itself, never a path the webview chose.
+ */
+export type RevealTarget =
+  | { readonly kind: "config_file" }
+  | { readonly kind: "exports_dir" }
+  | { readonly kind: "transcript"; readonly agent: string; readonly session: string }
+  | { readonly kind: "transcript_folder"; readonly agent: string; readonly session: string };
 
 export interface DashboardTarget {
   readonly route: "/" | "/settings";
@@ -58,10 +68,10 @@ export interface DataSource {
   // Filtered aggregates
   overview(filters: Filters): Promise<Totals>;
   series(filters: Filters, groupBy: GroupBy): Promise<Series>;
-  models(filters: Filters): Promise<ModelRow[]>;
-  projects(filters: Filters): Promise<ProjectRow[]>;
+  models(filters: Filters): Promise<Models>;
+  projects(filters: Filters): Promise<Projects>;
   /** Branches of `filters.project`. */
-  branches(filters: Filters): Promise<BranchRow[]>;
+  branches(filters: Filters): Promise<Branches>;
   unresolvedCwds(filters: Filters): Promise<UnresolvedCwd[]>;
   heatmap(filters: Filters): Promise<Heatmap>;
   tools(filters: Filters): Promise<ToolsReport>;
@@ -98,14 +108,14 @@ export interface DataSource {
   openDashboard(target: DashboardTarget): Promise<void>;
   installDaemon(): Promise<void>;
   restartDaemon(): Promise<void>;
-  /** Shows a file or folder in the OS file manager. */
-  revealPath(path: string): Promise<void>;
+  /** Shows `target` in the OS file manager. */
+  revealPath(target: RevealTarget): Promise<void>;
   /** Opens the config at a new project rule for `cwd`. */
   addProjectRule(cwd: string): Promise<void>;
-  /** Sets `cleanupPeriodDays` to ten years for one profile (D53). */
+  /** Sets `cleanupPeriodDays` to ten years for one profile. */
   keepTenYears(agent: string, profile: string): Promise<void>;
   setLaunchAtLogin(enabled: boolean): Promise<void>;
-  /** D56: the caller has already collected the typed confirmation. */
+  /** The caller has already collected the typed confirmation. */
   eraseAllData(): Promise<void>;
   requestNotifications(): Promise<NotificationPermissionState>;
   completeOnboarding(): Promise<void>;

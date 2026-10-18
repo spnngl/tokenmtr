@@ -2,6 +2,7 @@ import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../shared/axe";
+import { DataSourceError } from "../shared/errors";
 import type { MockScenario } from "../shared/mock";
 import { renderApp } from "./app-harness";
 
@@ -281,8 +282,26 @@ describe("Settings", () => {
     await waitFor(() => {
       expect(onAction).toHaveBeenCalledWith("scanNow", []);
       expect(onAction).toHaveBeenCalledWith("backupNow", []);
-      expect(onAction).toHaveBeenCalledWith("revealPath", [expect.stringMatching(/TokenMtr/)]);
+      expect(onAction).toHaveBeenCalledWith("revealPath", [{ kind: "exports_dir" }]);
     });
+  });
+
+  it("tells to move the app to Applications when the login item is refused", async () => {
+    const user = userEvent.setup();
+    await renderApp("/settings", {
+      onAction: (action) => {
+        if (action === "setLaunchAtLogin") {
+          throw new DataSourceError("set_launch_at_login", {
+            kind: "app_not_installed",
+            message: "/Volumes/TokenMtr/TokenMtr.app runs from a disk image",
+          });
+        }
+      },
+    });
+    await user.click(await screen.findByRole("switch", { name: "Launch at login" }));
+    expect(
+      await screen.findByText("Move TokenMtr to Applications, then open it from there."),
+    ).toBeTruthy();
   });
 
   it("offers 10-year retention per profile with a retention window", async () => {

@@ -2,6 +2,7 @@ import type {
   AgentInfo,
   Alert,
   Backup,
+  Dataset,
   FilterOptions,
   FxRateView,
   IngestStatus,
@@ -90,14 +91,14 @@ export function filterOptionsOf(facts: typeof FACTS): FilterOptions {
     [...new Set(values.filter((value): value is string => value !== null))].sort();
   return {
     agents: unique(facts.map((fact) => fact.agent)),
-    profiles: unique(facts.map((fact) => fact.profile)),
+    profiles: unique(facts.map((fact) => `${fact.agent}/${fact.profile}`)),
     models: unique(facts.map((fact) => fact.model)),
     projects: unique(facts.map((fact) => fact.project)),
     clients: unique(facts.map((fact) => fact.client)),
   };
 }
 
-function runs(dataset: string, failing: boolean): SinkHealth["recent_runs"] {
+function runs(dataset: Dataset, failing: boolean): SinkHealth["recent_runs"] {
   return [0, 1, 2].map((index) => ({
     dataset,
     started_at: iso(NOW_MS - (index + 1) * 15 * MINUTE_MS),
@@ -114,7 +115,7 @@ const SINKS: readonly SinkHealth[] = [
     lag_rows: 0,
     lag_secs: 0,
     last_success_at: iso(NOW_MS - 12 * MINUTE_MS),
-    recent_runs: runs("events", false),
+    recent_runs: runs("usage_events", false),
   },
   {
     state: "failing",
@@ -124,7 +125,7 @@ const SINKS: readonly SinkHealth[] = [
     lag_rows: 1_240,
     lag_secs: 3 * 3600,
     last_success_at: iso(NOW_MS - 3 * HOUR_MS),
-    recent_runs: runs("events", true),
+    recent_runs: runs("usage_events", true),
   },
   {
     state: "disabled",
@@ -239,7 +240,7 @@ export function settingsOf(tenYearProfiles: ReadonlySet<string>): Settings {
     display: { currency: "USD", time_zone: MOCK_TIME_ZONE },
     fx: { fixed_eur_per_usd: null, latest: fxRatesOf().at(-1) ?? null, offline: false },
     pricing: { snapshot_date: "2026-06-01", models: 64 },
-    tray: { title: "{paid_today}", shortcut: "Cmd+Shift+T" },
+    tray: { title: "paid_today", shortcut: "Cmd+Shift+T" },
     alerts: { quota_thresholds: [70, 90], budget_thresholds: [80, 100], quota_reset: true },
     launch_at_login: true,
     protected_folders: [

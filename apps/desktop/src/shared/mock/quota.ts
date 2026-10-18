@@ -1,6 +1,6 @@
 import type { Filters } from "../filters";
 import type { AdvisorReport, QuotaHistory, QuotaMeter, QuotaWindow } from "../schemas";
-import { rangeOf, sumRaw } from "./aggregate";
+import { matchesProfile, rangeOf, sumRaw } from "./aggregate";
 import { addDays, createRng, FACTS, hashString, NOW_MS, TODAY } from "./seed";
 
 const HOUR_MS = 3_600_000;
@@ -70,7 +70,7 @@ export function quotaLatestOf(filters: Filters): QuotaMeter[] {
   return METERS.filter(
     (meter) =>
       (filters.agent === null || meter.agent === filters.agent) &&
-      (filters.profile === null || meter.profile === filters.profile),
+      matchesProfile(filters.profile, meter.agent, meter.profile),
   );
 }
 

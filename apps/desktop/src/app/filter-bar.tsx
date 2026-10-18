@@ -99,7 +99,7 @@ function CustomRangeFields(props: {
   );
 }
 
-/** Filters bound to the URL search params (PLAN §7): shareable and restorable views. */
+/** Filters bound to the URL search params: shareable and restorable views. */
 export function FilterBar(): ReactNode {
   const { filters, issues, setFilters } = useFilters();
   const { timeZone, now } = useAppConfig();

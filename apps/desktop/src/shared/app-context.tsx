@@ -5,7 +5,7 @@ import type { Settings } from "./schemas";
 
 /** What the UI reads from the config, plus the clock. */
 export interface AppConfig {
-  /** IANA zone used for every day and hour bucket (D8). */
+  /** IANA zone used for every day and hour bucket. */
   readonly timeZone: string;
   /** `display.currency`: the filter bar's initial currency. */
   readonly defaultCurrency: Currency;

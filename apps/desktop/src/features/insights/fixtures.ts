@@ -32,7 +32,6 @@ const HEAT_CELLS: HeatCell[] = Array.from({ length: 7 }, (_, weekdayIndex) =>
 
 /** Tools incl. an MCP tool, MCP servers, signals over 90 days, branches and a full heatmap. */
 export const INSIGHTS_DATA: InsightsData = {
-  currency: "USD",
   tools: {
     tools: [
       {
@@ -104,38 +103,41 @@ export const INSIGHTS_DATA: InsightsData = {
       { agent: "codex", session: "e5f6a7b8", compactions: 3 },
     ],
   },
-  branches: [
-    {
-      branch: "feat/billing",
-      ...usage({
-        events: 410,
-        input_uncached: 900_000,
-        output: 200_000,
-        api_value_micros: micros(88.4),
-        api_value_usd_micros: micros(88.4),
-      }),
-    },
-    {
-      branch: "main",
-      ...usage({
-        events: 220,
-        input_uncached: 400_000,
-        output: 90_000,
-        api_value_micros: micros(31.2),
-        api_value_usd_micros: micros(31.2),
-      }),
-    },
-    {
-      branch: null,
-      ...usage({
-        events: 15,
-        input_uncached: 20_000,
-        output: 4_000,
-        api_value_micros: micros(1.1),
-        api_value_usd_micros: micros(1.1),
-        approximate: true,
-      }),
-    },
-  ],
+  branches: {
+    currency: "USD",
+    rows: [
+      {
+        branch: "feat/billing",
+        ...usage({
+          events: 410,
+          input_uncached: 900_000,
+          output: 200_000,
+          api_value_micros: micros(88.4),
+          api_value_usd_micros: micros(88.4),
+        }),
+      },
+      {
+        branch: "main",
+        ...usage({
+          events: 220,
+          input_uncached: 400_000,
+          output: 90_000,
+          api_value_micros: micros(31.2),
+          api_value_usd_micros: micros(31.2),
+        }),
+      },
+      {
+        branch: null,
+        ...usage({
+          events: 15,
+          input_uncached: 20_000,
+          output: 4_000,
+          api_value_micros: micros(1.1),
+          api_value_usd_micros: micros(1.1),
+          approximate: true,
+        }),
+      },
+    ],
+  },
   heatmap: { currency: "USD", cells: HEAT_CELLS },
 };

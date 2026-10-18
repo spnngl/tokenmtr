@@ -1,5 +1,2 @@
-/**
- * The product name as the UI shows it. Mirrors `tokenmtr-core::brand` (the single source); move it
- * to the generated `bindings.ts` once the generator emits brand strings.
- */
-export const APP_NAME = "TokenMtr";
+/** Product names as the UI shows them, generated from `crates/tokenmtr-brand`. */
+export { APP_NAME, BRAND } from "./bindings";

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useDataAction, useInstallDaemon, useKeepTenYears } from "../shared/actions";
 import { APP_NAME } from "../shared/brand";
 import { Button } from "../shared/button";
+import { MoveToApplicationsHint } from "../shared/move-to-applications";
 import type { AgentInfo, AppState, ProfileInfo } from "../shared/schemas";
 import { Card } from "../shared/ui";
 
@@ -62,7 +63,7 @@ function KeepHistoryCard(props: {
   );
 }
 
-/** First run (PLAN §7): what was found, then the three one-time choices, then go. */
+/** First run: what was found, then the three one-time choices, then go. */
 export function Onboarding({ state }: { readonly state: OnboardingState }): ReactNode {
   const install = useInstallDaemon();
   const notify = useDataAction((ds) => ds.requestNotifications(), {
@@ -139,6 +140,7 @@ export function Onboarding({ state }: { readonly state: OnboardingState }): Reac
                 Install daemon
               </Button>
             </div>
+            <MoveToApplicationsHint error={install.error} />
           </>
         )}
       </Card>

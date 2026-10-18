@@ -91,12 +91,18 @@ function ExportBody({
           rows={datasetStatuses(health.sinks)}
           rowKey={(dataset) => dataset.id}
         />
+        {/* Exported rows are never deleted, only flagged. */}
+        <p className="text-sm text-fg-muted">
+          Exported rows are never deleted. A day of usage replaced by finer data stays with{" "}
+          <code className="text-xs">superseded</code> set; a subscription removed from the config
+          stays with <code className="text-xs">removed_at_utc</code> set.
+        </p>
       </Section>
     </div>
   );
 }
 
-/** The Export page: sink health (D41), run history, datasets and the "Export now" action. */
+/** The Export page: sink health, run history, datasets and the "Export now" action. */
 export function ExportScreen({
   remote,
   onExportNow,

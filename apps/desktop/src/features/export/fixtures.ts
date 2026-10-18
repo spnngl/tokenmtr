@@ -1,7 +1,7 @@
-import type { SinkHealth, SinkRun, SystemHealth } from "../../shared/schemas";
+import type { Dataset, SinkHealth, SinkRun, SystemHealth } from "../../shared/schemas";
 
 function run(
-  dataset: string,
+  dataset: Dataset,
   finished: string,
   rows: number,
   error: string | null = null,

@@ -39,7 +39,7 @@ interface RemoteViewProps<T> {
 }
 
 /**
- * Maps `Remote` onto the shared `StateView` (§7 states) and renders `children` when populated.
+ * Maps `Remote` onto the shared `StateView` states and renders `children` when populated.
  * An error is never shown as empty: it keeps its message and a retry.
  */
 export function RemoteView<T>({

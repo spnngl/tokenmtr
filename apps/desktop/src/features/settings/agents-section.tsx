@@ -52,7 +52,7 @@ function ProfileRow({
   );
 }
 
-/** Followed agents, their capabilities and profiles, and per-profile retention (D53). */
+/** Followed agents, their capabilities and profiles, and per-profile retention. */
 export function AgentsSection({ agents }: { readonly agents: readonly AgentInfo[] }): ReactNode {
   return (
     <Card title="Agents">

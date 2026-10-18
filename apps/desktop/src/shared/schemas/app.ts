@@ -4,7 +4,7 @@ import { backupSchema, daemonHealthSchema, fxRateSchema } from "./health";
 import { countSchema, timestampSchema } from "./primitives";
 
 /**
- * Shapes that no query crate serves: the app shell's own commands (Phase 11 implements them in
+ * Shapes that no query crate serves: the app shell's own commands (implemented in
  * `apps/desktop/src-tauri`). Query shapes live in `usage.ts`, `quota.ts`, `health.ts`, `recap.ts`.
  */
 
@@ -30,7 +30,7 @@ const profileInfoSchema = z.object({
   profile: z.string(),
   root: z.string(),
   account: z.string().nullable(),
-  /** D53: Claude deletes transcripts after this many days; `null` for agents that do not. */
+  /** Claude deletes transcripts after this many days; `null` for agents that do not. */
   retention_days: countSchema.nullable(),
   /** `cleanupPeriodDays` already raised to ten years. */
   keeps_ten_years: z.boolean(),
@@ -49,8 +49,8 @@ export type AgentInfo = z.infer<typeof agentInfoSchema>;
 const NOTIFICATION_PERMISSIONS = ["granted", "denied", "undetermined"] as const;
 
 /**
- * Where the app is in its life. Everything but `ready` replaces the screens (D52, first run,
- * daemon offline).
+ * Where the app is in its life. Everything but `ready` replaces the screens (first run, daemon
+ * offline, version mismatch).
  */
 export const appStateSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -78,9 +78,13 @@ export type AppState = z.infer<typeof appStateSchema>;
 const protectedFolderSchema = z.object({
   agent: z.string(),
   path: z.string(),
-  /** D50: macOS blocks reads until the user grants access. */
+  /** macOS blocks reads until the user grants access. */
   accessible: z.boolean(),
 });
+
+/** What the menu-bar item shows (`menubar.title`; `MenubarTitle` in `tokenmtr-config`). */
+const MENUBAR_TITLES = ["paid_today", "api_today", "tightest_quota", "none"] as const;
+export type MenubarTitle = (typeof MENUBAR_TITLES)[number];
 
 export const settingsSchema = z.object({
   config_path: z.string(),
@@ -95,7 +99,7 @@ export const settingsSchema = z.object({
     offline: z.boolean(),
   }),
   pricing: z.object({ snapshot_date: z.string(), models: countSchema }),
-  tray: z.object({ title: z.string(), shortcut: z.string() }),
+  tray: z.object({ title: z.enum(MENUBAR_TITLES), shortcut: z.string() }),
   alerts: z.object({
     quota_thresholds: z.array(countSchema),
     budget_thresholds: z.array(countSchema),
@@ -108,7 +112,7 @@ export const settingsSchema = z.object({
 export type Settings = z.infer<typeof settingsSchema>;
 
 /**
- * What the resume command and the transcript actions need (D45), which session rows do not carry.
+ * What the resume command and the transcript actions need, which session rows do not carry.
  * `session_dir` is set only when the session lives outside the agent's default directory.
  */
 export const sessionOriginSchema = z.object({

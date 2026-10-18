@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ERROR_KINDS } from "./bindings";
+import { APP_NAME } from "./brand";
 
 /** Class of a failed shell command (`ErrorKind` in `src-tauri/src/error.rs`). */
 export type CommandErrorKind = (typeof ERROR_KINDS)[number];
@@ -66,7 +67,7 @@ const TITLES: Record<CommandErrorKind, string> = {
   config: "Config problem",
   io: "File operation failed",
   service: "Background service problem",
-  app_not_installed: "Move TokenMtr to Applications",
+  app_not_installed: `Move ${APP_NAME} to Applications`,
   internal: "Something went wrong",
 };
 
@@ -83,6 +84,11 @@ function failureText(failure: DataSourceFailure): FailureText {
     default:
       return { title: TITLES[failure.kind], message: failure.message };
   }
+}
+
+/** The failure kind of any thrown value, classified like `errorText` does. */
+export function failureKind(error: unknown): DataSourceFailure["kind"] {
+  return error instanceof DataSourceError ? error.failure.kind : commandFailure(error).kind;
 }
 
 /** The text of any thrown value: `DataSourceError`s by kind, other errors by their message. */

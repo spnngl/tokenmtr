@@ -150,7 +150,7 @@ describe("Tauri data source over the mock fixtures", () => {
   });
 
   it("sends the filters as a query request", async () => {
-    const invoke = vi.fn<Invoke>(async () => []);
+    const invoke = vi.fn<Invoke>(async () => ({ currency: "EUR", rows: [] }));
     const filters = { ...FILTERS, agent: "pi", currency: "EUR", billing: "api" } as const;
     await createTauriDataSource(invoke).models(filters);
     expect(invoke).toHaveBeenCalledWith("models", { request: toQueryRequest(filters) });
@@ -166,6 +166,13 @@ describe("Tauri data source over the mock fixtures", () => {
         billing: "api",
       },
     });
+  });
+
+  it("names what to reveal, never a path", async () => {
+    const invoke = vi.fn<Invoke>(async () => null);
+    const target = { kind: "transcript", agent: "claude", session: "s1" } as const;
+    await createTauriDataSource(invoke).revealPath(target);
+    expect(invoke).toHaveBeenCalledWith("reveal_path", { target });
   });
 
   it("makes a custom range's end exclusive", () => {

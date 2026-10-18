@@ -194,7 +194,7 @@ function ActivityBlock({
 
 /**
  * The blocks of one tab. Each is driven by the data it received, never by the agent's name: an
- * agent that cannot report quota has an empty `quota` and gets no quota block (PLAN §7).
+ * agent that cannot report quota has an empty `quota` and gets no quota block.
  */
 export function RecapBlocks(props: {
   readonly recap: AgentRecap;

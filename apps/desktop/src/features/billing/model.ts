@@ -79,5 +79,5 @@ export function untrackedPlans(
   return untracked;
 }
 
-/** Minimum snapshot history the advisor needs before it advises (D35). */
+/** Minimum snapshot history the advisor needs before it advises. */
 export const ADVISOR_MIN_DAYS = 14;

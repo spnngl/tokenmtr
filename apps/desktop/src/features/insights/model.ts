@@ -1,6 +1,6 @@
 import { mergeBuckets } from "../../shared/decimate";
-import type { Currency } from "../../shared/format";
 import type {
+  Branches,
   BranchRow,
   HeatCell,
   Heatmap,
@@ -11,12 +11,11 @@ import type {
 
 export type SignalDay = SignalsReport["days"][number];
 
-/** Everything the Insights screen renders. */
+/** Everything the Insights screen renders; each money-bearing report names its own currency. */
 export interface InsightsData {
-  readonly currency: Currency;
   readonly tools: ToolsReport;
   readonly signals: SignalsReport;
-  readonly branches: readonly BranchRow[];
+  readonly branches: Branches;
   readonly heatmap: Heatmap;
 }
 
@@ -27,7 +26,7 @@ export function isInsightsEmpty(data: InsightsData): boolean {
     data.tools.mcp_servers.length === 0 &&
     data.signals.api_errors === 0 &&
     data.signals.compactions === 0 &&
-    data.branches.length === 0 &&
+    data.branches.rows.length === 0 &&
     data.heatmap.cells.every((cell) => cell.events === 0)
   );
 }

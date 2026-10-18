@@ -1,5 +1,5 @@
 /**
- * Chart point budget (D47). `tokenmtr-query` already picks a bucket size that keeps a series
+ * Chart point budget. `tokenmtr-query` already picks a bucket size that keeps a series
  * under this many points; the helpers here are the second line of defence for custom ranges and
  * for lists (tools, branches) that have no natural bucket.
  */

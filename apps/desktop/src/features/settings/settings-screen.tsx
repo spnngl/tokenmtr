@@ -10,9 +10,10 @@ import {
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
 import { formatDateTime } from "../../shared/format";
+import { MoveToApplicationsHint } from "../../shared/move-to-applications";
 import { useSettings } from "../../shared/queries";
 import { RemoteView } from "../../shared/remote-view";
-import type { Settings } from "../../shared/schemas";
+import type { MenubarTitle, Settings } from "../../shared/schemas";
 import { ThemeSwitcher } from "../../shared/theme-switcher";
 import { Card, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
@@ -31,6 +32,13 @@ const DAEMON_TEXT: Record<Settings["daemon"]["state"], string> = {
   never_started: "Never started",
 };
 
+const MENUBAR_TITLE_TEXT: Record<MenubarTitle, string> = {
+  paid_today: "Paid today",
+  api_today: "API value today",
+  tightest_quota: "Tightest quota",
+  none: "Icon only",
+};
+
 function Fact(props: { readonly label: string; readonly children: ReactNode }): ReactNode {
   return (
     <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
@@ -42,7 +50,8 @@ function Fact(props: { readonly label: string; readonly children: ReactNode }): 
 
 function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
   const reveal = useRevealPath();
-  const revealing = (path: string): boolean => reveal.isPending && reveal.variables === path;
+  const revealing = (kind: "config_file" | "exports_dir"): boolean =>
+    reveal.isPending && reveal.variables.kind === kind;
   const login = useDataAction((ds, enabled: boolean) => ds.setLaunchAtLogin(enabled), {
     failure: "Could not change launch at login",
   });
@@ -59,14 +68,14 @@ function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
       </dl>
       <div className="flex flex-wrap gap-2">
         <Button
-          isPending={revealing(settings.config_path)}
-          onPress={() => reveal.mutate(settings.config_path)}
+          isPending={revealing("config_file")}
+          onPress={() => reveal.mutate({ kind: "config_file" })}
         >
           Reveal config file
         </Button>
         <Button
-          isPending={revealing(settings.exports_dir)}
-          onPress={() => reveal.mutate(settings.exports_dir)}
+          isPending={revealing("exports_dir")}
+          onPress={() => reveal.mutate({ kind: "exports_dir" })}
         >
           Reveal exports folder
         </Button>
@@ -82,6 +91,7 @@ function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
         </span>
         Launch at login
       </Switch>
+      <MoveToApplicationsHint error={login.error} />
     </Card>
   );
 }
@@ -117,6 +127,7 @@ function DaemonCard({ settings }: { readonly settings: Settings }): ReactNode {
           </Button>
         )}
       </div>
+      <MoveToApplicationsHint error={install.error} />
     </Card>
   );
 }
@@ -155,7 +166,7 @@ function PreferencesCard({ settings }: { readonly settings: Settings }): ReactNo
   return (
     <Card title="Preferences">
       <dl className="flex flex-col gap-2">
-        <Fact label="Menu-bar title">{tray.title}</Fact>
+        <Fact label="Menu-bar title">{MENUBAR_TITLE_TEXT[tray.title]}</Fact>
         <Fact label="Global shortcut">
           <kbd>{tray.shortcut}</kbd>
         </Fact>
@@ -168,7 +179,7 @@ function PreferencesCard({ settings }: { readonly settings: Settings }): ReactNo
   );
 }
 
-/** Settings (PLAN §7): everything configurable or diagnosable, one card per concern. */
+/** Settings: everything configurable or diagnosable, one card per concern. */
 export function SettingsScreen(): ReactNode {
   const settings = toRemote(useSettings());
   return (

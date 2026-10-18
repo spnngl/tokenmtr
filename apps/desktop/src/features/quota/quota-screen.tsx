@@ -77,7 +77,7 @@ function AgentHistory({ agent }: { readonly agent: string }): ReactNode {
   );
 }
 
-/** Quota (PLAN §7): latest meters with ETAs, then utilization history per window. */
+/** Quota: latest meters with ETAs, then utilization history per window. */
 export function QuotaScreen(): ReactNode {
   const { filters } = useFilters();
   const { timeZone, now } = useAppConfig();

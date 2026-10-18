@@ -9,7 +9,7 @@ import { errorText } from "../../shared/errors";
 import { type Currency, formatDateTime, formatTokens, PLACEHOLDER } from "../../shared/format";
 import { useSessionDetail, useSessionOrigin } from "../../shared/queries";
 import { CardRemote, RemoteView } from "../../shared/remote-view";
-import type { SessionEvent, SessionOrigin, SessionToolCall } from "../../shared/schemas";
+import type { EventKind, SessionEvent, SessionOrigin, SessionToolCall } from "../../shared/schemas";
 import { useNotify } from "../../shared/toasts";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
@@ -21,10 +21,14 @@ const COST_SOURCE_LABEL = {
   unpriced: "Unpriced",
 } as const;
 
-function dirname(path: string): string {
-  const cut = path.lastIndexOf("/");
-  return cut > 0 ? path.slice(0, cut) : path;
-}
+const EVENT_KIND_LABEL: Readonly<Record<EventKind, string>> = {
+  message: "Message",
+  tool_result: "Tool result",
+  compaction: "Compaction",
+  branch_summary: "Branch summary",
+  auxiliary: "Auxiliary call",
+  daily_aggregate: "Daily total",
+};
 
 /** How long the button says "Copied" before it offers to copy again. */
 const COPIED_MS = 2_000;
@@ -73,10 +77,11 @@ function ResumeCard(props: {
   readonly origin: SessionOrigin;
 }): ReactNode {
   const { origin } = props;
+  const { agent, session } = props;
   const reveal = useRevealPath();
-  const revealing = (path: string): boolean => reveal.isPending && reveal.variables === path;
-  const command = buildResumeCommand(props.agent, props.session, origin);
-  const { transcript_path: transcript } = origin;
+  const revealing = (kind: "transcript" | "transcript_folder"): boolean =>
+    reveal.isPending && reveal.variables.kind === kind;
+  const command = buildResumeCommand(agent, session, origin);
   return (
     <Card title="Resume">
       {command.kind === "command" ? (
@@ -91,14 +96,17 @@ function ResumeCard(props: {
       ) : (
         <p className="text-sm text-fg-muted">{command.reason}</p>
       )}
-      {origin.transcript_exists && transcript !== null ? (
+      {origin.transcript_exists && origin.transcript_path !== null ? (
         <div className="flex flex-wrap gap-2">
-          <Button isPending={revealing(transcript)} onPress={() => reveal.mutate(transcript)}>
+          <Button
+            isPending={revealing("transcript")}
+            onPress={() => reveal.mutate({ kind: "transcript", agent, session })}
+          >
             Reveal transcript
           </Button>
           <Button
-            isPending={revealing(dirname(transcript))}
-            onPress={() => reveal.mutate(dirname(transcript))}
+            isPending={revealing("transcript_folder")}
+            onPress={() => reveal.mutate({ kind: "transcript_folder", agent, session })}
           >
             <FolderOpen className="size-4" aria-hidden />
             Open folder
@@ -122,7 +130,7 @@ function OriginSection(props: { readonly agent: string; readonly session: string
   );
 }
 
-/** Drilldown of one session (PLAN §7): resume command, per-event rows, tool calls, signals. */
+/** Drilldown of one session: resume command, per-event rows, tool calls, signals. */
 export function SessionDetailScreen(props: {
   readonly agent: string;
   readonly session: string;
@@ -136,7 +144,7 @@ export function SessionDetailScreen(props: {
   const eventColumns = (currency: Currency): Column<SessionEvent>[] => [
     { header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
     { header: "Model", cell: (row) => row.model, sortValue: (row) => row.model },
-    { header: "Kind", cell: (row) => row.kind },
+    { header: "Kind", cell: (row) => EVENT_KIND_LABEL[row.kind] },
     { header: "Branch", cell: (row) => row.git_branch ?? PLACEHOLDER },
     {
       header: "Tokens",

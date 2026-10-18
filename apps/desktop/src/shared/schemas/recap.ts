@@ -77,7 +77,7 @@ export type AgentRecap = z.infer<typeof agentRecapSchema>;
 
 export const STATUS_SCHEMA_VERSION = 1;
 
-/** `status --json` (D43): system health and one recap per followed agent. */
+/** `status --json`: system health and one recap per followed agent. */
 const statusSchema = z.object({
   status_schema: z.literal(STATUS_SCHEMA_VERSION),
   generated_at: timestampSchema,

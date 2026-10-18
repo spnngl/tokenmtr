@@ -215,7 +215,7 @@ describe("command bindings", () => {
       tauri.openDashboard({ route: "/", agent: null }),
       tauri.installDaemon(),
       tauri.restartDaemon(),
-      tauri.revealPath("/tmp"),
+      tauri.revealPath({ kind: "exports_dir" }),
       tauri.addProjectRule("/tmp"),
       tauri.keepTenYears("claude", "default"),
       tauri.setLaunchAtLogin(true),

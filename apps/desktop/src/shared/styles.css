@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Semantic tokens (PLAN §7). Components read these utilities only; no raw colours.
+ * Semantic tokens. Components read these utilities only; no raw colours.
  * Light is the base. Dark applies when the OS prefers it, unless the theme setting pins
  * `data-theme="light"`, or when it pins `data-theme="dark"` (see src/shared/theme.tsx).
  * Dark values are written out instead of `light-dark()`: the bundle targets Safari 16
@@ -135,7 +135,7 @@
   }
 }
 
-/* D47: no motion when the user asks for less. */
+/* No motion when the user asks for less. */
 /* biome-ignore-start lint/complexity/noImportantStyles: must beat every component animation and transition. */
 @media (prefers-reduced-motion: reduce) {
   *,

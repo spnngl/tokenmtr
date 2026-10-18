@@ -13,7 +13,7 @@ import { APP_NAME } from "./brand";
 import { Button } from "./button";
 
 /**
- * The view states of PLAN §7. `loading`, `empty`, `error` and `daemon-offline` replace the
+ * The shared view states. `loading`, `empty`, `error` and `daemon-offline` replace the
  * content; `partial` and `stale` keep it and add a banner; `ready` is just the content.
  */
 export type ViewState =
@@ -103,7 +103,7 @@ function Banner(props: {
   );
 }
 
-/** Renders one §7 view state around the page content. */
+/** Renders one view state around the page content. */
 export function StateView({ state, size = "page", children }: StateViewProps): ReactNode {
   switch (state.kind) {
     case "ready":

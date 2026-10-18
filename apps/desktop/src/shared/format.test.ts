@@ -55,7 +55,7 @@ describe("formatPercent and formatDuration", () => {
   });
 });
 
-describe("time zone bucketing (D8)", () => {
+describe("time zone bucketing", () => {
   const paris = "Europe/Paris";
 
   it("buckets days in the given zone, not UTC", () => {

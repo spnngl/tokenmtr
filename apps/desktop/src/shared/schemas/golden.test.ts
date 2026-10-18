@@ -76,15 +76,17 @@ describe("golden command responses", () => {
   });
 
   it("models", async () => {
-    expect((await serve("models").models(FILTERS))[1]?.divergent).toBe(true);
+    const models = await serve("models").models(FILTERS);
+    expect(models.currency).toBe("USD");
+    expect(models.rows[1]?.divergent).toBe(true);
   });
 
   it("projects", async () => {
-    expect((await serve("projects").projects(FILTERS))[1]?.client).toBe("Acme Corp");
+    expect((await serve("projects").projects(FILTERS)).rows[1]?.client).toBe("Acme Corp");
   });
 
   it("branches", async () => {
-    expect((await serve("branches").branches(FILTERS))[1]?.branch).toBeNull();
+    expect((await serve("branches").branches(FILTERS)).rows[1]?.branch).toBeNull();
   });
 
   it("unresolved_cwds", async () => {

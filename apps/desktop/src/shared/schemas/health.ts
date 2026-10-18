@@ -1,8 +1,19 @@
 import { z } from "zod";
 import { countSchema, dateSchema, timestampSchema } from "./primitives";
 
+/** The exported datasets (`Dataset` in `tokenmtr-core`). */
+const DATASETS = [
+  "usage_events",
+  "tool_calls",
+  "subscriptions",
+  "quota_snapshots",
+  "fx_rates",
+] as const;
+export const datasetSchema = z.enum(DATASETS);
+export type Dataset = z.infer<typeof datasetSchema>;
+
 const sinkRunSchema = z.object({
-  dataset: z.string(),
+  dataset: datasetSchema,
   started_at: timestampSchema,
   finished_at: timestampSchema,
   rows: countSchema,

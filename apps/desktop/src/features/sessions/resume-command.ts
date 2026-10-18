@@ -15,7 +15,7 @@ export function shellQuote(value: string): string {
 }
 
 /**
- * The command that resumes a session in its agent (D45). Both agents resolve a session relative
+ * The command that resumes a session in its agent. Both agents resolve a session relative
  * to the working directory it was started in, hence the `cd`. pi additionally needs
  * `--session-dir` when the session lives outside its default directory.
  */

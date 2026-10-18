@@ -16,9 +16,7 @@ export function InsightsRoute(): ReactNode {
   const remote = joinRemotes(
     joinRemotes(tools, signals, (tools, signals) => ({ tools, signals })),
     joinRemotes(heatmap, branches, (heatmap, branches) => ({ heatmap, branches })),
-    // Branch rows carry no currency: the heatmap of the same filters says which one the backend
-    // answered in (EUR falls back to USD without a rate, D27).
-    (left, right) => ({ ...left, ...right, currency: right.heatmap.currency }),
+    (left, right) => ({ ...left, ...right }),
   );
   return <InsightsScreen remote={remote} timeZone={timeZone} />;
 }

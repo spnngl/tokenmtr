@@ -3,7 +3,7 @@ import type { GeneratedReport } from "../../shared/schemas";
 const FRAME_ID = "report-print-frame";
 
 /**
- * Opens the webview print dialog on an HTML report: "Save as PDF" (D46). One frame at a time: a
+ * Opens the webview print dialog on an HTML report: "Save as PDF". One frame at a time: a
  * new print replaces the previous frame, and the frame goes once the dialog closes.
  */
 export function printHtml(report: GeneratedReport): void {

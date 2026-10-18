@@ -58,7 +58,7 @@ function WindowMeter(props: {
 
 /**
  * Quota meters of every profile that reports quota. Renders nothing for an empty list, so an
- * agent without the capability shows no block and no error (PLAN §7).
+ * agent without the capability shows no block and no error.
  */
 export function QuotaMeters(props: {
   readonly meters: readonly QuotaMeter[];

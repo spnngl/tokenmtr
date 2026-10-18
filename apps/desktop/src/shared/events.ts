@@ -6,7 +6,7 @@ import { isNavPath, type NavPath } from "./nav";
 /** Tauri's `listen`, reduced to the payload: resolves to the function that unsubscribes. */
 export type Listen = (event: string, handler: (payload: unknown) => void) => Promise<() => void>;
 
-/** `daemon-state` payload: what the shell's control-socket handshake last found (D52). */
+/** `daemon-state` payload: what the shell's control-socket handshake last found. */
 export const daemonStateSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("connected"), daemon_version: z.string() }),
   z.object({ state: z.literal("offline") }),
@@ -110,7 +110,7 @@ export interface ShellEventOptions {
   readonly queryClient: Pick<QueryClient, "invalidateQueries">;
   /**
    * `main` follows every push. `recap` is hidden most of the time and re-queries only when the
-   * shell shows it (D47), so it ignores `store-changed`.
+   * shell shows it, so it ignores `store-changed`.
    */
   readonly window: "main" | "recap";
   /** Moves the main window's router; only the main window handles `navigate`. */

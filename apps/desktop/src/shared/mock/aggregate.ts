@@ -21,6 +21,17 @@ export function inRange(date: string, range: DayRange): boolean {
   return date >= range.start && date < range.end;
 }
 
+/** Whether the profile filter (`agent/profile`, or a bare profile under any agent) picks this row. */
+export function matchesProfile(filter: string | null, agent: string, profile: string): boolean {
+  if (filter === null) {
+    return true;
+  }
+  const slash = filter.indexOf("/");
+  return slash === -1
+    ? profile === filter
+    : agent === filter.slice(0, slash) && profile === filter.slice(slash + 1);
+}
+
 /** Facts matching every filter dimension (the billing mode included). */
 export function selectFacts(facts: readonly Fact[], filters: Filters): Fact[] {
   const range = rangeOf(filters.range);
@@ -28,7 +39,7 @@ export function selectFacts(facts: readonly Fact[], filters: Filters): Fact[] {
     (fact) =>
       inRange(fact.date, range) &&
       (filters.agent === null || fact.agent === filters.agent) &&
-      (filters.profile === null || fact.profile === filters.profile) &&
+      matchesProfile(filters.profile, fact.agent, fact.profile) &&
       (filters.model === null || fact.model === filters.model) &&
       (filters.project === null || fact.project === filters.project) &&
       (filters.client === null || fact.client === filters.client) &&

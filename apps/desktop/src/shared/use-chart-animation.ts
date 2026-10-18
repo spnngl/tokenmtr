@@ -22,7 +22,7 @@ function getSnapshot(): boolean {
 }
 
 /**
- * Whether charts may animate (D47): false while the user asks for reduced motion or the window
+ * Whether charts may animate: false while the user asks for reduced motion or the window
  * is hidden. Feed it to every series' `isAnimationActive`.
  */
 export function useChartAnimation(): boolean {

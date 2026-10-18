@@ -9,7 +9,7 @@ interface ModelsScreenProps {
   readonly onAddOverride: () => void;
 }
 
-/** The Models page: header plus every §7 state. */
+/** The Models page: header plus every view state. */
 export function ModelsScreen({ remote, onAddOverride }: ModelsScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">

@@ -1,9 +1,9 @@
 /**
  * Display formatters. Every function is pure and deterministic: the locale is fixed and time
- * zones are always passed explicitly (D8), never read from the system.
+ * zones are always passed explicitly, never read from the system.
  */
 
-/** The one display locale (D8): figures and text ordering never depend on the machine. */
+/** The one display locale: figures and text ordering never depend on the machine. */
 export const LOCALE = "en-US";
 const MICROS_PER_UNIT = 1_000_000;
 const MICROS_PER_CENT = MICROS_PER_UNIT / 100;
@@ -46,14 +46,14 @@ function formatCents(cents: number, currency: Currency): string {
 /**
  * Formats an amount the backend already converted into `currency`: query results carry
  * `*_micros` plus the root `currency` they are expressed in, which is USD when EUR was asked for
- * but no FX rate exists (D27). Label money with that `currency`, never with the one requested.
+ * but no FX rate exists. Label money with that `currency`, never with the one requested.
  *
- * `micros` is a safe-integer `number`, not a `bigint`: the store keeps `i64` micro-units (D7)
+ * `micros` is a safe-integer `number`, not a `bigint`: the store keeps `i64` micro-units
  * and Tauri's JSON bridge delivers a JSON number. 2^53 micro-units is about 9 billion, far beyond
  * any usage total, and the Zod boundary schema rejects anything not a safe integer.
  *
  * The locale stays `en-US` for every currency ("€1,234.50"): one fixed locale keeps figures
- * deterministic across machines (D8).
+ * deterministic across machines.
  */
 export function formatCurrencyMicros(micros: number, currency: Currency): string {
   return formatCents(roundHalfAwayFromZero(micros / MICROS_PER_CENT), currency);
@@ -180,7 +180,7 @@ function zonedParts(instantMs: number, timeZone: string): Record<string, string>
 
 /**
  * Calendar day of an instant in `timeZone` (an IANA name such as "Europe/Paris"), as
- * `YYYY-MM-DD`. This is the D8 bucketing key.
+ * `YYYY-MM-DD`. Days are bucketed in this one zone.
  * @throws {RangeError} when `timeZone` is not a valid IANA zone.
  */
 export function formatDay(instantMs: number, timeZone: string): IsoDate {

@@ -8,7 +8,7 @@ import type {
   SessionRow,
   SessionToolCall,
 } from "../schemas";
-import { convert, inRange, rangeOf, wireUsage } from "./aggregate";
+import { convert, inRange, matchesProfile, rangeOf, wireUsage } from "./aggregate";
 import { createRng, hashString, NOW_MS, SESSIONS, type SessionSeed } from "./seed";
 
 function iso(ms: number): string {
@@ -21,7 +21,7 @@ function matches(session: SessionSeed, filters: Filters): boolean {
   return (
     inRange(iso(lastAtMs).slice(0, 10), range) &&
     (filters.agent === null || session.agent === filters.agent) &&
-    (filters.profile === null || session.profile === filters.profile) &&
+    matchesProfile(filters.profile, session.agent, session.profile) &&
     (filters.model === null || session.models.includes(filters.model)) &&
     (filters.project === null || session.project === filters.project) &&
     (filters.client === null || session.client === filters.client) &&
@@ -124,7 +124,7 @@ export function sessionDetailOf(agent: string, session: string, currency: Curren
 
 const RETENTION_MS = 60 * 86_400_000;
 
-/** Claude deletes transcripts after its retention (D53): old ones are gone. A pi session lives outside the default folder. */
+/** Claude deletes transcripts after its retention: old ones are gone. A pi session lives outside the default folder. */
 export function sessionOriginOf(agent: string, session: string): SessionOrigin {
   const seed = find(agent, session);
   if (seed === undefined) {

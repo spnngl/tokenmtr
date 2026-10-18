@@ -41,7 +41,7 @@ function alertText(alert: Alert): string {
   }
 }
 
-/** D50: macOS asks before a background process reads Documents, Desktop, iCloud or Dropbox. */
+/** macOS asks before a background process reads Documents, Desktop, iCloud or Dropbox. */
 export function ProtectedFoldersSection({
   folders,
 }: {
@@ -199,7 +199,7 @@ function RecentAlertsCard({ alerts }: { readonly alerts: readonly Alert[] }): Re
   );
 }
 
-/** D56: erasing is irreversible, so the button stays disabled until the phrase is typed. */
+/** Erasing is irreversible, so the button stays disabled until the phrase is typed. */
 export function EraseSection(): ReactNode {
   const [typed, setTyped] = useState("");
   const erase = useDataAction((ds) => ds.eraseAllData(), {

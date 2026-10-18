@@ -1,6 +1,6 @@
 import { type UseMutationResult, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDataSource } from "./app-context";
-import type { DataSource } from "./data-source";
+import type { DataSource, RevealTarget } from "./data-source";
 import { errorText } from "./errors";
 import { useNotify } from "./toasts";
 
@@ -62,19 +62,16 @@ export const useBackupNow = () =>
     success: () => "Backup saved",
   });
 
-/** Show a file or folder in the OS file manager; changes no data, so nothing refetches. */
+/** Show a known file or folder in the OS file manager; changes no data, so nothing refetches. */
 export const useRevealPath = () =>
-  useDataAction<string>((ds, path) => ds.revealPath(path), {
+  useDataAction<RevealTarget>((ds, target) => ds.revealPath(target), {
     failure: "Could not open the file",
     refetch: false,
   });
 
-/**
- * Show the config file in the OS file manager, where plans and price overrides are added. Reads
- * the path when pressed, so it works before the settings query has answered.
- */
+/** Show the config file in the OS file manager, where plans and price overrides are added. */
 export const useRevealConfig = () =>
-  useDataAction(async (ds) => ds.revealPath((await ds.settings()).config_path), {
+  useDataAction((ds) => ds.revealPath({ kind: "config_file" }), {
     failure: "Could not open the config file",
     refetch: false,
   });
@@ -87,7 +84,7 @@ export const useInstallDaemon = () =>
 export const useRestartDaemon = () =>
   useDataAction((ds) => ds.restartDaemon(), { failure: "Could not restart the daemon" });
 
-/** Keep one agent profile's transcripts for ten years (D53); `label` names the agent in errors. */
+/** Keep one agent profile's transcripts for ten years; `label` names the agent in errors. */
 export const useKeepTenYears = (agent: string, profile: string, label: string) =>
   useDataAction((ds) => ds.keepTenYears(agent, profile), {
     failure: `Could not change ${label} retention`,

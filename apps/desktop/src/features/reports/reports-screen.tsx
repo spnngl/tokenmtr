@@ -196,7 +196,7 @@ function SaveMessage({ status }: { readonly status: SaveStatus }): ReactNode {
   }
 }
 
-/** The Reports page (D46): pick period, scope and format, preview live, save or print to PDF. */
+/** The Reports page: pick period, scope and format, preview live, save or print to PDF. */
 export function ReportsScreen({
   request,
   options,

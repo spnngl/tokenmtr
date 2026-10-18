@@ -91,7 +91,7 @@ function Input({ label, value }: { readonly label: string; readonly value: strin
   );
 }
 
-/** The plan advisor (D35): always labelled an estimate, with the inputs it used. */
+/** The plan advisor: always labelled an estimate, with the inputs it used. */
 export function AdvisorPanel({
   reports,
 }: {
