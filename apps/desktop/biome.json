@@ -4,6 +4,7 @@
   "files": {
     "includes": ["**", "!src-tauri/target", "!src-tauri/gen", "!dist", "!src/shared/bindings.ts"]
   },
+  "css": { "parser": { "tailwindDirectives": true } },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {
     "enabled": true,
