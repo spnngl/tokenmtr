@@ -1,4 +1,4 @@
-//! Forecasts: quota exhaustion ETA (D33), period spend projection and live burn rate (D58).
+//! Forecasts: quota exhaustion ETA, period spend projection and live burn rate.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -39,7 +39,7 @@ fn count_f64(n: usize) -> f64 {
     f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 
-/// Least-squares forecast of when `window` reaches 100% (D33).
+/// Least-squares forecast of when `window` reaches 100%.
 ///
 /// Only snapshots of the window instance that resets at `resets_at` (within five minutes, as
 /// providers jitter the value) and taken no later than the reset are used, so a window reset
@@ -93,7 +93,7 @@ pub fn quota_eta(snapshots: &[QuotaSnapshot], window: &WindowId, resets_at: Time
 }
 
 /// Projected spend at the end of a period: `spent` plus the mean of the last
-/// [`PROJECTION_DAYS`] daily amounts times the remaining days (D33). With no history the
+/// [`PROJECTION_DAYS`] daily amounts times the remaining days. With no history the
 /// projection is `spent`.
 ///
 /// # Errors
@@ -125,12 +125,13 @@ pub fn project_period(
     ))
 }
 
-/// Recent burn rate of one agent (D58).
+/// Recent burn rate of one agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveRate {
     /// The agent.
     pub agent: AgentId,
-    /// Tokens per minute over the window (D9 total).
+    /// Tokens per minute over the window (input, cache and output tokens; reasoning is part of
+    /// output).
     pub tokens_per_minute: u64,
     /// API-equivalent value per hour over the window; unpriced events count as zero.
     pub api_value_per_hour: UsdMicros,
@@ -146,7 +147,7 @@ struct Acc<'a> {
     sessions: BTreeSet<&'a SessionId>,
 }
 
-/// Burn rate per agent over `(now - window, now]` (D58), sorted by agent. Agents without events
+/// Burn rate per agent over `(now - window, now]`, sorted by agent. Agents without events
 /// in the window are omitted; a non-positive window yields nothing. Daily aggregates are not
 /// live traffic and are ignored.
 #[must_use]

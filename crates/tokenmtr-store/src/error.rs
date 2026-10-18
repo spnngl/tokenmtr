@@ -46,7 +46,7 @@ pub enum StoreError {
     /// A file operation failed.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// The database was written by a newer `TokenMtr` (D52); it is left untouched.
+    /// The database was written by a newer `TokenMtr`; it is left untouched.
     #[error("database schema {found} is newer than the supported schema {supported}; upgrade")]
     NewerSchema {
         /// `PRAGMA user_version` of the file.
@@ -62,11 +62,11 @@ pub enum StoreError {
         /// [`SCHEMA_VERSION`](crate::SCHEMA_VERSION) of this build.
         expected: u32,
     },
-    /// `SQLite` refused write-ahead logging, which the store requires (D6); the file system may
+    /// `SQLite` refused write-ahead logging, which the store requires; the file system may
     /// not support it.
     #[error("write-ahead logging is unavailable (journal mode is {0:?})")]
     WalUnavailable(String),
-    /// `PRAGMA integrity_check` reported a problem (D37).
+    /// `PRAGMA integrity_check` reported a problem.
     #[error("integrity check failed: {0}")]
     IntegrityCheck(String),
     /// The database lacks a row the schema seeds; it is not a `TokenMtr` store.

@@ -16,7 +16,7 @@ use tokenmtr_store::StoreRead as _;
 use crate::daemon::Link;
 use crate::error::CommandError;
 
-/// What an agent can report; fixed per agent (D26, D10, D28).
+/// What an agent can report; fixed per agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Capabilities {
     /// Quota windows can be polled.
@@ -62,7 +62,7 @@ pub struct ProfileInfo {
     pub root: String,
     /// The account the latest quota poll belongs to.
     pub account: Option<String>,
-    /// Days after which the agent deletes transcripts (D53).
+    /// Days after which the agent deletes transcripts.
     pub retention_days: Option<u64>,
     /// Retention already raised to ten years.
     pub keeps_ten_years: bool,
@@ -107,7 +107,7 @@ pub enum AppState {
     },
     /// Nobody answers on the control socket.
     DaemonOffline {},
-    /// App and daemon disagree on protocol or schema (D52).
+    /// App and daemon disagree on protocol or schema.
     Incompatible {
         /// This app's version.
         app_version: String,
@@ -298,7 +298,7 @@ pub struct AlertsBlock {
     pub quota_reset: bool,
 }
 
-/// An agent folder macOS guards (D50).
+/// An agent folder macOS guards.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProtectedFolder {
     /// Agent that reads it.
@@ -472,7 +472,7 @@ fn unscale(scaled: i64) -> f64 {
 pub struct FilterOptions {
     /// Agents.
     pub agents: Vec<String>,
-    /// Profiles.
+    /// Profiles as `agent/profile`: profile names are unique only within an agent.
     pub profiles: Vec<String>,
     /// Models.
     pub models: Vec<String>,
@@ -482,9 +482,11 @@ pub struct FilterOptions {
     pub clients: Vec<String>,
 }
 
-fn distinct(app: &AppContext, column: &'static str) -> Result<Vec<String>, CommandError> {
+/// The distinct non-null values of `expression` (a column or an SQL expression over columns).
+fn distinct(app: &AppContext, expression: &'static str) -> Result<Vec<String>, CommandError> {
     let sql = format!(
-        "SELECT DISTINCT {column} FROM usage_event WHERE {column} IS NOT NULL ORDER BY {column}"
+        "SELECT DISTINCT {expression} AS value FROM usage_event \
+         WHERE value IS NOT NULL ORDER BY value"
     );
     let mut statement = app
         .reader()
@@ -513,14 +515,14 @@ fn store_error(error: rusqlite::Error) -> CommandError {
 pub fn filter_options(app: &AppContext) -> Result<FilterOptions, CommandError> {
     Ok(FilterOptions {
         agents: distinct(app, "agent")?,
-        profiles: distinct(app, "profile")?,
+        profiles: distinct(app, "agent || '/' || profile")?,
         models: distinct(app, "model")?,
         projects: distinct(app, "project")?,
         clients: distinct(app, "client")?,
     })
 }
 
-/// Where a session lives on disk (D45).
+/// Where a session lives on disk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SessionOrigin {
     /// Working directory of the session's latest event.
@@ -656,6 +658,7 @@ mod tests {
         let app = fixture.backend.context()?;
         let options = filter_options(&app)?;
         assert_eq!(options.agents, ["claude"]);
+        assert_eq!(options.profiles, ["claude/default"]);
         assert_eq!(options.models, ["claude-sonnet-4"]);
         assert_eq!(options.projects, ["acme"]);
         assert_eq!(options.clients.len(), 0);

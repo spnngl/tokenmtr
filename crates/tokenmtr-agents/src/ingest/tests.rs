@@ -1,4 +1,4 @@
-//! Engine tests: every Done-when line of Phase 6 that concerns scanning, on temp dirs and a real
+//! Engine tests: every scanning guarantee of the ingestor, on temp dirs and a real
 //! store. Timestamps in transcripts are explicit UTC and the display zone is UTC.
 
 use std::fs;
@@ -689,7 +689,7 @@ fn format_drift_merges_into_one_issue_per_file_and_closes_when_the_file_is_clean
         subjects
     };
     // The unmapped line is the file's issue; the failed usage lines are over the threshold of
-    // the whole scan (D42), whose issue has its own subject.
+    // the whole scan, whose issue has its own subject.
     let expected = vec![path.to_string(), super::SCAN_ISSUE_SUBJECT.to_owned()];
     machine.scan();
     assert_eq!(subjects(&machine), expected);

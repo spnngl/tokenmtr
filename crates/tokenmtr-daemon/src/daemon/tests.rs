@@ -20,7 +20,7 @@ impl SecretStore for NoSecrets {
 }
 
 /// A scan holds the writer connection (`Ctx::store`) for as long as it runs. The heartbeat must
-/// keep beating meanwhile, or the app raises `daemon_stale` during a long cold scan (D36).
+/// keep beating meanwhile, or the app raises `daemon_stale` during a long cold scan.
 #[tokio::test]
 async fn the_heartbeat_keeps_beating_while_a_scan_holds_the_writer() {
     // `/tmp` keeps the control socket path under the `sun_path` limit.
@@ -66,6 +66,44 @@ async fn the_heartbeat_keeps_beating_while_a_scan_holds_the_writer() {
 
     release_tx.send(()).unwrap();
     scan.join().unwrap();
+    daemon.shutdown().await.unwrap();
+}
+
+/// Shutdown raises the ingestors' stop flag: a scan or reprice still running ends before its next
+/// file or page, and an ingestor rebuilt by a reload shares the flag.
+#[tokio::test]
+async fn the_stop_flag_ends_scans_and_reprices_even_after_a_reload() {
+    let dir = tempfile::Builder::new()
+        .prefix("tm")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let home = Utf8PathBuf::from_path_buf(dir.path().canonicalize().unwrap()).unwrap();
+    let lookup_home = home.clone();
+    let paths =
+        Paths::from_lookup(move |key| (key == "HOME").then(|| lookup_home.to_string())).unwrap();
+    let config_path = home.join("config.toml");
+    std::fs::write(
+        &config_path,
+        "[daemon]\nwatch = false\n[quota]\nenabled = false\n[fx]\nenabled = false\n\
+         [pricing]\nauto_update = false\n[backup]\nenabled = false\n",
+    )
+    .unwrap();
+    let transport = ControlTransport::unix(paths.data_dir().join("control.sock"));
+    let settings = Settings::new(paths, config_path, transport, Arc::new(NoSecrets));
+    let daemon = Daemon::start(settings).await.unwrap();
+    let ctx = Arc::clone(&daemon.ctx);
+    ctx.reload(ReloadCause::Requested).await.unwrap();
+    ctx.stopping.store(true, Ordering::Relaxed);
+
+    let scan = ctx
+        .scan(ScanRequest::incremental(ScanPriority::UserInitiated))
+        .await;
+    assert!(matches!(scan, Err(DaemonError::ShuttingDown)), "{scan:?}");
+    let reprice = ctx.reprice_now(tokenmtr_store::RepriceScope::All).await;
+    assert!(
+        matches!(reprice, Err(DaemonError::ShuttingDown)),
+        "{reprice:?}"
+    );
     daemon.shutdown().await.unwrap();
 }
 

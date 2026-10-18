@@ -90,7 +90,7 @@ impl Backend {
         )?)
     }
 
-    /// Erases with `scope` (D56) without opening the store, so a broken config or store can be
+    /// Erases with `scope` without opening the store, so a broken config or store can be
     /// erased too: an unloadable config means the default locations.
     ///
     /// # Errors
@@ -118,7 +118,7 @@ impl Backend {
     }
 }
 
-/// Runs `work` on a blocking thread at user-initiated priority (D47) and returns its result.
+/// Runs `work` on a blocking thread at user-initiated priority and returns its result.
 ///
 /// # Errors
 ///

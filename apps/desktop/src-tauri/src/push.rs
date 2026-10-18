@@ -1,4 +1,4 @@
-//! Push (D47): one control-socket `Subscribe` task re-emitted to the webviews.
+//! Push: one control-socket `Subscribe` task re-emitted to the webviews.
 //!
 //! The daemon announces what changed; nothing in the app polls. When the connection drops the
 //! task reconnects with a capped backoff and tells the UI through `daemon-state`.

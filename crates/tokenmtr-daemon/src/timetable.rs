@@ -1,4 +1,4 @@
-//! The next-due table behind the scheduler (D47): pure data, explicit instants.
+//! The next-due table behind the scheduler: pure data, explicit instants.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};

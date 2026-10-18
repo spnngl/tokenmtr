@@ -1,19 +1,15 @@
-//! Daily downloads: ECB exchange rates (D27) and the `LiteLLM` price list (D11).
+//! Daily downloads: ECB exchange rates and the `LiteLLM` price list.
 
 use std::sync::Arc;
 
 use jiff::Timestamp;
 use tokenmtr_core::pricing::SOURCE_LITELLM;
-use tokenmtr_core::{Override, PriceQuery, PricingCatalog, estimate};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_remote::{EcbFx, FxFetch, LitellmRefresh, RefreshOutcome};
-use tokenmtr_store::{FxSource, RepriceCursor, Repriced, Revision, StoreRead};
+use tokenmtr_store::{FxSource, RepriceScope, Revision, StoreRead};
 
 use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
-
-/// Events priced per write transaction while re-pricing.
-const PAGE: usize = 1000;
 
 /// Where downloaded snapshots say they came from.
 pub(crate) const PRICING_SOURCE: &str = SOURCE_LITELLM;
@@ -30,7 +26,7 @@ pub(crate) enum PricingResult {
 }
 
 impl Ctx {
-    /// Downloads rates: the whole history the first time, then the daily file (D27).
+    /// Downloads rates: the whole history the first time, then the daily file.
     pub(crate) async fn refresh_fx(self: &Arc<Self>) -> Result<(), DaemonError> {
         let http = self.http()?;
         let ecb = EcbFx::new(http.client.clone(), http.endpoints.ecb.clone());
@@ -64,7 +60,7 @@ impl Ctx {
 
     /// Conditional GET of the price list, validated against the active snapshot; a valid new
     /// list becomes the active snapshot, keeps the models it dropped priced, and prices the
-    /// events that had no price (D11). The `ETag` is stored with the snapshot, so it survives
+    /// events that had no price. The `ETag` is stored with the snapshot, so it survives
     /// restarts.
     pub(crate) async fn refresh_pricing(self: &Arc<Self>) -> Result<PricingResult, DaemonError> {
         let http = self.http()?;
@@ -89,7 +85,6 @@ impl Ctx {
                 body,
                 etag,
             } => {
-                let overrides = self.active().ingest.overrides.clone();
                 self.blocking(ThreadPriority::Background, move |ctx| {
                     let version = {
                         let mut store = lock(&ctx.store);
@@ -98,7 +93,7 @@ impl Ctx {
                         store.set_pricing_etag(etag.as_deref())?;
                         version
                     };
-                    let repriced = ctx.reprice_unpriced(&catalog, &overrides)?;
+                    let repriced = ctx.reprice(RepriceScope::Unpriced)?;
                     tracing::info!(%version, carried = catalog.carried(), repriced, "price list updated");
                     ctx.after_write(true);
                     Ok(PricingResult::Updated { repriced })
@@ -108,34 +103,25 @@ impl Ctx {
         }
     }
 
-    /// Gives a price to every event that has none; priced events keep theirs (D11). Each page is
-    /// one write that changes only the cost columns of rows no scan rewrote meanwhile.
-    fn reprice_unpriced(
-        &self,
-        catalog: &PricingCatalog,
-        overrides: &[Override],
+    /// `tokenmtr reprice [--all]` through the control socket: re-estimates at user-initiated
+    /// priority, then publishes the change.
+    pub(crate) async fn reprice_now(
+        self: &Arc<Self>,
+        scope: RepriceScope,
     ) -> Result<u64, DaemonError> {
-        let mut cursor = RepriceCursor::default();
-        let mut repriced = 0_u64;
-        loop {
-            let page = lock(&self.store).reprice_unpriced(cursor, PAGE, |event| {
-                let query = PriceQuery {
-                    model: &event.model,
-                    provider: event.provider.as_ref(),
-                    tokens: &event.tokens,
-                    service_tier: event.service_tier.as_deref(),
-                    modifiers: None,
-                };
-                estimate(&query, catalog, overrides).map(|priced| Repriced {
-                    estimate: priced.estimate,
-                    approximate: priced.approximate,
-                })
-            })?;
-            repriced = repriced.saturating_add(page.repriced);
-            match page.next {
-                Some(next) => cursor = next,
-                None => return Ok(repriced),
-            }
-        }
+        self.blocking(ThreadPriority::UserInitiated, move |ctx| {
+            let repriced = ctx.reprice(scope)?;
+            ctx.after_write(true);
+            Ok(repriced)
+        })
+        .await?
+    }
+
+    /// Re-estimates the stored events of `scope` with the active snapshot, through the
+    /// ingestor's pricer so the overrides and the parsed catalog are the scan's.
+    fn reprice(&self, scope: RepriceScope) -> Result<u64, DaemonError> {
+        let mut ingestor = lock(&self.ingestor);
+        let mut store = lock(&self.store);
+        Ok(ingestor.reprice(&mut store, scope)?)
     }
 }

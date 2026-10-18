@@ -12,7 +12,7 @@ use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use crate::error::ClientError;
 use crate::protocol::{
     BackupSummary, ClientInfo, DaemonStatus, Event, ExportSummary, IssueList, PROTOCOL_VERSION,
-    QuotaSummary, Request, Response, ScanSummary,
+    QuotaSummary, RepriceSummary, Request, Response, ScanSummary,
 };
 
 /// Bound on connecting plus the `Hello` handshake.
@@ -28,6 +28,7 @@ const fn request_timeout(request: &Request) -> Duration {
         Request::ScanNow { .. }
         | Request::ExportNow { .. }
         | Request::BackupNow
+        | Request::Reprice { .. }
         | Request::RefreshQuota => WORK_TIMEOUT,
         Request::Hello { .. }
         | Request::Status
@@ -208,6 +209,18 @@ impl Client {
         }
     }
 
+    /// Re-estimates stored events with the active pricing snapshot: the unpriced ones, or every
+    /// one with `all`.
+    ///
+    /// # Errors
+    /// As [`Client::request`].
+    pub async fn reprice(&mut self, all: bool) -> Result<RepriceSummary, ClientError> {
+        match self.request(&Request::Reprice { all }).await? {
+            Response::Repriced(summary) => Ok(summary),
+            other => Err(ClientError::Unexpected(type_name(&other))),
+        }
+    }
+
     /// Polls quota now.
     ///
     /// # Errors
@@ -306,6 +319,7 @@ const fn type_name(response: &Response) -> &'static str {
         Response::Scanned(_) => "scanned",
         Response::Exported(_) => "exported",
         Response::BackedUp(_) => "backed_up",
+        Response::Repriced(_) => "repriced",
         Response::QuotaRefreshed(_) => "quota_refreshed",
         Response::Reloaded => "reloaded",
         Response::Issues(_) => "issues",

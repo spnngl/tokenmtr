@@ -4,7 +4,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use tokenmtr_core::{ProfileId, SourceFileId};
 
-/// A byte position in a source file. A checkpoint stores one (D15).
+/// A byte position in a source file. A checkpoint stores one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize)]
 #[serde(transparent)]
 pub struct ByteOffset(u64);
@@ -26,7 +26,7 @@ impl ByteOffset {
     }
 }
 
-/// A named group of one agent's roots with its own credentials (D30).
+/// A named group of one agent's roots with its own credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     /// Profile id, `default` unless configured.
@@ -56,7 +56,7 @@ pub struct SourceFile {
     pub path: Utf8PathBuf,
     /// Profile whose root contains the file.
     pub profile: ProfileId,
-    /// Store row id once the file is registered; copied onto events (D45).
+    /// Store row id once the file is registered; copied onto events.
     pub id: Option<SourceFileId>,
 }
 

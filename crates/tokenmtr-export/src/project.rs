@@ -1,4 +1,4 @@
-//! Maps store rows to export rows: the units and spellings of the export schema (D19).
+//! Maps store rows to export rows: the units and spellings of the export schema.
 //!
 //! Money leaves the store as integer `*_usd_micros` and is exported as decimals with six
 //! fractional digits; instants leave as epoch microseconds and are exported as ISO-8601 UTC.

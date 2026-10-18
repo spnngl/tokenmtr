@@ -1,4 +1,4 @@
-//! Claude Code collector (§5): profiles, transcript discovery and parsing.
+//! Claude Code collector: profiles, transcript discovery and parsing.
 
 mod line;
 pub mod stats_cache;
@@ -18,7 +18,7 @@ use crate::{AgentSource, Aggregates};
 
 pub use line::{LineContext, LineReport, parse_line};
 
-/// Lines without one of these are skipped unparsed (D48).
+/// Lines without one of these are skipped unparsed.
 const LINE_NEEDLES: &[&[u8]] = &[
     b"usage",
     b"tool_use",
@@ -28,7 +28,7 @@ const LINE_NEEDLES: &[&[u8]] = &[
 ];
 
 /// The newest Claude Code `version` present in `fixtures/claude`. A line declaring a newer one is
-/// recorded in [`DriftStats::unknown_versions`] (D42, info only).
+/// recorded in [`DriftStats::unknown_versions`] (format drift, info only).
 pub const NEWEST_KNOWN_VERSION: &str = "2.1.287";
 
 /// The Claude Code collector.
@@ -49,7 +49,7 @@ impl ClaudeSource {
         }
     }
 
-    /// Turns the line pre-filter off: every line is parsed. The output must not change (D48); used
+    /// Turns the line pre-filter off: every line is parsed. The output must not change; used
     /// by the equivalence tests and by benchmarks that compare both modes.
     #[must_use]
     pub fn without_prefilter(mut self) -> Self {

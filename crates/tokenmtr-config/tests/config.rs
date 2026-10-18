@@ -1,4 +1,4 @@
-//! Behavior of `tokenmtr-config`: the PLAN §6 example, every invalid case, comment-preserving
+//! Behavior of `tokenmtr-config`: the documented example, every invalid case, comment-preserving
 //! edits and defaults.
 #![expect(
     clippy::unwrap_used,
@@ -14,8 +14,8 @@ use tokenmtr_config::{
     ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
 };
 use tokenmtr_core::{
-    AgentId, BillingPeriod, Currency, EurMicros, Money, Plan, ProfileId, ProjectKey, ProviderId,
-    SubscriptionId, SubscriptionSpec, UsdMicros,
+    AgentId, BillingPeriod, Currency, EurMicros, ModelId, Money, Override, Plan, ProfileId,
+    ProjectKey, ProviderId, SubscriptionId, SubscriptionSpec, UsdMicros,
 };
 
 const EXAMPLE: &str = include_str!("fixtures/example.toml");
@@ -126,6 +126,25 @@ fn the_example_parses() {
     ));
     assert_eq!(sinks[2].redact.len(), 2);
     assert_eq!(sinks[0].datasets.len(), 5);
+}
+
+#[test]
+fn a_pricing_override_may_name_a_provider() {
+    let config = parse(
+        "[[pricing.overrides]]\nmodel = \"m\"\nprovider = \"bedrock\"\ninput_per_m = 3\noutput_per_m = 15\n",
+    )
+    .unwrap();
+    let expected = Override::new(
+        ModelId::try_from("m").unwrap(),
+        "3".parse().unwrap(),
+        "15".parse().unwrap(),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .for_provider(ProviderId::try_from("bedrock").unwrap());
+    assert_eq!(config.pricing.overrides, [expected]);
 }
 
 #[test]

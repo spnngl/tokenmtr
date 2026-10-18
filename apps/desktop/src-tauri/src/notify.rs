@@ -1,4 +1,4 @@
-//! Delivers notifications (D36): stored alerts newer than the watermark, and the app-side
+//! Delivers notifications: stored alerts newer than the watermark, and the app-side
 //! `daemon_stale` alert.
 
 use std::time::{Duration, Instant};

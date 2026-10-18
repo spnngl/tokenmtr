@@ -6,14 +6,15 @@ use serde_json::Value;
 use tokenmtr_app::AppContext;
 use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId};
 use tokenmtr_query::{
-    Bucket, DateRange, Filters, GroupBy, Period, QueryContext, QueryError, Selection, Status,
+    AgentRecap, Bucket, DateRange, Filters, GroupBy, Period, QueryContext, QueryError, Selection,
+    Status,
 };
 use tokenmtr_store::StoreReader;
 
 use crate::error::CommandError;
 use crate::request::QueryRequest;
 
-/// Points a chart may hold before it switches to weekly or monthly buckets (D47).
+/// Points a chart may hold before it switches to weekly or monthly buckets.
 const MAX_SERIES_POINTS: u32 = 90;
 /// Rows the unresolved-working-directory table may hold.
 const UNRESOLVED_LIMIT: u32 = 200;
@@ -352,8 +353,7 @@ pub fn recap(
     period: Period,
 ) -> Result<Value, CommandError> {
     let status = status(app, now, currency, period)?;
-    let mut tabs = Vec::with_capacity(status.agents.len() + 1);
-    if status.agents.len() > 1 {
+    let all = if status.agents.len() > 1 {
         let ctx = tokenmtr_app::query_context(app.config(), app.reader(), now, Some(currency))?;
         let all = tokenmtr_query::recap(
             app.reader(),
@@ -362,15 +362,24 @@ pub fn recap(
             Selection::All,
             period,
         )?;
-        tabs.push(all.recap);
-    }
+        Some(all.recap)
+    } else {
+        None
+    };
+    Ok(recap_document(status, all))
+}
+
+/// The `recap` response: `status` with the All tab `all` (if any) before the agents' tabs.
+pub(crate) fn recap_document(status: Status, all: Option<AgentRecap>) -> Value {
+    let mut tabs = Vec::with_capacity(status.agents.len() + 1);
+    tabs.extend(all);
     tabs.extend(status.agents);
-    Ok(serde_json::json!({
+    serde_json::json!({
         "status_schema": status.status_schema,
         "generated_at": status.generated_at,
         "system": status.system,
         "tabs": tabs,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -403,7 +412,8 @@ mod tests {
         let fixture = seeded(CONFIG)?;
         let app = fixture.backend.context()?;
         let models = models(&app, fixture.now, &request("USD")?)?;
-        assert_eq!(models[0]["model"], "claude-sonnet-4");
+        assert_eq!(models["currency"], "USD");
+        assert_eq!(models["rows"][0]["model"], "claude-sonnet-4");
         let page = sessions(&app, fixture.now, &request("USD")?, 0, 10)?;
         assert_eq!(page["total"], 1);
         let session = SessionId::try_from("s1")?;

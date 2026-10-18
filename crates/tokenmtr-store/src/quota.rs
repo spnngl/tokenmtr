@@ -1,4 +1,4 @@
-//! The `quota_snapshot` table: one row per quota window per poll (D26).
+//! The `quota_snapshot` table: one row per quota window per poll.
 //!
 //! A poll that yields no windows (signed out, expired token, failure) is stored as one row with
 //! an empty `window_id`, no percentage and a non-`ok` status, so exports show the gap.

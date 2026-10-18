@@ -1,15 +1,10 @@
-//! Default locations (D21) and macOS protected folders (D50).
+//! Default locations and macOS protected folders.
 
 use camino::{Utf8Path, Utf8PathBuf};
-
-/// Directory name under the config and logs roots.
-const CONFIG_DIR_NAME: &str = "tokenmtr";
-/// Config file name inside the config directory.
-const CONFIG_FILE_NAME: &str = "config.toml";
-/// Bundle identifier, used as the directory name under Application Support and Caches.
-const BUNDLE_ID: &str = "dev.tokenmtr.app";
-/// Environment variable that overrides the config file location.
-const CONFIG_ENV: &str = "TOKENMTR_CONFIG";
+use tokenmtr_brand::{
+    APP_SUPPORT_DIR_NAME, CACHE_DIR_NAME, CONFIG_DIR_NAME, CONFIG_FILE_NAME, ENV_CONFIG,
+    LOG_DIR_NAME,
+};
 
 /// Failure to derive [`Paths`] from the environment.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -32,7 +27,7 @@ pub enum PathsError {
 /// [`Paths`] lives in these arms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Layout {
-    /// macOS: `~/Library` and the TCC-protected folders (D50).
+    /// macOS: `~/Library` and the TCC-protected folders.
     #[cfg(target_os = "macos")]
     MacOs,
 }
@@ -55,9 +50,11 @@ impl Layout {
             Self::MacOs => {
                 let library = home.join("Library");
                 Dirs {
-                    data: library.join("Application Support").join(BUNDLE_ID),
-                    logs: library.join("Logs").join(CONFIG_DIR_NAME),
-                    cache: library.join("Caches").join(BUNDLE_ID),
+                    data: library
+                        .join("Application Support")
+                        .join(APP_SUPPORT_DIR_NAME),
+                    logs: library.join("Logs").join(LOG_DIR_NAME),
+                    cache: library.join("Caches").join(CACHE_DIR_NAME),
                 }
             }
         }
@@ -134,8 +131,8 @@ impl Paths {
         let xdg_config = env("XDG_CONFIG_HOME")
             .map(Utf8PathBuf::from)
             .filter(|p| p.is_absolute());
-        let config_override = env(CONFIG_ENV)
-            .map(|v| absolute(CONFIG_ENV, v))
+        let config_override = env(ENV_CONFIG)
+            .map(|v| absolute(ENV_CONFIG, v))
             .transpose()?;
 
         let config_dir = xdg_config
@@ -190,13 +187,13 @@ impl Paths {
         &self.cache_dir
     }
 
-    /// Default exports directory: `<data_dir>/exports`. Outside every protected folder (D50).
+    /// Default exports directory: `<data_dir>/exports`. Outside every protected folder.
     #[must_use]
     pub fn exports_dir(&self) -> Utf8PathBuf {
         self.data_dir.join("exports")
     }
 
-    /// Folders the OS guards with per-app consent prompts (D50): on macOS Documents, Desktop,
+    /// Folders the OS guards with per-app consent prompts: on macOS Documents, Desktop,
     /// Downloads, Pictures, Movies, Music, iCloud Drive, cloud storage, other apps' containers
     /// and `/Volumes`.
     #[must_use]
@@ -270,7 +267,7 @@ mod tests {
 
     #[test]
     fn env_override_replaces_only_the_config_file() {
-        let p = paths(&[("HOME", "/Users/me"), (CONFIG_ENV, "/etc/t.toml")]).unwrap();
+        let p = paths(&[("HOME", "/Users/me"), (ENV_CONFIG, "/etc/t.toml")]).unwrap();
         assert_eq!(p.config_file(), "/etc/t.toml");
         assert_eq!(p.config_dir(), "/Users/me/.config/tokenmtr");
     }
@@ -284,7 +281,7 @@ mod tests {
             Err(PathsError::NotAbsolute { var: "HOME", .. })
         ));
         assert!(matches!(
-            paths(&[("HOME", "/h"), (CONFIG_ENV, "c.toml")]),
+            paths(&[("HOME", "/h"), (ENV_CONFIG, "c.toml")]),
             Err(PathsError::NotAbsolute { .. })
         ));
     }

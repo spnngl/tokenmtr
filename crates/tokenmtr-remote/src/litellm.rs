@@ -1,4 +1,4 @@
-//! Daily refresh of the `LiteLLM` price list (D11).
+//! Daily refresh of the `LiteLLM` price list.
 
 use reqwest::{Client, Url};
 use tokenmtr_core::pricing::carry_forward;

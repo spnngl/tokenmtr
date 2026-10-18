@@ -1,5 +1,5 @@
 //! The `pricing_snapshot` table: every pricing body ever used, so estimates stay reproducible
-//! (D11). The active snapshot is `meta.pricing_version`; `meta.pricing_etag` holds
+//!. The active snapshot is `meta.pricing_version`; `meta.pricing_etag` holds
 //! `<version> <etag>` of the last download.
 
 use std::collections::BTreeSet;
@@ -10,6 +10,7 @@ use tokenmtr_core::{Estimate, ModelId, PricingVersion, ProviderId, TokenCounts};
 
 use crate::codec::{RowExt, to_i64, to_limit, to_us};
 use crate::error::{CodecError, StoreError};
+use crate::events::decode_estimate;
 use crate::types::{Dataset, Revision};
 use crate::versioned;
 
@@ -31,9 +32,19 @@ pub struct StoredPricingSnapshot {
     pub etag: Option<String>,
 }
 
-/// What the estimate of a stored, unpriced event depends on.
+/// Which stored events a repricing pass visits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepriceScope {
+    /// Events with neither a reported nor an estimated cost: the daemon's pass after a new
+    /// snapshot, and `tokenmtr reprice`.
+    Unpriced,
+    /// Every event: `tokenmtr reprice --all`. Reported costs never change; only estimates do.
+    All,
+}
+
+/// What the estimate of a stored event depends on, and the estimate it has.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnpricedEvent {
+pub struct RepriceEvent {
     /// Model as reported.
     pub model: ModelId,
     /// Serving provider, if known.
@@ -42,6 +53,8 @@ pub struct UnpricedEvent {
     pub tokens: TokenCounts,
     /// Service tier.
     pub service_tier: Option<String>,
+    /// The stored estimate; always `None` under [`RepriceScope::Unpriced`].
+    pub estimate: Option<Estimate>,
 }
 
 /// A new estimate for a stored event.
@@ -61,9 +74,9 @@ pub struct RepriceCursor(i64);
 /// One page of a repricing pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepricePage {
-    /// Events that got an estimate.
+    /// Events whose estimate was written.
     pub repriced: u64,
-    /// Where the next page starts; `None` once every unpriced event was seen.
+    /// Where the next page starts; `None` once every event of the scope was seen.
     pub next: Option<RepriceCursor>,
 }
 
@@ -143,6 +156,21 @@ pub(crate) fn active(conn: &Connection) -> Result<Option<StoredPricingSnapshot>,
     .transpose()
 }
 
+/// `meta.pricing_version` when it names a stored snapshot.
+pub(crate) fn active_version(conn: &Connection) -> Result<Option<PricingVersion>, StoreError> {
+    let version: Option<String> = conn
+        .prepare_cached(
+            "SELECT p.version FROM pricing_snapshot p \
+             JOIN meta m ON m.key = 'pricing_version' AND m.value = p.version",
+        )?
+        .query_row([], |row| row.get(0))
+        .optional()?;
+    Ok(version
+        .map(PricingVersion::try_from)
+        .transpose()
+        .map_err(CodecError::from)?)
+}
+
 /// Records `etag` as the `ETag` of the active snapshot; `None` forgets it.
 pub(crate) fn set_etag(conn: &Connection, etag: Option<&str>) -> Result<(), StoreError> {
     match etag {
@@ -167,28 +195,60 @@ pub(crate) fn versions(conn: &Connection) -> Result<BTreeSet<PricingVersion>, St
         .collect()
 }
 
-/// Estimates up to `limit` events with neither a reported nor an estimated cost, after `cursor`,
-/// with `price`. Each estimate is a narrow update of the cost columns, guarded by the row's
-/// revision, so a concurrent scan is never overwritten; each priced row gets a new revision
-/// (D17).
+/// Selects one page of [`RepriceScope`] events.
+const fn select_sql(scope: RepriceScope) -> &'static str {
+    match scope {
+        RepriceScope::Unpriced => {
+            "SELECT id, revision, model, provider, input_uncached, cache_read, cache_write_5m, \
+             cache_write_1h, output, reasoning, service_tier, cost_estimated_usd_micros, \
+             pricing_version FROM usage_event \
+             WHERE id > ?1 AND cost_reported_usd_micros IS NULL \
+             AND cost_estimated_usd_micros IS NULL ORDER BY id LIMIT ?2"
+        }
+        RepriceScope::All => {
+            "SELECT id, revision, model, provider, input_uncached, cache_read, cache_write_5m, \
+             cache_write_1h, output, reasoning, service_tier, cost_estimated_usd_micros, \
+             pricing_version FROM usage_event WHERE id > ?1 ORDER BY id LIMIT ?2"
+        }
+    }
+}
+
+/// Writes one new estimate, only if the row still has the revision (and, under
+/// [`RepriceScope::Unpriced`], still has no cost) it had when read.
+const fn update_sql(scope: RepriceScope) -> &'static str {
+    match scope {
+        RepriceScope::Unpriced => {
+            "UPDATE usage_event SET cost_estimated_usd_micros = ?1, pricing_version = ?2, \
+             approximate = approximate OR ?3, revision = ?4, updated_at_us = ?5 \
+             WHERE id = ?6 AND revision = ?7 AND cost_reported_usd_micros IS NULL \
+             AND cost_estimated_usd_micros IS NULL"
+        }
+        RepriceScope::All => {
+            "UPDATE usage_event SET cost_estimated_usd_micros = ?1, pricing_version = ?2, \
+             approximate = approximate OR ?3, revision = ?4, updated_at_us = ?5 \
+             WHERE id = ?6 AND revision = ?7"
+        }
+    }
+}
+
+/// Re-estimates up to `limit` events of `scope` after `cursor` with `price`; `None` from `price`
+/// keeps the event as it is, and so does an estimate equal to the stored one. Each estimate is a
+/// narrow update of the cost columns, guarded by the row's revision, so a concurrent scan is
+/// never overwritten; each changed row gets a new revision.
 pub(crate) fn reprice_page(
     conn: &Connection,
     now: Timestamp,
+    scope: RepriceScope,
     cursor: RepriceCursor,
     limit: usize,
-    price: &mut dyn FnMut(&UnpricedEvent) -> Option<Repriced>,
+    price: &mut dyn FnMut(&RepriceEvent) -> Option<Repriced>,
 ) -> Result<RepricePage, StoreError> {
     let rows = conn
-        .prepare_cached(
-            "SELECT id, revision, model, provider, input_uncached, cache_read, cache_write_5m, \
-             cache_write_1h, output, reasoning, service_tier FROM usage_event \
-             WHERE id > ?1 AND cost_reported_usd_micros IS NULL \
-             AND cost_estimated_usd_micros IS NULL ORDER BY id LIMIT ?2",
-        )?
+        .prepare_cached(select_sql(scope))?
         .query_and_then(
             params![cursor.0, to_limit(limit)?],
-            |row| -> Result<(i64, Revision, UnpricedEvent), StoreError> {
-                let event = UnpricedEvent {
+            |row| -> Result<(i64, Revision, RepriceEvent), StoreError> {
+                let event = RepriceEvent {
                     model: row.id::<ModelId>("model")?,
                     provider: row.id_opt::<ProviderId>("provider")?,
                     tokens: TokenCounts {
@@ -200,6 +260,7 @@ pub(crate) fn reprice_page(
                         reasoning: row.count("reasoning")?,
                     },
                     service_tier: row.get("service_tier")?,
+                    estimate: decode_estimate(row)?,
                 };
                 Ok((row.get("id")?, row.get("revision")?, event))
             },
@@ -209,12 +270,7 @@ pub(crate) fn reprice_page(
         .then(|| rows.last().map(|(id, _, _)| RepriceCursor(*id)))
         .flatten();
     let mut revision = versioned::head(conn, Dataset::UsageEvents)?;
-    let mut update = conn.prepare_cached(
-        "UPDATE usage_event SET cost_estimated_usd_micros = ?1, pricing_version = ?2, \
-         approximate = approximate OR ?3, revision = ?4, updated_at_us = ?5 \
-         WHERE id = ?6 AND revision = ?7 AND cost_reported_usd_micros IS NULL \
-         AND cost_estimated_usd_micros IS NULL",
-    )?;
+    let mut update = conn.prepare_cached(update_sql(scope))?;
     let mut repriced = 0_u64;
     for (id, current, event) in &rows {
         let Some(Repriced {
@@ -224,6 +280,9 @@ pub(crate) fn reprice_page(
         else {
             continue;
         };
+        if event.estimate.as_ref() == Some(&estimate) {
+            continue;
+        }
         let bumped = revision.next();
         let changed = update.execute(params![
             estimate.usd.get(),
@@ -257,7 +316,7 @@ mod tests {
         SessionId, TokenCounts, UsageEvent, UsdMicros,
     };
 
-    use super::{RepriceCursor, Repriced};
+    use super::{RepriceCursor, RepriceScope, Repriced};
     use crate::{Dataset, StoreRead, TempStore};
 
     fn event(store: &impl StoreRead, key: &str, reported: Option<i64>) -> UsageEvent {
@@ -300,6 +359,10 @@ mod tests {
         store.set_pricing_etag(Some("\"a b\"")).unwrap();
         let active = store.active_pricing_snapshot().unwrap().unwrap();
         assert_eq!(active.etag.as_deref(), Some("\"a b\""));
+        assert_eq!(
+            store.active_pricing_version().unwrap(),
+            Some(active.version)
+        );
         store
             .put_pricing_snapshot(b"{ }", Timestamp::UNIX_EPOCH, Some("litellm"))
             .unwrap();
@@ -321,7 +384,7 @@ mod tests {
         store.upsert_events(&events).unwrap();
         let before = store.head_revision(Dataset::UsageEvents).unwrap();
         let version = PricingVersion::of_body(b"v");
-        let price = |_: &super::UnpricedEvent| {
+        let price = |_: &super::RepriceEvent| {
             Some(Repriced {
                 estimate: Estimate {
                     usd: UsdMicros::new(7),
@@ -331,14 +394,16 @@ mod tests {
             })
         };
         let page = store
-            .reprice_unpriced(RepriceCursor::default(), 1, price)
+            .reprice(RepriceScope::Unpriced, RepriceCursor::default(), 1, price)
             .unwrap();
         assert_eq!(page.repriced, 1);
         let next = page.next.unwrap();
-        let page = store.reprice_unpriced(next, 1, price).unwrap();
+        let page = store
+            .reprice(RepriceScope::Unpriced, next, 1, price)
+            .unwrap();
         assert_eq!(page.repriced, 1);
         let page = store
-            .reprice_unpriced(page.next.unwrap(), 1, price)
+            .reprice(RepriceScope::Unpriced, page.next.unwrap(), 1, price)
             .unwrap();
         assert_eq!((page.repriced, page.next), (0, None));
         assert_eq!(
@@ -361,5 +426,51 @@ mod tests {
         let b = stored("b");
         assert_eq!(b.cost.estimated(), None);
         assert!(!b.approximate);
+    }
+
+    #[test]
+    fn repricing_all_rewrites_changed_estimates_only() {
+        let mut temp = TempStore::new().unwrap();
+        let store = temp.store_mut();
+        let estimate = |usd| Estimate {
+            usd: UsdMicros::new(usd),
+            pricing_version: PricingVersion::of_body(b"old"),
+        };
+        let mut reported = event(store, "a", Some(5));
+        reported.cost = EventCost::new(Some(UsdMicros::new(5)), Some(estimate(3)));
+        let mut same = event(store, "b", None);
+        same.cost = EventCost::new(None, Some(estimate(9)));
+        let kept = event(store, "c", None);
+        store.upsert_events(&[reported, same, kept]).unwrap();
+        let before = store.head_revision(Dataset::UsageEvents).unwrap();
+        // Prices everything at 9 under the old version, except the unpriced "c".
+        let price = |event: &super::RepriceEvent| {
+            event.estimate.as_ref().map(|_| Repriced {
+                estimate: estimate(9),
+                approximate: false,
+            })
+        };
+        let page = store
+            .reprice(RepriceScope::All, RepriceCursor::default(), 10, price)
+            .unwrap();
+        assert_eq!((page.repriced, page.next), (1, None), "only `a` changed");
+        assert_eq!(
+            store.head_revision(Dataset::UsageEvents).unwrap(),
+            before.next()
+        );
+        let a = store
+            .usage_event_by_key(
+                AgentId::CLAUDE,
+                &DedupKey::try_from("a".to_owned()).unwrap(),
+            )
+            .unwrap()
+            .unwrap()
+            .row;
+        assert_eq!(
+            a.cost.reported().map(UsdMicros::get),
+            Some(5),
+            "reported stays"
+        );
+        assert_eq!(a.cost.estimated().map(|e| e.usd.get()), Some(9));
     }
 }

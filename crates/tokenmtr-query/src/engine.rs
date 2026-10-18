@@ -50,7 +50,7 @@ impl Dim {
 pub(crate) enum Scope {
     /// Everything, daily aggregates included: totals, series, models, projects.
     All,
-    /// Real traffic only: sessions, heatmap (D38). Fees are not allocated.
+    /// Real traffic only: sessions, heatmap. Fees are not allocated.
     Traffic,
 }
 
@@ -94,7 +94,7 @@ impl Cell {
     }
 }
 
-/// How a cell is billed (D28).
+/// How a cell is billed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
     Api,
@@ -170,7 +170,7 @@ pub(crate) fn where_sql(
     scope: Scope,
 ) -> Result<(String, Vec<Value>), QueryError> {
     let (from, to) = filters.range().instants(ctx.zone())?;
-    // Superseded stats-cache rows stay stored for the export but never count (D38).
+    // Superseded stats-cache rows stay stored for the export but never count.
     let mut sql = String::from("at_us >= ? AND at_us < ? AND superseded = 0");
     let mut params = vec![
         Value::Integer(from.as_microsecond()),
@@ -245,7 +245,7 @@ fn query_cells(
 }
 
 /// First matching subscription wins, like `tokenmtr_core::billing_mode`: coverage uses the
-/// cell's `local` date, the display-zone day its fee is charged on (D8, D28).
+/// cell's `local` date, the display-zone day its fee is charged on.
 fn mode_of(subs: &[Subscription], cell: &Cell, local: Date) -> Mode {
     subs.iter()
         .position(|s| {
@@ -285,7 +285,7 @@ fn eur_to_usd(eur: i64, rate: EurPerUsd) -> i64 {
 /// The fee of `sub` on local `day` in `currency` (0 outside its active range).
 ///
 /// A fee belongs to a local day, not to an instant, so it converts at the rate before that day;
-/// API value converts at the rate before the event's UTC date (D27), as the export documents.
+/// API value converts at the rate before the event's UTC date, as the export documents.
 /// The two dates differ only for events near midnight.
 fn fee_in(
     ctx: &QueryContext,
@@ -329,7 +329,7 @@ fn split(fee: i64, values: &[i64], total: i64) -> Vec<i64> {
 
 /// Rows (with local dates, billing modes and money in the display currency) for `filters`.
 ///
-/// Paid cost (D28, D46): pay-as-you-go rows pay their API value; subscription rows share that
+/// Paid cost: pay-as-you-go rows pay their API value; subscription rows share that
 /// day's prorated fee by API-value share of the day's subscription usage. When the filters
 /// restrict the selection the shares still use the unrestricted usage as denominator and unused
 /// fees stay out; when unrestricted, a fee nobody used is reported in [`Fetched::idle`].

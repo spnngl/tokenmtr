@@ -1,4 +1,4 @@
-//! USD → EUR conversion and the ECB rate-selection rule (D27).
+//! USD → EUR conversion and the ECB rate-selection rule.
 
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -25,7 +25,7 @@ pub fn convert(usd: UsdMicros, rate: EurPerUsd) -> EurMicros {
     EurMicros::new(saturating_micros(rounded))
 }
 
-/// The UTC calendar date of an instant: the date D27 selects rates by.
+/// The UTC calendar date of an instant: the date FX rates are selected by.
 #[must_use]
 pub fn utc_date(at: Timestamp) -> Date {
     at.to_zoned(TimeZone::UTC).date()

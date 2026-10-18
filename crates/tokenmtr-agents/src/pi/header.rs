@@ -1,7 +1,7 @@
 //! The session header: the first line of every pi session file.
 //!
 //! The directory name of a pi session is a lossy encoding of its cwd, so the cwd is always read
-//! from the header (§5). The header is also the only line that names the session and its parent,
+//! from the header. The header is also the only line that names the session and its parent,
 //! and a scan that resumes from a checkpoint never sees it. [`read`] therefore re-reads the first
 //! line of the file on every parse call: one small positioned read, whatever the start offset,
 //! which keeps resumed parsing identical to whole-file parsing without caching state between
@@ -17,7 +17,7 @@ use tokenmtr_core::SessionId;
 
 use crate::error::AgentError;
 
-/// The newest session format version the parser knows (D42). Pi itself reads headers up to 1 MiB.
+/// The newest session format version the parser knows. Pi itself reads headers up to 1 MiB.
 pub const NEWEST_KNOWN_VERSION: u64 = 3;
 
 /// The longest first line [`read`] accepts.

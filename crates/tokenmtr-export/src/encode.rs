@@ -1,4 +1,4 @@
-//! Row encoding for file sinks (D18): one CSV record or JSON object per line.
+//! Row encoding for file sinks: one CSV record or JSON object per line.
 //!
 //! Both formats come from the same [`DatasetSchema`], so header and keys cannot drift from the
 //! `SQLite` columns. The decoder reads back what the encoder wrote; file sinks use it to find the

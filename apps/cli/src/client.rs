@@ -21,7 +21,7 @@ where
         let client = Client::connect(
             transport,
             ClientInfo {
-                name: "tokenmtr-cli".to_owned(),
+                name: format!("{}-cli", tokenmtr_core::brand::CLI_NAME),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 schema: Some(SCHEMA_VERSION),
             },

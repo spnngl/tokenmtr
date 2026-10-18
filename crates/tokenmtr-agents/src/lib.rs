@@ -1,4 +1,4 @@
-//! Agent collectors of `TokenMtr` (D4, D5, D48): the [`AgentSource`] trait, the [`AgentKind`] enum
+//! Agent collectors of `TokenMtr`: the [`AgentSource`] trait, the [`AgentKind`] enum
 //! and the agent-neutral pieces every collector builds on.
 //!
 //! # Building a collector
@@ -9,12 +9,12 @@
 //!    [`ParseOutcome::new_offset`] is the scan's [`jsonl::LineScan::new_offset`].
 //! 3. Parse each line into the caller's [`ParseBatch`] with `push_event`, `push_tool_call`,
 //!    `push_tool_result` and `push_signal`. The batch deduplicates: events last-wins per dedup
-//!    key (D12), tool calls first-wins per tool-use id, signals as sets.
+//!    key, tool calls first-wins per tool-use id, signals as sets.
 //! 4. Classify every parsed line as a [`LineClass`] and feed it to [`DriftStats::record`] and the
 //!    reader's [`jsonl::LineScan`] to [`DriftStats::record_scan`]. Put the scan's
 //!    `new_offset` and `last_line_hash` in the [`ParseOutcome`]. Turn
 //!    the counters into an issue with [`DriftStats::unmapped_issue`], passing a [`KeySkeleton`] of
-//!    the first unmappable line (D42); the ingestor applies the skipped-line threshold to the
+//!    the first unmappable line; the ingestor applies the skipped-line threshold to the
 //!    whole scan. Parse issues never contain line content.
 //! 5. Add a variant to [`AgentKind`] and an entry to `AgentId::KNOWN` in `tokenmtr-core`.
 //!
@@ -53,7 +53,7 @@ pub use pi::PiSource;
 pub use skeleton::KeySkeleton;
 pub use source::{ByteOffset, Profile, SourceFile};
 
-/// Coarse per-day history an agent can offer (D38).
+/// Coarse per-day history an agent can offer.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Aggregates {
     /// `EventKind::DailyAggregate` events.
@@ -64,7 +64,7 @@ pub struct Aggregates {
     pub clean: Vec<Utf8PathBuf>,
 }
 
-/// Behaviour every agent implements (D4).
+/// Behaviour every agent implements.
 pub trait AgentSource {
     /// The agent's id.
     fn id(&self) -> AgentId;
@@ -79,7 +79,7 @@ pub trait AgentSource {
     fn owns(&self, path: &Utf8Path) -> bool;
 
     /// Parses complete lines from `start`. Pushes events, tool calls and signals into `out`;
-    /// returns the new offset, issues and drift stats (D42). A half-written last line is not
+    /// returns the new offset, issues and drift stats. A half-written last line is not
     /// consumed.
     fn parse(
         &self,
@@ -88,10 +88,10 @@ pub trait AgentSource {
         out: &mut ParseBatch,
     ) -> Result<ParseOutcome, AgentError>;
 
-    /// Lines without any of these byte strings are skipped unparsed (D48).
+    /// Lines without any of these byte strings are skipped unparsed.
     fn line_needles(&self) -> &'static [&'static [u8]];
 
-    /// Coarse history for days without transcripts (D38), with timestamps at 12:00 in `zone`.
+    /// Coarse history for days without transcripts, with timestamps at 12:00 in `zone`.
     /// The caller keeps only the days before the profile's earliest transcript event. Default:
     /// none.
     fn aggregates(&self, _profile: &Profile, _zone: &TimeZone) -> Result<Aggregates, AgentError> {
@@ -99,7 +99,7 @@ pub trait AgentSource {
     }
 }
 
-/// Every agent collector (D4). Dispatch is a `match`, so adding a variant lists every place to
+/// Every agent collector. Dispatch is a `match`, so adding a variant lists every place to
 /// handle.
 #[derive(Debug, Clone)]
 pub enum AgentKind {

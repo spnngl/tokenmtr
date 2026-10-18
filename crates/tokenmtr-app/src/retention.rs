@@ -1,4 +1,4 @@
-//! Claude transcript retention (D53): `cleanupPeriodDays` in the profile's `settings.json`.
+//! Claude transcript retention: `cleanupPeriodDays` in the profile's `settings.json`.
 
 use std::io;
 
@@ -15,7 +15,7 @@ const KEY: &str = "cleanupPeriodDays";
 
 /// Sets `cleanupPeriodDays` to [`RETENTION_DAYS`] in the `settings.json` of a Claude config
 /// directory, keeping every other key and their order. A missing file is created. This is the
-/// one write `TokenMtr` makes to another tool's files, and the user asks for it (D53).
+/// one write `TokenMtr` makes to another tool's files, and the user asks for it.
 ///
 /// # Errors
 ///

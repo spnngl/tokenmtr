@@ -57,9 +57,9 @@ mod keychain {
 
     /// Reads generic-password items from the login keychain. Never writes, never prompts.
     ///
-    /// Access is granted per code signature (D51). Since the lookup never shows the "Always
-    /// Allow" prompt, an item another app created is readable only once the user adds this app
-    /// to the item's access list in Keychain Access; until then it is [`SecretError::Denied`].
+    /// Access is granted per code signature. Lookups are non-interactive, so an item another app
+    /// created is readable only once the user adds `TokenMtr` to the item's access list (Keychain
+    /// Access → the item → Access Control); until then it is [`SecretError::Denied`].
     #[derive(Debug, Default, Clone, Copy)]
     pub struct KeychainSecrets;
 

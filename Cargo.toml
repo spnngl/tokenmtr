@@ -12,6 +12,7 @@ publish = false
 
 [workspace.dependencies]
 tokenmtr-app = { path = "crates/tokenmtr-app" }
+tokenmtr-brand = { path = "crates/tokenmtr-brand" }
 tokenmtr-core = { path = "crates/tokenmtr-core" }
 tokenmtr-config = { path = "crates/tokenmtr-config" }
 tokenmtr-store = { path = "crates/tokenmtr-store" }

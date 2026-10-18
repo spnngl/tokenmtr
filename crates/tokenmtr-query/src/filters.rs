@@ -33,7 +33,7 @@ impl TryFrom<String> for ClientName {
     }
 }
 
-/// One profile restriction. Profile names are unique only within an agent (D30), so a profile
+/// One profile restriction. Profile names are unique only within an agent, so a profile
 /// can be pinned to its agent: `claude/work`. A bare `work` matches that name under any agent.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProfileSelector {
@@ -69,7 +69,8 @@ impl FromStr for ProfileSelector {
     }
 }
 
-/// Restricts events by how they are billed (derived at query time, D28).
+/// Restricts events by how they are billed (derived at query time from the configured
+/// subscriptions).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BillingFilter {
@@ -216,7 +217,7 @@ impl Filters {
     }
 
     /// Whether anything besides the range restricts the selection. When false, paid cost
-    /// includes every subscription fee of the range, used or not (D28).
+    /// includes every subscription fee of the range, used or not.
     #[must_use]
     pub fn is_scoped(&self) -> bool {
         !(self.agents.is_empty()

@@ -1,4 +1,4 @@
-//! Export of `TokenMtr` datasets to sinks: files and `SQLite` (Phase 7).
+//! Export of `TokenMtr` datasets to sinks: files and `SQLite`.
 //!
 //! # Pipeline
 //!
@@ -8,14 +8,14 @@
 //!   └────────────── set_sink_cursor + record_sink_run ◀─────────────────┘
 //! ```
 //!
-//! - [`schema`] names every column once (D19); CSV headers, JSONL keys, `SQLite` DDL
+//! - [`schema`] names every column once; CSV headers, JSONL keys, `SQLite` DDL
 //!   ([`sql`]) and `docs/export-schema.md` all derive from it.
 //! - [`project`] maps store rows to [`ExportRow`]s and reads batches.
-//! - [`redact`] applies per-sink `hash` and `drop` rules (D40).
+//! - [`redact`] applies per-sink `hash` and `drop` rules.
 //! - [`file`] and [`sqlite`] are the built-in sinks; [`sink`] holds the [`Sink`] trait, the
 //!   [`SinkKind`] enum and [`SinkSpec`].
-//! - [`pump`] drives sinks from cursors with at-least-once delivery (D17); [`health`] turns the
-//!   run history into D41 states.
+//! - [`pump`] drives sinks from cursors with at-least-once delivery; [`health`] turns the
+//!   run history into sink health states.
 //!
 //! See `docs/export-schema.md` for the consumer contract and `docs/adding-a-sink.md` for adding a
 //! sink kind.

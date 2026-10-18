@@ -1,7 +1,7 @@
 //! Actions: everything that changes something (config, files, daemon, service).
 //!
 //! Plain functions over a [`Backend`], so they run in tests without a window. The daemon is the
-//! only writer of the store (D2): when it answers, scans, exports and backups go through the
+//! only writer of the store: when it answers, scans, exports and backups go through the
 //! control socket; when it does not, they run in-process like the CLI does.
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -170,7 +170,7 @@ pub fn add_project_rule(backend: &Backend, cwd: &str) -> Result<(), CommandError
     Ok(())
 }
 
-/// Records a subscription in the config (D28).
+/// Records a subscription in the config.
 ///
 /// # Errors
 ///
@@ -180,7 +180,7 @@ pub fn add_subscription(backend: &Backend, spec: &SubscriptionSpec) -> Result<()
     Ok(())
 }
 
-/// Raises the transcript retention of a Claude profile to ten years (D53).
+/// Raises the transcript retention of a Claude profile to ten years.
 ///
 /// # Errors
 ///
@@ -199,7 +199,7 @@ pub fn keep_ten_years(
     Ok(())
 }
 
-/// Removes the store, the backups, the logs and the background service (D56). The config stays.
+/// Removes the store, the backups, the logs and the background service. The config stays.
 ///
 /// The service is unloaded first; a daemon outside it (`tokenmtr run` in a terminal) is asked
 /// to shut down, and the erase waits for it to release the daemon lock.

@@ -30,7 +30,7 @@ impl ParsedToolCall {
     }
 }
 
-/// A session-level signal (D32), stored in `session_signal`.
+/// A session-level signal, stored in `session_signal`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct ParsedSignal {
     /// Agent that wrote it.
@@ -70,7 +70,8 @@ pub struct BatchParts {
 
 /// Output of one or more parse calls, deduplicated on push:
 /// - **Events:** unique per `(agent, dedup_key)`. A later push replaces the earlier event in place
-///   (last wins, D12); the event keeps the position of its first occurrence.
+///   (last wins: Claude writes several streaming lines per message, and the first under-counts
+///   output); the event keeps the position of its first occurrence.
 /// - **Tool calls:** unique per `(agent, tool_use_id)`. The first push wins; a later push only
 ///   fills a missing `event_key`.
 /// - **Tool results:** set `is_error` on the call, whether the call was pushed before or after the

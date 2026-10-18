@@ -1,14 +1,16 @@
-//! The ingestor through its public API, on the committed fixtures (Phase 6: "scan completes",
-//! "second scan parses nothing").
+//! The ingestor through its public API, on the committed fixtures (the scan completes,
+//! and a second scan parses nothing).
 
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use camino::Utf8PathBuf;
-use tokenmtr_agents::ingest::{IngestSettings, Ingestor, ScanPriority, ScanRequest};
+use tokenmtr_agents::ingest::{IngestError, IngestSettings, Ingestor, ScanPriority, ScanRequest};
 use tokenmtr_config::{ConfigFormat, load_str};
 use tokenmtr_core::AgentId;
 use tokenmtr_platform::Paths;
-use tokenmtr_store::{Dataset, Store, StoreRead as _};
+use tokenmtr_store::{Dataset, RepriceScope, Store, StoreRead as _};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -73,6 +75,32 @@ fn scanning_the_fixtures_completes_and_a_second_scan_reads_nothing() -> TestResu
         !report.open_issues.is_empty(),
         "the drift fixtures raise issues"
     );
+    Ok(())
+}
+
+#[test]
+fn a_raised_stop_flag_ends_scans_and_reprices_without_writing() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let home = Utf8PathBuf::from_path_buf(dir.path().canonicalize()?).map_err(|_| "utf-8")?;
+    let db = home.join("store.db");
+    let mut store = Store::open(&db)?;
+    let stop = Arc::new(AtomicBool::new(true));
+    let mut ingestor = Ingestor::open(settings(&home)?, &db)?.with_stop(Arc::clone(&stop));
+    let head = store.head_revision(Dataset::UsageEvents)?;
+    for priority in [ScanPriority::UserInitiated, ScanPriority::Background] {
+        let stopped = ingestor.scan(&mut store, &ScanRequest::incremental(priority));
+        assert!(matches!(stopped, Err(IngestError::Stopped)), "{stopped:?}");
+    }
+    let stopped = ingestor.reprice(&mut store, RepriceScope::All);
+    assert!(matches!(stopped, Err(IngestError::Stopped)), "{stopped:?}");
+    assert_eq!(store.head_revision(Dataset::UsageEvents)?, head);
+
+    stop.store(false, Ordering::Relaxed);
+    let report = ingestor.scan(
+        &mut store,
+        &ScanRequest::incremental(ScanPriority::UserInitiated),
+    )?;
+    assert!(report.events_changed() > 0, "a lowered flag scans again");
     Ok(())
 }
 

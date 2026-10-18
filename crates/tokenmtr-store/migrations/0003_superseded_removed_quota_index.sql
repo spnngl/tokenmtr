@@ -1,9 +1,9 @@
--- D38. Stats-cache aggregates on days transcripts now cover are kept (D14) and flagged: queries
+-- Stats-cache aggregates on days transcripts now cover are kept and flagged: queries
 -- skip them, sinks receive the flag with a new revision.
 ALTER TABLE usage_event
     ADD COLUMN superseded INTEGER NOT NULL DEFAULT 0 CHECK (superseded IN (0, 1));
 
--- D28. A subscription removed from config keeps its row with the time it disappeared; billing
+-- A subscription removed from config keeps its row with the time it disappeared; billing
 -- ignores it, exports keep it.
 ALTER TABLE subscription ADD COLUMN removed_at_us INTEGER;
 

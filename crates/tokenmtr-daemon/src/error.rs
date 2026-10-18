@@ -14,7 +14,7 @@ pub enum DaemonError {
     /// The configuration file cannot be read or is invalid.
     #[error("configuration: {0}")]
     Config(#[from] ConfigError),
-    /// The store was written by a newer `TokenMtr` (D52); it is left untouched.
+    /// The store was written by a newer `TokenMtr`; it is left untouched.
     #[error(
         "the store has schema {found} but this tokenmtr supports up to {supported}: upgrade tokenmtr"
     )]
@@ -29,7 +29,7 @@ pub enum DaemonError {
     Store(StoreError),
     /// A scan failed.
     #[error("ingest: {0}")]
-    Ingest(#[from] IngestError),
+    Ingest(IngestError),
     /// A query failed.
     #[error("query: {0}")]
     Query(#[from] QueryError),
@@ -60,9 +60,18 @@ pub enum DaemonError {
     /// A request named something that does not exist.
     #[error("{0}")]
     Unknown(String),
-    /// The shutdown deadline passed while a job was running.
+    /// The shutdown deadline passed while a job was running, or shutdown stopped a scan.
     #[error("the daemon is shutting down")]
     ShuttingDown,
+}
+
+impl From<IngestError> for DaemonError {
+    fn from(error: IngestError) -> Self {
+        match error {
+            IngestError::Stopped => Self::ShuttingDown,
+            other => Self::Ingest(other),
+        }
+    }
 }
 
 impl From<StoreError> for DaemonError {

@@ -1,4 +1,4 @@
-//! Stable-toolchain stand-in for a short fuzz run (D54): replays every seed in `seeds/<target>/`
+//! Stable-toolchain stand-in for a short fuzz run: replays every seed in `seeds/<target>/`
 //! plus truncated and bit-flipped variants through its target. Any panic fails the test and the
 //! offending input is written under `target/fuzz-smoke-crash/` (turn it into a fixture and a
 //! regression test).

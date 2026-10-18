@@ -169,8 +169,8 @@ fn empty_store_returns_zeros_not_errors() {
     assert_eq!(totals.sessions, 0);
     assert_eq!(totals.cache_savings_micros, None);
     assert_eq!(totals.roi, None);
-    assert!(models(&reader, &ctx, &f).unwrap().is_empty());
-    assert!(projects(&reader, &ctx, &f).unwrap().is_empty());
+    assert!(models(&reader, &ctx, &f).unwrap().rows.is_empty());
+    assert!(projects(&reader, &ctx, &f).unwrap().rows.is_empty());
     assert_eq!(sessions(&reader, &ctx, &f, 0, 50).unwrap().total, 0);
     assert!(quota_latest(&reader, &ctx, &f).unwrap().is_empty());
     assert!(tools(&reader, &ctx, &f).unwrap().tools.is_empty());
@@ -217,7 +217,7 @@ fn totals_follow_cost_semantics_and_token_rules() {
     .unwrap();
     let u = &totals.usage;
     assert_eq!(u.events, 4);
-    // Reasoning is a subset of output and never added (D9).
+    // Reasoning is a subset of output and never added.
     assert_eq!(u.total_tokens, 700 + 300 + 1 + 5);
     assert_eq!(u.reasoning, 80);
     assert_eq!(u.api_value_micros, 1_000_000 + 500_000 + 700_000);
@@ -474,7 +474,7 @@ fn eur_uses_the_rate_strictly_before_the_event_date() {
     assert_eq!(point(date(2026, 3, 10)).usage.api_value_micros, 9_000_000);
     assert!(!point(date(2026, 3, 10)).usage.approximate);
     assert_eq!(point(date(2026, 3, 11)).usage.api_value_micros, 8_000_000);
-    // Newest rate is ten days old: usable but approximate (D27).
+    // Newest rate is ten days old: usable but approximate.
     assert_eq!(point(date(2026, 3, 20)).usage.api_value_micros, 8_000_000);
     assert!(point(date(2026, 3, 20)).usage.approximate);
     // USD stays available next to the converted amount.
@@ -557,8 +557,8 @@ fn paid_is_prorated_fee_plus_api_events_and_api_value_stays_separate() {
     assert_eq!(t.usage.subscription_value_micros, 4_000_000);
     assert!((t.roi.unwrap() - 0.4).abs() < 1e-9);
 
-    // D46: the day's $1 fee is shared by API-value share inside the subscription.
-    let by_model = models(&reader, &c, &f).unwrap();
+    // The day's $1 fee is shared by API-value share inside the subscription.
+    let by_model = models(&reader, &c, &f).unwrap().rows;
     let paid = |name: &str| {
         by_model
             .iter()
@@ -761,7 +761,7 @@ fn sessions_tools_signals_and_daily_aggregates() {
     let c = usd_ctx("UTC", "2026-02-03T00:00:00Z");
     let f = Filters::new(DateRange::day(date(2026, 2, 2)).unwrap());
 
-    // Daily aggregates count in totals but never as sessions (D38).
+    // Daily aggregates count in totals but never as sessions.
     let t = overview(&reader, &c, &f).unwrap();
     assert_eq!(t.usage.events, 4);
     assert_eq!(t.usage.api_value_micros, 1_700);
@@ -810,7 +810,7 @@ fn sessions_tools_signals_and_daily_aggregates() {
     assert_eq!(sig.top_sessions[0].session, "s1");
     assert_eq!(sig.days[0].compactions, 2);
 
-    let by_branch = branches(&reader, &c, &f).unwrap();
+    let by_branch = branches(&reader, &c, &f).unwrap().rows;
     assert_eq!(
         by_branch
             .iter()
@@ -820,7 +820,7 @@ fn sessions_tools_signals_and_daily_aggregates() {
             .events,
         1
     );
-    let m = models(&reader, &c, &f).unwrap();
+    let m = models(&reader, &c, &f).unwrap().rows;
     assert_eq!(m[0].model, "m1"); // 1_300 incl. the aggregate beats m2's 400
     assert!((m.iter().map(|r| r.share_percent).sum::<f64>() - 100.0).abs() < 1e-9);
 }

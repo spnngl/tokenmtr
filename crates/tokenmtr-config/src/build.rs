@@ -484,7 +484,7 @@ fn build_pricing(raw: &RawConfig) -> Checked<PricingConfig> {
 }
 
 fn build_override(raw: &RawOverride, at: &ConfigPath) -> Checked<Override> {
-    Override::new(
+    let built = Override::new(
         raw.model.clone(),
         raw.input_per_m.0,
         raw.output_per_m.0,
@@ -492,7 +492,11 @@ fn build_override(raw: &RawOverride, at: &ConfigPath) -> Checked<Override> {
         raw.cache_write_5m_per_m.map(|a| a.0),
         raw.cache_write_1h_per_m.map(|a| a.0),
     )
-    .map_err(|e| reject(at, e))
+    .map_err(|e| reject(at, e))?;
+    Ok(match &raw.provider {
+        Some(provider) => built.for_provider(provider.clone()),
+        None => built,
+    })
 }
 
 fn build_subscriptions(

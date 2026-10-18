@@ -1,4 +1,4 @@
-//! The `source_file` table: where ingestion stopped in each agent log file (D15).
+//! The `source_file` table: where ingestion stopped in each agent log file.
 
 use camino::Utf8PathBuf;
 use jiff::Timestamp;
@@ -11,7 +11,7 @@ use crate::error::StoreError;
 /// Resume state of one source file.
 ///
 /// A file is resumed only when `dev`, `inode`, `size >= offset` and the hash of the line ending
-/// at `offset` still match; otherwise the ingestor reparses it from the start (D15).
+/// at `offset` still match; otherwise the ingestor reparses it from the start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Checkpoint {
     /// Absolute path of the file; the key.

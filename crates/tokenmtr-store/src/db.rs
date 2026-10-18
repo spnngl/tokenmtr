@@ -42,20 +42,20 @@ use crate::versioned;
 
 mod pricing_api;
 
-/// How long a statement waits for another connection's lock (D6).
+/// How long a statement waits for another connection's lock.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Memory-mapped I/O window of every connection (D6).
+/// Memory-mapped I/O window of every connection.
 const MMAP_SIZE: i64 = 268_435_456;
 
-/// WAL pages before an automatic checkpoint (D6).
+/// WAL pages before an automatic checkpoint.
 const WAL_AUTOCHECKPOINT: i64 = 4000;
 
 fn user_version(conn: &Connection) -> Result<u32, StoreError> {
     Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
 }
 
-/// Refuses a database written by a newer build (D52).
+/// Refuses a database written by a newer build.
 pub(crate) fn reject_newer_schema(conn: &Connection) -> Result<u32, StoreError> {
     let found = user_version(conn)?;
     if found > SCHEMA_VERSION {
@@ -84,7 +84,7 @@ fn lock_setup(db: &Utf8Path) -> Result<std::fs::File, StoreError> {
     Ok(file)
 }
 
-/// Runs `PRAGMA integrity_check`; anything but a single `ok` is an error (D37).
+/// Runs `PRAGMA integrity_check`; anything but a single `ok` is an error.
 pub(crate) fn check_integrity(conn: &Connection) -> Result<(), StoreError> {
     let mut statement = conn.prepare("PRAGMA integrity_check")?;
     let lines = statement
@@ -113,12 +113,12 @@ mod sealed {
 ///
 /// Sealed: only this crate implements it.
 pub trait StoreRead: sealed::Sealed {
-    /// The id of this machine, generated once when the database was created (D30).
+    /// The id of this machine, generated once when the database was created.
     fn machine_id(&self) -> MachineId {
         self.identity().machine_id
     }
 
-    /// The key redaction hashes with (D40).
+    /// The key redaction hashes with.
     fn redaction_key(&self) -> &RedactionKey {
         &self.identity().redaction_key
     }
@@ -147,7 +147,7 @@ pub trait StoreRead: sealed::Sealed {
         versioned::head(self.connection(), dataset)
     }
 
-    /// What a cursor at `after` has yet to export: row count and age of the oldest row (D41).
+    /// What a cursor at `after` has yet to export: row count and age of the oldest row.
     ///
     /// # Errors
     /// `SQLite` failures or a corrupt value.
@@ -220,7 +220,7 @@ pub trait StoreRead: sealed::Sealed {
         subscriptions::after(self.connection(), after, limit)
     }
 
-    /// Every subscription still in the config (not removed), by id: what billing uses (D28).
+    /// Every subscription still in the config (not removed), by id: what billing uses.
     ///
     /// # Errors
     /// `SQLite` failures or a corrupt row.
@@ -308,7 +308,7 @@ pub trait StoreRead: sealed::Sealed {
     }
 
     /// When the first event of `(agent, profile)` that is not a stats-cache aggregate happened
-    /// (D38); `None` when there is none.
+    ///; `None` when there is none.
     ///
     /// # Errors
     /// `SQLite` failures or a corrupt value.
@@ -320,7 +320,7 @@ pub trait StoreRead: sealed::Sealed {
         events::earliest_transcript(self.connection(), agent, profile)
     }
 
-    /// Every unresolved parse issue, oldest first (D42).
+    /// Every unresolved parse issue, oldest first.
     ///
     /// # Errors
     /// `SQLite` failures or a corrupt row.
@@ -340,7 +340,7 @@ pub trait StoreRead: sealed::Sealed {
         runs::ingest_runs(self.connection(), agent, limit)
     }
 
-    /// The newest export attempts of `sink`, newest first (D41).
+    /// The newest export attempts of `sink`, newest first.
     ///
     /// # Errors
     /// `SQLite` failures or a corrupt row.
@@ -396,7 +396,16 @@ pub trait StoreRead: sealed::Sealed {
         pricing::active(self.connection())
     }
 
-    /// The dedup keys of every alert fired so far (D36).
+    /// The version of the pricing snapshot in use, without reading its body: a cheap check of
+    /// whether a parsed catalog is still current.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a stored version that is not 12 hex characters.
+    fn active_pricing_version(&self) -> Result<Option<PricingVersion>, StoreError> {
+        pricing::active_version(self.connection())
+    }
+
+    /// The dedup keys of every alert fired so far.
     ///
     /// # Errors
     /// `SQLite` failures.
@@ -404,7 +413,7 @@ pub trait StoreRead: sealed::Sealed {
         alert::fired_keys(self.connection())
     }
 
-    /// Writes a zstd-compressed, integrity-checked snapshot to `dest`, atomically (D37).
+    /// Writes a zstd-compressed, integrity-checked snapshot to `dest`, atomically.
     ///
     /// Safe while the writer is busy: the snapshot holds the state of the last commit.
     ///
@@ -447,7 +456,7 @@ impl Store {
         conn.pragma_update(None, "foreign_keys", true)?;
         conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
         conn.pragma_update(None, "wal_autocheckpoint", WAL_AUTOCHECKPOINT)?;
-        // D49: macOS ignores plain fsync; make commits and checkpoints durable.
+        // macOS ignores plain fsync; make commits and checkpoints durable.
         conn.pragma_update(None, "fullfsync", true)?;
         conn.pragma_update(None, "checkpoint_fullfsync", true)?;
         migrations().to_latest(&mut conn)?;
@@ -466,7 +475,7 @@ impl Store {
         self
     }
 
-    /// Inserts or updates events by `(agent, dedup_key)`, last write wins (D12).
+    /// Inserts or updates events by `(agent, dedup_key)`, last write wins.
     ///
     /// All rows go in one transaction. A row gets a new revision only when one of its values
     /// changes; identical rows keep theirs. When a batch repeats a key, its last row counts.
@@ -479,7 +488,7 @@ impl Store {
     }
 
     /// Inserts or updates tool calls by `(agent, tool_use_id)`. The event link and the error flag
-    /// are never erased by a later row that lacks them (D32).
+    /// are never erased by a later row that lacks them.
     ///
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back).
@@ -490,7 +499,7 @@ impl Store {
         self.in_transaction(|conn, now| tool_calls::upsert(conn, now, calls))
     }
 
-    /// Mirrors the configured subscriptions by id (D28): `subscriptions` is the whole list.
+    /// Mirrors the configured subscriptions by id: `subscriptions` is the whole list.
     /// Rows missing from it are kept with `removed_at` set (counted as updated); a removed id
     /// that comes back is live again.
     ///
@@ -503,7 +512,7 @@ impl Store {
         self.in_transaction(|conn, now| subscriptions::mirror(conn, now, subscriptions))
     }
 
-    /// Stores quota polls, one row per reported window (D26).
+    /// Stores quota polls, one row per reported window.
     ///
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back).
@@ -514,7 +523,7 @@ impl Store {
         self.in_transaction(|conn, now| quota::upsert(conn, now, polls))
     }
 
-    /// Stores FX rates by date (D27).
+    /// Stores FX rates by date.
     ///
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back).
@@ -534,7 +543,7 @@ impl Store {
         self.in_transaction(|conn, _| signal::record(conn, signals))
     }
 
-    /// Sets the error flag of a stored tool call from its tool result (D32). The call gets a new
+    /// Sets the error flag of a stored tool call from its tool result. The call gets a new
     /// revision only when the flag changes. Returns whether it did; `false` also when no such
     /// call is stored.
     ///
@@ -553,7 +562,7 @@ impl Store {
     }
 
     /// Writes one ingest flush in a single transaction: events, tool calls, signals, tool-result
-    /// flags, parse-issue changes and file checkpoints (D15, D48). Either all of it is stored or,
+    /// flags, parse-issue changes and file checkpoints. Either all of it is stored or,
     /// after an error or a crash, none of it, so a checkpoint never runs ahead of its rows.
     ///
     /// # Errors
@@ -565,7 +574,7 @@ impl Store {
         self.in_transaction(|conn, now| ingest::apply(conn, now, write))
     }
 
-    /// Saves `resolutions` (D31) and points the events of each working directory at its project
+    /// Saves `resolutions` and points the events of each working directory at its project
     /// and client, in one transaction. Only events whose project or client differ are rewritten;
     /// each gets a new revision, so sinks learn of exactly those. Returns how many changed.
     ///
@@ -578,9 +587,9 @@ impl Store {
         self.in_transaction(|conn, now| project::reassign(conn, now, resolutions))
     }
 
-    /// Flags as superseded the stats-cache daily aggregates (D38) of `(agent, profile)` that
-    /// transcript events now cover: those on or after the local day (in `zone`, D8) of the
-    /// profile's earliest transcript event. Rows are kept (D14); each newly flagged row gets a new
+    /// Flags as superseded the stats-cache daily aggregates of `(agent, profile)` that
+    /// transcript events now cover: those on or after the local day (in `zone`) of the
+    /// profile's earliest transcript event. Rows are kept; each newly flagged row gets a new
     /// revision, so sinks re-export it with `superseded = true`, and every query skips it.
     /// Returns how many rows were newly flagged; none when the profile has no transcript events.
     ///
@@ -601,7 +610,7 @@ impl Store {
         })
     }
 
-    /// Stores a fired alert; `false` when its dedup key was already stored (D36).
+    /// Stores a fired alert; `false` when its dedup key was already stored.
     ///
     /// # Errors
     /// `SQLite` failures.
@@ -609,7 +618,7 @@ impl Store {
         alert::save(&self.conn, alert)
     }
 
-    /// Appends one export attempt to the sink history (D41). The history keeps the newest 1000
+    /// Appends one export attempt to the sink history. The history keeps the newest 1000
     /// runs per sink. Cursors and runs of a sink removed from the config stay, so a sink re-added
     /// under the same id resumes where it stopped.
     ///
@@ -619,7 +628,7 @@ impl Store {
         self.in_transaction(|conn, _| sink::record_run(conn, run, sink::RUN_HISTORY))
     }
 
-    /// Appends one backup attempt (D37).
+    /// Appends one backup attempt.
     ///
     /// # Errors
     /// `SQLite` failures.
@@ -635,7 +644,7 @@ impl Store {
         runs::record_ingest(&self.conn, run)
     }
 
-    /// Counts an occurrence of a parse issue (D42).
+    /// Counts an occurrence of a parse issue.
     ///
     /// # Errors
     /// `SQLite` failures.
@@ -657,7 +666,7 @@ impl Store {
         issue::close(&self.conn, agent, kind, subject, at)
     }
 
-    /// Stores a pricing body, compressed, and makes it the active snapshot (D11). Storing a body
+    /// Stores a pricing body, compressed, and makes it the active snapshot. Storing a body
     /// that is already stored only re-activates it.
     ///
     /// # Errors
@@ -680,7 +689,7 @@ impl Store {
         checkpoint::save(&self.conn, (self.clock)(), checkpoint)
     }
 
-    /// Sets the revision a sink has acknowledged. Moving it backwards re-delivers rows (D17), but
+    /// Sets the revision a sink has acknowledged. Moving it backwards re-delivers rows, but
     /// sinks drop rows they already hold (an append file skips revisions at or below its highest,
     /// `SQLite` keeps the higher revision): to rebuild a sink, also delete its output.
     ///
@@ -703,7 +712,7 @@ impl Store {
         meta::set_heartbeat(&self.conn, (self.clock)())
     }
 
-    /// Inserts or replaces the resolution of its working directory (D31).
+    /// Inserts or replaces the resolution of its working directory.
     ///
     /// # Errors
     /// `SQLite` failures.
@@ -711,7 +720,7 @@ impl Store {
         project::save(&self.conn, resolution)
     }
 
-    /// Inserts or replaces the account of an agent profile (D26).
+    /// Inserts or replaces the account of an agent profile.
     ///
     /// # Errors
     /// `SQLite` failures.

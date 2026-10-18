@@ -1,4 +1,4 @@
-//! Project resolution (D31): working directory → project key, display name and client.
+//! Project resolution: working directory → project key, display name and client.
 //!
 //! Order, first hit wins:
 //! 1. The first `[[projects]]` rule whose glob matches the cwd. No filesystem access.
@@ -8,7 +8,7 @@
 //! 3. The main repository's root path, when it has no `origin`.
 //! 4. The cwd itself.
 //!
-//! A cwd under a macOS protected folder (D50) is never touched: the check is lexical, so the
+//! A cwd under a macOS protected folder is never touched: the check is lexical, so the
 //! daemon cannot trigger a consent prompt. A cwd that no longer exists, that the OS refuses to
 //! list or that is not a readable directory also skips the git steps. Each is reported as a
 //! [`CwdProblem`] so the caller can raise one issue.
@@ -24,7 +24,7 @@ use tokenmtr_store::{ProjectResolution, ProjectSource};
 pub enum CwdProblem {
     /// The directory does not exist (deleted, or on another machine). Suggest a `[[projects]]` rule.
     Missing,
-    /// Under a protected folder, or the OS denied access (macOS, D50).
+    /// Under a protected folder, or the OS denied access (macOS).
     Protected,
     /// It exists but cannot be read as a directory (not a directory, a symlink loop, ...).
     Unreadable,

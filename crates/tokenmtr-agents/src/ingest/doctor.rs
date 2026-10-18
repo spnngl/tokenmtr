@@ -1,4 +1,5 @@
-//! The `doctor` report: what the ingestor sees on this machine (Phase 6, D50, D53).
+//! The `doctor` report: what the ingestor sees on this machine, including protected folders and
+//! Claude's transcript retention.
 
 use std::collections::BTreeMap;
 
@@ -13,7 +14,7 @@ use super::error::IngestError;
 use super::fingerprint::FileStat;
 use crate::{AgentKind, AgentSource as _, claude, discover};
 
-/// Days Claude keeps transcripts when `settings.json` does not say (D53).
+/// Days Claude keeps transcripts when `settings.json` does not say.
 const DEFAULT_CLEANUP_PERIOD_DAYS: u64 = 30;
 
 /// One root directory of a profile.
@@ -29,7 +30,7 @@ pub struct RootReport {
     pub bytes: u64,
 }
 
-/// How long Claude keeps transcripts (D53): the retention that bounds the history we can read.
+/// How long Claude keeps transcripts: the retention that bounds the history we can read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Retention {
     /// `cleanupPeriodDays` from `settings.json`, or the default of 30.
@@ -117,9 +118,9 @@ pub struct DoctorReport {
     pub open_issues: Vec<OpenIssue>,
     /// Working directories of stored events that have no project resolution yet.
     pub unresolved_cwds: Vec<Utf8PathBuf>,
-    /// Working directories under a macOS protected folder (D50).
+    /// Working directories under a macOS protected folder.
     pub protected_cwds: Vec<Utf8PathBuf>,
-    /// Sink directories under a macOS protected folder (D50).
+    /// Sink directories under a macOS protected folder.
     pub protected_sinks: Vec<Utf8PathBuf>,
 }
 

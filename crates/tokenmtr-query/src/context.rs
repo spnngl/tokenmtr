@@ -13,7 +13,7 @@ use tokenmtr_store::{StoreRead, StoreReader};
 
 use crate::error::QueryError;
 
-/// The first day of a week bucket (D8).
+/// The first day of a week bucket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeekStart {
@@ -24,7 +24,7 @@ pub enum WeekStart {
     Sunday,
 }
 
-/// How USD becomes EUR (D27).
+/// How USD becomes EUR.
 #[derive(Debug, Clone)]
 pub struct FxPolicy(Inner);
 
@@ -74,7 +74,7 @@ impl FxPolicy {
     }
 
     /// The rate for `date` (the date to convert, as a UTC date for events). Dates before the
-    /// whole history use the oldest rate and are flagged approximate (D27 offline fallback).
+    /// whole history use the oldest rate and are flagged approximate (offline fallback).
     pub(crate) fn rate(&self, date: Date) -> Option<RateUse> {
         match &self.0 {
             Inner::Fixed(rate) => Some(RateUse {
@@ -135,7 +135,7 @@ impl QueryContext {
         }
     }
 
-    /// Declares the subscriptions that decide billing mode and paid cost (D28).
+    /// Declares the subscriptions that decide billing mode and paid cost.
     #[must_use]
     pub fn with_subscriptions(mut self, subscriptions: Vec<Subscription>) -> Self {
         self.subscriptions = subscriptions;
@@ -230,7 +230,7 @@ pub fn load_fx_rates(reader: &StoreReader) -> Result<Vec<FxRate>, QueryError> {
     .collect()
 }
 
-/// The subscriptions mirrored into the store (D28), removed ones excluded. The daemon mirrors the
+/// The subscriptions mirrored into the store, removed ones excluded. The daemon mirrors the
 /// config, so this is the config's view as of the last reload; callers holding the config may
 /// pass its list instead.
 ///

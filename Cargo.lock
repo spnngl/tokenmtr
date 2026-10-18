@@ -6430,6 +6430,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokenmtr-brand"
+version = "0.1.0"
+
+[[package]]
 name = "tokenmtr-config"
 version = "0.1.0"
 dependencies = [
@@ -6474,6 +6478,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
+ "tokenmtr-brand",
  "toml 1.1.8+spec-1.1.0",
  "uuid",
 ]
@@ -6590,6 +6595,7 @@ dependencies = [
  "security-framework",
  "tempfile",
  "thiserror 2.0.21",
+ "tokenmtr-brand",
  "tokio",
  "tracing",
 ]

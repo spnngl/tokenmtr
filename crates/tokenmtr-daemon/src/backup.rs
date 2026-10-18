@@ -1,4 +1,4 @@
-//! Daily backup (D37): a compressed, integrity-checked snapshot, pruned to the newest `keep`.
+//! Daily backup: a compressed, integrity-checked snapshot, pruned to the newest `keep`.
 
 use std::fs;
 use std::sync::Arc;

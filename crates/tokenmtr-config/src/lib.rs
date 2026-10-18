@@ -1,11 +1,11 @@
-//! tokenmtr-config: the TOML configuration of `TokenMtr` (PLAN §6, `docs/config.md`).
+//! tokenmtr-config: the TOML configuration of `TokenMtr` (`docs/config.md`).
 //!
 //! - [`load`] / [`load_str`] turn a file into a validated [`Config`], or a [`ConfigError`] that
 //!   names the file, line and column.
 //! - [`RawConfig`] is the file as typed data; [`Config::from_raw`] applies defaults and the
 //!   cross-field rules.
 //! - [`ConfigDocument`] adds subscriptions and project rules while keeping comments.
-//! - [`ConfigFormat`] and [`ConfigCodec`] keep the file format swappable (D4).
+//! - [`ConfigFormat`] and [`ConfigCodec`] keep the file format swappable.
 
 mod build;
 mod edit;

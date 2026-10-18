@@ -1,9 +1,11 @@
 //! What the `tokenmtr` CLI and the desktop shell share: the config → query mapping, a read-only
-//! store behind [`AppContext`], reports (D46), backups and restore (D37), erase (D56) and the
-//! Claude retention switch (D53).
+//! store behind [`AppContext`], reports, backups and restore, erase and the
+//! Claude retention switch.
 //!
 //! The crate is synchronous. Talking to a running daemon is the caller's job
-//! (`tokenmtr-control`); every action here that writes the store refuses while one runs (D1).
+//! (`tokenmtr-control`). Every action here that writes the store holds the daemon lock, so no
+//! daemon can start meanwhile: the direct backup, scan and reprice refuse while a daemon runs;
+//! erase and restore stop it first and start a kept service again afterwards.
 
 mod backup;
 mod context;

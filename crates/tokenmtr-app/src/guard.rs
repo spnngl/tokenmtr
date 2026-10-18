@@ -1,4 +1,4 @@
-//! Actions that need the only writer (D1) gone: the daemon lock, the stop/restart around a
+//! Actions that need the only writer gone: the daemon lock, the stop/restart around a
 //! destructive action, and restore.
 //!
 //! The daemon holds `<data dir>/daemon.lock` for as long as it serves. Whoever writes the store
@@ -27,7 +27,7 @@ pub fn daemon_running(transport: &ControlTransport) -> bool {
 }
 
 /// Takes the daemon lock, waiting up to `grace` for a stopping daemon to release it. While the
-/// returned lock lives no daemon can start, so the caller is the only writer (D1).
+/// returned lock lives no daemon can start, so the caller is the only writer.
 ///
 /// # Errors
 ///
@@ -55,7 +55,7 @@ pub fn lock_daemon(transport: &ControlTransport, grace: Duration) -> Result<Daem
     }
 }
 
-/// Runs `action` with the daemon stopped (D37, D56): unloads the service, holds the daemon lock
+/// Runs `action` with the daemon stopped: unloads the service, holds the daemon lock
 /// for the whole of `action`, then loads the service again if it was loaded, even when `action`
 /// failed.
 ///
@@ -97,9 +97,9 @@ pub(crate) fn stopped_within<T>(
     Ok(value)
 }
 
-/// Replaces the store at `store_path` with the backup `backup` (D37) with the daemon stopped
+/// Replaces the store at `store_path` with the backup `backup` with the daemon stopped
 /// ([`with_daemon_stopped`]): decompress next to it, `integrity_check`, refuse a newer schema
-/// (D52), drop the WAL files, rename into place.
+///, drop the WAL files, rename into place.
 ///
 /// # Errors
 ///

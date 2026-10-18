@@ -1,4 +1,4 @@
-//! Background service management (D23): the daemon runs as a launchd `LaunchAgent`.
+//! Background service management: the daemon runs as a launchd `LaunchAgent`.
 
 use std::fs::OpenOptions;
 use std::io;
@@ -6,12 +6,11 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
+use tokenmtr_brand::LAUNCHD_LABEL as LABEL;
 
 use crate::fs::replace_atomically;
 use crate::paths::Paths;
 
-/// launchd label, also the plist file stem.
-const LABEL: &str = "dev.tokenmtr.daemon";
 /// Absolute so a hostile `PATH` cannot substitute the tool.
 const LAUNCHCTL: &str = "/bin/launchctl";
 /// Absolute so a hostile `PATH` cannot substitute the tool.
@@ -185,7 +184,7 @@ impl<R: CommandRunner> LaunchdService<R> {
     }
 
     /// Whether an installed plist exists and differs from what [`ServiceManager::install`]
-    /// would write for `expected_binary` (typically because the `.app` moved, D23).
+    /// would write for `expected_binary` (typically because the `.app` moved).
     /// `false` when no plist is installed.
     ///
     /// # Errors
@@ -370,7 +369,7 @@ pub fn trim_launchd_logs(logs_dir: &Utf8Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Renders the `LaunchAgent` plist (D23). Priority is per thread (D47), so `ProcessType` stays
+/// Renders the `LaunchAgent` plist. Priority is per thread, so `ProcessType` stays
 /// `Standard` and no `LowPriorityIO` is set.
 ///
 /// launchd restarts the daemon only after a failed exit: a clean exit (after `Shutdown`, or when

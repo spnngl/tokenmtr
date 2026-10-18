@@ -4,8 +4,8 @@
 --   * Money is integer micro-USD (`*_usd_micros`); the ECB rate is EUR per USD scaled by 1e9.
 --   * Civil dates (`fx_rate.date`, `subscription.start_date`) are ISO-8601 text.
 --   * Ids of usage events are 16-byte BLOBs.
---   * Tables are STRICT. Rows of event-like tables are never deleted (D14).
---   * `revision` columns are unique per table and come from `dataset_revision` (D17).
+--   * Tables are STRICT. Rows of event-like tables are never deleted.
+--   * `revision` columns are unique per table and come from `dataset_revision`.
 
 CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
@@ -26,7 +26,7 @@ INSERT INTO dataset_revision (dataset, revision) VALUES
     ('quota_snapshots', 0),
     ('fx_rates', 0);
 
--- Checkpoints (D15). `dev` and `inode` are the u64 values reinterpreted as i64.
+-- Checkpoints. `dev` and `inode` are the u64 values reinterpreted as i64.
 CREATE TABLE source_file (
     id             INTEGER PRIMARY KEY,
     path           TEXT NOT NULL UNIQUE,
@@ -52,8 +52,8 @@ CREATE TABLE usage_event (
     updated_at_us            INTEGER NOT NULL,
     profile                  TEXT NOT NULL,
     at_us                    INTEGER NOT NULL,
-    -- UTC calendar day (days since 1970-01-01): the key of D27 rate lookups and UTC partitions.
-    -- Zone-aware buckets (D8) are computed at query time from `at_us`.
+    -- UTC calendar day (days since 1970-01-01): the key of FX rate lookups and UTC partitions.
+    -- Zone-aware buckets are computed at query time from `at_us`.
     utc_day                  INTEGER GENERATED ALWAYS AS (
         (at_us - ((at_us % 86400000000) + 86400000000) % 86400000000) / 86400000000
     ) STORED,
@@ -76,14 +76,14 @@ CREATE TABLE usage_event (
     cache_write_1h           INTEGER NOT NULL CHECK (cache_write_1h >= 0),
     output                   INTEGER NOT NULL CHECK (output >= 0),
     reasoning                INTEGER NOT NULL CHECK (reasoning >= 0),
-    -- D9: `reasoning` is a subset of `output`, never summed.
+    -- `reasoning` is a subset of `output`, never summed.
     total_tokens             INTEGER GENERATED ALWAYS AS (
         input_uncached + cache_read + cache_write_5m + cache_write_1h + output
     ) VIRTUAL,
     cost_reported_usd_micros INTEGER,
     cost_estimated_usd_micros INTEGER,
     pricing_version          TEXT,
-    -- D10: `reported ?? estimated`, and where it came from.
+    -- The reported cost wins over the estimate (`reported ?? estimated`), and where it came from.
     cost_api_usd_micros      INTEGER GENERATED ALWAYS AS (
         COALESCE(cost_reported_usd_micros, cost_estimated_usd_micros)
     ) VIRTUAL,
@@ -106,7 +106,7 @@ CREATE INDEX usage_event_session ON usage_event (session, at_us);
 CREATE INDEX usage_event_project_at ON usage_event (project, at_us);
 CREATE INDEX usage_event_model_at ON usage_event (model, at_us);
 
--- D32. `event_id` is not a foreign key: a tool call can be stored before its event.
+-- Tool names and error flags only, never content. `event_id` is not a foreign key: a tool call can be stored before its event.
 CREATE TABLE tool_call (
     id            INTEGER PRIMARY KEY,
     agent         TEXT NOT NULL,
@@ -139,7 +139,7 @@ CREATE TABLE session_signal (
 
 CREATE INDEX session_signal_kind_at ON session_signal (kind, at_us);
 
--- D31. `source` says how the project was resolved; `cwd` means "unresolved" (no rule, no git).
+-- A project is a git repository. `source` says how the project was resolved; `cwd` means "unresolved" (no rule, no git).
 CREATE TABLE project_map (
     cwd            TEXT PRIMARY KEY,
     project        TEXT NOT NULL,
@@ -155,7 +155,7 @@ CREATE TABLE project_map (
 
 CREATE INDEX project_map_project ON project_map (project);
 
--- D36. `payload` is the `AlertKind` as JSON.
+-- Alerts the daemon decided. `payload` is the `AlertKind` as JSON.
 CREATE TABLE alert (
     id          INTEGER PRIMARY KEY,
     kind        TEXT NOT NULL,
@@ -166,7 +166,7 @@ CREATE TABLE alert (
 
 CREATE INDEX alert_fired_at ON alert (fired_at_us);
 
--- D41. One row per exported batch.
+-- One row per exported batch; sink health is computed from these rows.
 CREATE TABLE sink_run (
     id             INTEGER PRIMARY KEY,
     sink           TEXT NOT NULL,
@@ -179,7 +179,7 @@ CREATE TABLE sink_run (
 
 CREATE INDEX sink_run_sink_started ON sink_run (sink, started_at_us);
 
--- D37.
+-- One row per backup run.
 CREATE TABLE backup_run (
     id             INTEGER PRIMARY KEY,
     started_at_us  INTEGER NOT NULL,
@@ -189,7 +189,7 @@ CREATE TABLE backup_run (
     error          TEXT
 ) STRICT;
 
--- D11. `version` is `PricingVersion`; the body is the raw LiteLLM JSON, zstd-compressed.
+-- LiteLLM pricing snapshots. `version` is `PricingVersion`; the body is the raw LiteLLM JSON, zstd-compressed.
 -- The active snapshot is `meta.pricing_version`.
 CREATE TABLE pricing_snapshot (
     version       TEXT PRIMARY KEY,
@@ -199,7 +199,7 @@ CREATE TABLE pricing_snapshot (
     body_len      INTEGER NOT NULL CHECK (body_len >= 0)
 ) STRICT;
 
--- D28. Mirrored from config; rows are never deleted so exports keep ended subscriptions.
+-- Subscriptions, mirrored from config; rows are never deleted so exports keep ended subscriptions.
 CREATE TABLE subscription (
     id            INTEGER PRIMARY KEY,
     subscription_id TEXT NOT NULL UNIQUE,
@@ -218,7 +218,7 @@ CREATE TABLE subscription (
 
 CREATE UNIQUE INDEX subscription_revision ON subscription (revision);
 
--- D26. Detected plan and identity, one row per agent profile.
+-- Detected plan and identity, one row per agent profile.
 CREATE TABLE account (
     agent           TEXT NOT NULL,
     profile         TEXT NOT NULL,
@@ -230,8 +230,8 @@ CREATE TABLE account (
     PRIMARY KEY (agent, profile)
 ) STRICT;
 
--- D26. One row per window per poll. A poll without windows (signed out, expired token, failure)
--- is one row with `window_id = ''`, no percent and a non-`ok` status.
+-- Polled quota: one row per window per poll. A poll without windows (signed out, expired token,
+-- failure) is one row with `window_id = ''`, no percent and a non-`ok` status.
 CREATE TABLE quota_snapshot (
     id            INTEGER PRIMARY KEY,
     agent         TEXT NOT NULL,
@@ -252,7 +252,7 @@ CREATE TABLE quota_snapshot (
 CREATE UNIQUE INDEX quota_snapshot_revision ON quota_snapshot (revision);
 CREATE INDEX quota_snapshot_fetched ON quota_snapshot (fetched_at_us);
 
--- D27. `eur_per_usd_scaled` is EUR per 1 USD times 1e9.
+-- ECB rates. `eur_per_usd_scaled` is EUR per 1 USD times 1e9.
 CREATE TABLE fx_rate (
     id                 INTEGER PRIMARY KEY,
     date               TEXT NOT NULL UNIQUE,
@@ -264,7 +264,7 @@ CREATE TABLE fx_rate (
 
 CREATE UNIQUE INDEX fx_rate_revision ON fx_rate (revision);
 
--- D17. The last revision a sink acknowledged, per dataset.
+-- The last revision a sink acknowledged, per dataset.
 CREATE TABLE sink_cursor (
     sink     TEXT NOT NULL,
     dataset  TEXT NOT NULL,
@@ -272,7 +272,7 @@ CREATE TABLE sink_cursor (
     PRIMARY KEY (sink, dataset)
 ) STRICT, WITHOUT ROWID;
 
--- D5, D42. One open issue per (agent, kind, subject); repeats add to `occurrences`.
+-- Parse issues and format drift. One open issue per (agent, kind, subject); repeats add to `occurrences`.
 CREATE TABLE parse_issue (
     id             INTEGER PRIMARY KEY,
     agent          TEXT NOT NULL,

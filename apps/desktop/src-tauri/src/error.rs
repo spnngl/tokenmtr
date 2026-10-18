@@ -17,7 +17,7 @@ pub enum ErrorKind {
     InvalidRequest,
     /// No daemon answers on the control socket.
     DaemonOffline,
-    /// The daemon speaks another protocol version (D52).
+    /// The daemon speaks another protocol version.
     DaemonIncompatible,
     /// The action needs the daemon stopped but it runs.
     DaemonRunning,

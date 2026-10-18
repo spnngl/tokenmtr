@@ -1,4 +1,4 @@
-//! Alert delivery (D36): which alerts are new, what to say, where a click leads.
+//! Alert delivery: which alerts are new, what to say, where a click leads.
 //!
 //! Pure over its inputs; the shell feeds it rows from the store and persists the watermark in
 //! `app-state.json` (see `app_store`), so a restart never delivers an alert twice.
@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokenmtr_core::AlertKind;
 #[cfg(test)]
 use tokenmtr_core::WindowId;
+use tokenmtr_core::brand::DISPLAY_NAME;
 use tokenmtr_query::{AlertView, DaemonHealth, DaemonState};
 
 use crate::request::Route;
@@ -104,7 +105,7 @@ impl Notice {
             ),
             AlertKind::FormatDrift { agent } => (
                 "Log format changed".to_owned(),
-                format!("{agent} wrote lines TokenMtr does not recognise."),
+                format!("{agent} wrote lines {DISPLAY_NAME} does not recognise."),
                 Route::Settings,
             ),
             AlertKind::BackupFailed => (
@@ -120,7 +121,7 @@ impl Notice {
     #[must_use]
     pub fn daemon_stale() -> Self {
         Self {
-            title: "TokenMtr stopped collecting".to_owned(),
+            title: format!("{DISPLAY_NAME} stopped collecting"),
             body: "The background service has not reported for a while.".to_owned(),
             route: Route::Settings,
         }

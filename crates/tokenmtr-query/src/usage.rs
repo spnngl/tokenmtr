@@ -21,16 +21,16 @@ pub struct Usage {
     pub cache_write_1h: u64,
     /// Output tokens (reasoning tokens are a subset, never added).
     pub output: u64,
-    /// Reasoning tokens, informational (D9).
+    /// Reasoning tokens, informational.
     pub reasoning: u64,
-    /// Processed tokens: uncached input + cache read + cache writes + output (D9).
+    /// Processed tokens: uncached input + cache read + cache writes + output.
     pub total_tokens: u64,
-    /// What the usage would cost at API prices: reported cost, else estimate (D10).
+    /// What the usage would cost at API prices: reported cost, else estimate.
     pub api_value_micros: i64,
     /// The same API value in USD.
     pub api_value_usd_micros: i64,
     /// What was actually paid: API cost of pay-as-you-go events plus the share of prorated
-    /// subscription fees allocated by API-value share (D28, D46).
+    /// subscription fees allocated by API-value share.
     pub paid_micros: i64,
     /// API value of events covered by a subscription.
     pub subscription_value_micros: i64,
@@ -78,7 +78,7 @@ impl Usage {
         self.approximate |= idle.approximate;
     }
 
-    /// API value of subscription-covered usage over the fees allocated to it (D28); absent when
+    /// API value of subscription-covered usage over the fees allocated to it; absent when
     /// no fee applies.
     #[must_use]
     pub fn roi(&self) -> Option<f64> {

@@ -1,4 +1,4 @@
-//! The billing screen: subscriptions, paid versus API value, ROI (D28, D46).
+//! The billing screen: subscriptions, paid versus API value, ROI.
 
 use std::collections::BTreeMap;
 
@@ -56,7 +56,7 @@ pub struct BillingMonth {
 pub struct BillingReport {
     /// Currency of the money fields.
     pub currency: Currency,
-    /// Everything: `paid_micros` = pay-as-you-go cost + prorated fees (D28).
+    /// Everything: `paid_micros` = pay-as-you-go cost + prorated fees.
     pub total: Usage,
     /// Pay-as-you-go usage, outside any subscription.
     pub api: Usage,

@@ -1,4 +1,4 @@
-//! ECB reference rates (D27): `eurofxref-daily.xml` and `eurofxref-hist.xml`.
+//! ECB reference rates: `eurofxref-daily.xml` and `eurofxref-hist.xml`.
 
 use std::str::FromStr;
 
@@ -194,7 +194,7 @@ impl EcbFx {
         }
     }
 
-    /// Fetches `eurofxref-hist.xml`, the full backfill. Call once on first run (D27).
+    /// Fetches `eurofxref-hist.xml`, the full backfill. Call once on first run.
     ///
     /// # Errors
     /// [`FxError`] on transport, status or parse failure.

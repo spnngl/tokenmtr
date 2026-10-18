@@ -1,8 +1,8 @@
-//! Phase 10 step 6: the real `tokenmtr` binary on a sandboxed `HOME` against mock servers.
+//! The real `tokenmtr` binary on a sandboxed `HOME` against mock servers.
 //!
 //! The daemon ingests the fixture agent files into both a CSV and a SQLite sink, polls the mocked
 //! quota, FX and pricing endpoints once, serves the CLI, writes a backup and stops on SIGTERM in
-//! under two seconds. D55: the fake OAuth token shows up nowhere but its credentials file.
+//! under two seconds. The fake OAuth token shows up nowhere but its credentials file.
 
 mod common;
 
@@ -137,7 +137,7 @@ async fn the_daemon_end_to_end() -> TestResult {
     })?;
     assert!(pricing["snapshot"]["version"].is_string(), "{pricing}");
 
-    // The control channel answers; its answers are part of the D55 scan.
+    // The control channel answers; its answers are part of the credential-leak scan.
     let answers = sandbox.control(&[r#"{"type":"status"}"#, r#"{"type":"issues"}"#])?;
     assert!(answers[0].contains("welcome"), "{answers:?}");
 

@@ -1,4 +1,4 @@
-//! `RawConfig`: the file as typed data, before cross-field validation (D20).
+//! `RawConfig`: the file as typed data, before cross-field validation.
 //!
 //! Each struct mirrors a table of `docs/config.md` one to one, and rejects unknown keys. Values
 //! that can be checked in isolation (ids, enums, durations, percentages) are parsed here, so the
@@ -275,6 +275,8 @@ pub struct RawPricing {
 #[serde(deny_unknown_fields)]
 pub struct RawOverride {
     pub model: ModelId,
+    /// Restricts the override to events served by this provider (`Override::for_provider`).
+    pub provider: Option<ProviderId>,
     pub input_per_m: Amount,
     pub output_per_m: Amount,
     pub cache_read_per_m: Option<Amount>,

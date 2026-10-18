@@ -241,6 +241,7 @@ fn every_message_round_trips() -> TestResult {
         Request::ScanNow { agent: None },
         Request::ExportNow { sink: None },
         Request::BackupNow,
+        Request::Reprice { all: true },
         Request::RefreshQuota,
         Request::Reload,
         Request::Issues,
@@ -268,6 +269,7 @@ fn every_message_round_trips() -> TestResult {
             parse_issues: vec![],
             config_error: Some("bad".to_owned()),
         }),
+        Response::Repriced(RepriceSummary { repriced: 3 }),
         Response::Error {
             kind: ErrorKind::Disabled,
             message: "off".to_owned(),

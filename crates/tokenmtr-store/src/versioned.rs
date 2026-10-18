@@ -1,6 +1,6 @@
 //! The upsert driver shared by the five exported datasets.
 //!
-//! Every exported row carries a `revision` taken from its dataset's counter (D17). A row gets a
+//! Every exported row carries a `revision` taken from its dataset's counter. A row gets a
 //! new revision only when an upsert changes one of its value columns, so re-ingesting a file is a
 //! no-op for sinks. The comparison is done by `SQLite` in the `UPDATE ... WHERE` clause; the
 //! counter advances once per changed row, so revisions are unique and gap-free.
@@ -31,7 +31,7 @@ use crate::types::{Dataset, Revision, UpsertStats};
 /// How an incoming value combines with the stored one.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Merge {
-    /// The incoming value wins (D12).
+    /// The incoming value wins.
     Replace,
     /// The incoming value wins unless it is `NULL`: for facts learned later that a re-read of an
     /// earlier line must not erase.
@@ -131,7 +131,7 @@ impl Upsert<'_> {
 }
 
 /// Keeps the last row per key, in order of last occurrence, so a batch repeating a key behaves as
-/// if only its final row was sent (D12) and re-running the batch changes nothing.
+/// if only its final row was sent and re-running the batch changes nothing.
 pub(crate) fn last_wins<'a, T, K: Hash + Eq>(
     rows: &'a [T],
     key: impl Fn(&'a T) -> K,
@@ -202,7 +202,7 @@ pub(crate) fn head(conn: &Connection, dataset: Dataset) -> Result<Revision, Stor
     )?)
 }
 
-/// Rows past `after`: how many, and when the oldest was written (D41).
+/// Rows past `after`: how many, and when the oldest was written.
 pub(crate) fn pending(
     conn: &Connection,
     dataset: Dataset,

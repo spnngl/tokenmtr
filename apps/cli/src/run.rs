@@ -16,7 +16,7 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-/// Worker threads of the daemon runtime: the work is I/O waits and short transactions (D47).
+/// Worker threads of the daemon runtime: the work is I/O waits and short transactions.
 const WORKER_THREADS: usize = 2;
 /// How long the runtime waits for blocking threads after the daemon stopped. With
 /// `Timing::shutdown_grace` (1.2 s) a stop stays under 2 s.
@@ -188,7 +188,7 @@ fn init_tracing(paths: &Paths, config_path: &Utf8Path) -> anyhow::Result<WorkerG
         .unwrap_or_else(|_| EnvFilter::new(level_directive(level)));
     let appender = tracing_appender::rolling::Builder::new()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
-        .filename_prefix("tokenmtr")
+        .filename_prefix(tokenmtr_core::brand::CLI_NAME)
         .filename_suffix("log")
         .max_log_files(LOG_FILES_KEPT)
         .build(paths.logs_dir())

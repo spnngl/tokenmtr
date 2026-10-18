@@ -1,4 +1,4 @@
-//! The `tool_call` table: tool name and error flag per invocation, never arguments (D32).
+//! The `tool_call` table: tool name and error flag per invocation, never arguments.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;

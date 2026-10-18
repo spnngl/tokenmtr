@@ -10,7 +10,7 @@ use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
 
 impl Ctx {
-    /// Runs one scan on a blocking thread at the request's priority (D47), then reacts to what
+    /// Runs one scan on a blocking thread at the request's priority, then reacts to what
     /// it wrote.
     pub(crate) async fn scan(
         self: &Arc<Self>,

@@ -1,4 +1,4 @@
-//! File formats (D4): a codec turns text into a [`RawConfig`], resolves config paths to source
+//! File formats: a codec turns text into a [`RawConfig`], resolves config paths to source
 //! spans for error positions, and applies the structured edits that keep comments.
 
 use std::ops::Range;
@@ -128,7 +128,7 @@ fn append_table<T: serde::Serialize>(
     Ok(document.to_string())
 }
 
-/// The supported file formats. A new format adds one variant (D4).
+/// The supported file formats. A new format adds one variant.
 #[derive(Debug, Clone, Copy)]
 pub enum ConfigFormat {
     /// TOML (`.toml`).

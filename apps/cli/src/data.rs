@@ -1,4 +1,4 @@
-//! Commands that move data: `backup`, `restore`, `erase`, `scan` and `report`.
+//! Commands that move data: `backup`, `restore`, `erase`, `scan`, `reprice` and `report`.
 
 use std::io::{BufRead, IsTerminal, Write};
 
@@ -15,6 +15,7 @@ use tokenmtr_config::ProcessEnv;
 use tokenmtr_core::{AgentId, Currency};
 use tokenmtr_platform::{ControlTransport, Platform};
 use tokenmtr_report::Scope;
+use tokenmtr_store::RepriceScope;
 
 use crate::client::with_daemon;
 use crate::format::{bytes, print_json, timestamp};
@@ -104,7 +105,7 @@ pub struct RestoreArgs {
 }
 
 /// `tokenmtr restore <file>`: stops the daemon, replaces the store, then starts the service
-/// again if it was loaded (D37).
+/// again if it was loaded.
 pub fn restore(setup: &Setup, args: &RestoreArgs) -> anyhow::Result<()> {
     // No store is opened: restore must work when the current one is damaged or too new.
     let config = load_config(setup.config_path(), &ProcessEnv)
@@ -131,7 +132,7 @@ pub struct EraseArgs {
     service: bool,
 }
 
-/// `tokenmtr erase`: stops the daemon, then deletes the store, backups and logs (D56). Sink
+/// `tokenmtr erase`: stops the daemon, then deletes the store, backups and logs. Sink
 /// outputs and the agents' own files stay. A kept service is started again on an empty store.
 pub fn erase(setup: &Setup, args: &EraseArgs) -> anyhow::Result<()> {
     // An invalid config must not block erasing: the default locations are erased then.
@@ -259,6 +260,52 @@ pub fn scan(setup: &Setup, args: &ScanArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Arguments of `tokenmtr reprice`.
+#[derive(Debug, Args)]
+pub struct RepriceArgs {
+    /// Re-estimate every event, not only the unpriced ones. Reported costs never change, and an
+    /// estimate already from the active snapshot is kept.
+    #[arg(long)]
+    all: bool,
+    /// Print JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+/// What `tokenmtr reprice --json` prints.
+#[derive(Debug, Serialize)]
+struct RepriceOutput {
+    repriced: u64,
+}
+
+/// `tokenmtr reprice [--all]`: re-estimates stored events with the active pricing snapshot
+///, through the daemon when it runs, else directly.
+pub fn reprice(setup: &Setup, args: &RepriceArgs) -> anyhow::Result<()> {
+    let ctx = setup.context()?;
+    let repriced = if ctx.daemon_running() {
+        let all = args.all;
+        with_daemon(ctx.transport(), |mut client| async move {
+            client
+                .reprice(all)
+                .await
+                .context("the daemon's repricing failed")
+        })?
+        .repriced
+    } else {
+        let scope = if args.all {
+            RepriceScope::All
+        } else {
+            RepriceScope::Unpriced
+        };
+        ctx.reprice_direct(scope)?
+    };
+    if args.json {
+        return print_json(&RepriceOutput { repriced });
+    }
+    println!("{repriced} events repriced");
+    Ok(())
+}
+
 /// The format of a report.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum FormatArg {
@@ -342,7 +389,7 @@ impl ReportArgs {
     }
 }
 
-/// `tokenmtr report`: a client report for a month or a date range (D46).
+/// `tokenmtr report`: a client report for a month or a date range.
 pub fn report(setup: &Setup, args: &ReportArgs) -> anyhow::Result<()> {
     let ctx = setup.context()?;
     let request = args.request()?;

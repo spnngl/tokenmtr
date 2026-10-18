@@ -1,4 +1,4 @@
-//! Erase all data (D56).
+//! Erase all data.
 
 use std::fs;
 use std::io;
@@ -15,7 +15,7 @@ use crate::guard::{STOP_GRACE, lock_daemon, stopped_within};
 use crate::settings::{backup_dir_in, store_path_in};
 
 /// What to delete besides the store, its WAL files, the backups and the logs. Checkpoints live
-/// in the store (D15), so they go with it. Sink outputs and agent files are never deleted.
+/// in the store, so they go with it. Sink outputs and agent files are never deleted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EraseScope {
     /// Also delete the config file.
@@ -34,7 +34,7 @@ pub struct EraseReport {
 }
 
 /// Deletes the store, its `-wal`/`-shm`/`-journal`/`-lock` files, the backups and the logs, and per
-/// `scope` the config and the service (D56).
+/// `scope` the config and the service.
 ///
 /// The daemon is stopped first and cannot start while files are deleted (see
 /// [`with_daemon_stopped`](crate::with_daemon_stopped)); a service that is kept is started again

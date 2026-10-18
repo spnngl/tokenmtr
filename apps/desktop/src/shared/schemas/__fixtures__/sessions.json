@@ -12,7 +12,10 @@
       "last_at": "2026-05-03T14:09:52Z",
       "duration_secs": 7715,
       "project": "tokenmtr",
-      "models": ["claude-opus-4-1", "claude-sonnet-4-5"],
+      "models": [
+        "claude-opus-4-1",
+        "claude-sonnet-4-5"
+      ],
       "tool_calls": 214,
       "tool_errors": 9,
       "api_errors": 1,
@@ -42,7 +45,9 @@
       "last_at": "2026-05-02T09:20:00Z",
       "duration_secs": 360,
       "project": null,
-      "models": ["gpt-5"],
+      "models": [
+        "gpt-5"
+      ],
       "tool_calls": 12,
       "tool_errors": 0,
       "api_errors": 0,

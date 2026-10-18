@@ -83,7 +83,8 @@ impl ConfigDocument {
     /// # Errors
     ///
     /// [`ConfigError::Edit`] when the text cannot be edited; [`ConfigError::Invalid`] when the
-    /// result breaks a rule (for example an overlap, D28). The document is unchanged on error.
+    /// result breaks a rule (for example two subscriptions that overlap). The document is
+    /// unchanged on error.
     pub fn add_subscription(
         &mut self,
         spec: &SubscriptionSpec,

@@ -1,4 +1,4 @@
-//! Thin Tauri shell: maps commands to `tokenmtr-query` and `tokenmtr-control` (D2).
+//! Thin Tauri shell: maps commands to `tokenmtr-query` and `tokenmtr-control`.
 //!
 //! Layout: [`backend`] holds the plain functions behind every command (testable without a
 //! window); [`commands`] wraps them for the webviews; [`push`], [`notify`], [`tray`],
@@ -12,6 +12,8 @@ pub mod bindings;
 pub mod commands;
 pub mod daemon;
 pub mod error;
+#[cfg(test)]
+mod goldens;
 pub mod notify;
 pub mod push;
 pub mod request;
@@ -32,7 +34,7 @@ use crate::daemon::{RepairOutcome, Sidecar, install_service, repair_plist};
 use crate::request::DashboardTarget;
 use crate::state::Shell;
 
-/// Points an installed plist at this app's sidecar when the `.app` moved (D23), and restarts a
+/// Points an installed plist at this app's sidecar when the `.app` moved, and restarts a
 /// daemon that still runs another version than this app (after an update) on the bundled one.
 /// Runs off the main thread: launchctl may take seconds.
 async fn repair_service(backend: Backend) {
@@ -89,7 +91,7 @@ fn setup(app: &mut tauri::App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
     let shell = Shell::new(backend.clone(), store);
     let gate = shell.recap_gate.clone();
     app.manage(shell);
-    // A tray-only app: no Dock icon until the main window opens (D29).
+    // A tray-only app: no Dock icon until the main window opens.
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     tauri::async_runtime::spawn(repair_service(backend.clone()));
     windows::create_recap(&handle, gate)?;

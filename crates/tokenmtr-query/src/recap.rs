@@ -1,4 +1,4 @@
-//! Menu-bar recap, budgets and the `status` document (D34, D41, D43, D58).
+//! Menu-bar recap, budgets and the `status` document.
 
 use jiff::{SignedDuration, Span, Timestamp};
 use rusqlite::params_from_iter;
@@ -21,7 +21,7 @@ use crate::quota::{QuotaMeter, quota_latest};
 use crate::range::{Bucket, DateRange, Period};
 use crate::series::{GroupBy, series};
 
-/// What a budget applies to; `None` is "everything" (D34).
+/// What a budget applies to; `None` is "everything".
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BudgetScope {
     /// Agents.
@@ -74,7 +74,7 @@ pub enum BudgetState {
     NoFxRate,
 }
 
-/// One budget meter (D34).
+/// One budget meter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BudgetView {
     /// Whether the money fields below are measured.
@@ -128,7 +128,7 @@ fn remaining_days(range: DateRange, today: jiff::civil::Date) -> u32 {
 }
 
 /// Status of every budget for its current calendar period in the context's zone. Money is
-/// converted to the budget's currency with the D27 rate of each day; a budget that needs an FX
+/// converted to the budget's currency with the ECB rate of each day; a budget that needs an FX
 /// rate when the store has none is listed as [`BudgetState::NoFxRate`].
 ///
 /// # Errors
@@ -233,7 +233,7 @@ pub struct RecapConfig {
     pub budgets: Vec<BudgetSpec>,
     /// Sinks.
     pub sinks: Vec<SinkSpec>,
-    /// Window of the live rate (D58).
+    /// Window of the live rate.
     pub live_window: SignedDuration,
     /// Heartbeat age after which the daemon counts as stale.
     pub daemon_stale_after: SignedDuration,
@@ -248,7 +248,7 @@ pub enum Selection {
     Agent(AgentId),
 }
 
-/// Current burn rate (D58), present only while the window has events.
+/// Current burn rate, present only while the window has events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Live {
     /// Processed tokens per minute.
@@ -283,7 +283,7 @@ pub struct AgentRecap {
     pub currency_fallback: bool,
     /// KPIs of the period; `paid_micros`, `api_value_micros`, `roi`, tokens, cached-input %.
     pub totals: Totals,
-    /// Projected paid cost at the end of the period (D33).
+    /// Projected paid cost at the end of the period.
     pub projected_paid_micros: i64,
     /// Latest quota polls, with ETA.
     pub quota: Vec<QuotaMeter>,
@@ -533,6 +533,7 @@ fn agent_recap(
         currency: ctx.currency(),
         currency_fallback: ctx.currency_fallback(),
         top_model: models(reader, ctx, &base)?
+            .rows
             .into_iter()
             .next()
             .map(|m| m.model),
@@ -546,11 +547,11 @@ fn agent_recap(
     })
 }
 
-/// The recap of one tab: `agent` (or all) for `period`, plus system health (D43
+/// The recap of one tab: `agent` (or all) for `period`, plus system health (also served by
 /// `recap --json`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Recap {
-    /// Always 1 (D43).
+    /// Always 1.
     pub status_schema: u32,
     /// Query clock.
     pub generated_at: Timestamp,
@@ -584,10 +585,10 @@ pub fn recap(
     })
 }
 
-/// The `status --json` document (D43): system health and one recap per followed agent.
+/// The `status --json` document: system health and one recap per followed agent.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Status {
-    /// Always 1 (D43).
+    /// Always 1.
     pub status_schema: u32,
     /// Query clock.
     pub generated_at: Timestamp,

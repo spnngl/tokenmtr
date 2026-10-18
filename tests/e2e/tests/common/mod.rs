@@ -29,7 +29,7 @@ pub type TestResult = Result<(), Box<dyn Error>>;
 /// A file's path and its bytes.
 pub type FileBytes = (PathBuf, Vec<u8>);
 
-/// The access token in the sandbox's credentials file. D55: it must appear nowhere else.
+/// The access token in the sandbox's credentials file. It must appear nowhere else.
 pub const FAKE_ACCESS_TOKEN: &str = "sk-ant-oat01-FAKE-E2E-TOKEN";
 /// The refresh token next to it; same rule.
 pub const FAKE_REFRESH_TOKEN: &str = "sk-ant-ort01-FAKE-E2E-REFRESH";
@@ -111,7 +111,7 @@ pub struct Sandbox {
     _dir: TempDir,
     pub root: Utf8PathBuf,
     pub paths: Paths,
-    /// Everything `tokenmtr` printed, for the D55 scan.
+    /// Everything `tokenmtr` printed, for the credential-leak scan.
     transcript: RefCell<Vec<Vec<u8>>>,
 }
 
@@ -455,7 +455,7 @@ pub async fn mock_servers(expect_each: bool) -> Result<MockServer, Box<dyn Error
     Ok(server)
 }
 
-/// D55: neither token appears in any file of the sandbox (logs, store, exports, backups, captured
+/// Neither token appears in any file of the sandbox (logs, store, exports, backups, captured
 /// stdio) except the credentials file itself, nor in `extra` (a decompressed backup, say), nor in
 /// what `tokenmtr` printed.
 pub fn assert_no_secret(sandbox: &Sandbox, extra: &[(String, Vec<u8>)]) -> TestResult {
@@ -489,7 +489,7 @@ pub fn assert_no_secret(sandbox: &Sandbox, extra: &[(String, Vec<u8>)]) -> TestR
     if leaks.is_empty() {
         Ok(())
     } else {
-        Err(format!("D55: a credential leaked into {leaks:?}").into())
+        Err(format!("a credential leaked into {leaks:?}").into())
     }
 }
 

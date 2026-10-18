@@ -11,7 +11,7 @@ use crate::codec::{RowExt, to_i64, to_limit, to_us};
 use crate::error::CodecError;
 use crate::error::StoreError;
 
-/// One backup attempt (D37).
+/// One backup attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackupRun {
     /// When the attempt started.
@@ -26,7 +26,7 @@ pub struct BackupRun {
     pub error: Option<String>,
 }
 
-/// One ingest pass of one agent, for the health screen (D5).
+/// One ingest pass of one agent, for the health screen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IngestRun {
     /// The agent.

@@ -1,4 +1,4 @@
-//! The `alert` table: fired alerts, unique by dedup key (D36).
+//! The `alert` table: fired alerts, unique by dedup key.
 
 use std::collections::HashSet;
 

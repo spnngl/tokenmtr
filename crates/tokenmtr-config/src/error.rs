@@ -176,7 +176,7 @@ pub enum Violation {
     /// A list names a profile no agent in scope declares.
     #[error("profile `{0}` is not declared under any agent in scope")]
     UnknownProfile(ProfileId),
-    /// Two subscriptions would both cover one event (D28).
+    /// Two subscriptions would both cover one event.
     #[error("subscriptions {first} and {second} overlap on provider, agent, profile and dates")]
     OverlappingSubscriptions {
         /// The earlier entry.
@@ -184,7 +184,7 @@ pub enum Violation {
         /// The later entry, where the error points.
         second: SubscriptionId,
     },
-    /// A subscription omits `fee` and the plan catalog has no list price for it (D28).
+    /// A subscription omits `fee` and the plan catalog has no list price for it.
     #[error(
         "subscription {subscription} needs an explicit `fee`: no {period:?} {currency:?} list price for plan {plan:?}"
     )]
@@ -198,7 +198,7 @@ pub enum Violation {
         /// Its fee currency.
         currency: Currency,
     },
-    /// Two profiles of one agent read from the same or nested paths (D30).
+    /// Two profiles of one agent read from the same or nested paths.
     #[error("profile `{profile}` of agent `{agent}` shares {path} with profile `{other}`")]
     SharedRoot {
         /// The agent.

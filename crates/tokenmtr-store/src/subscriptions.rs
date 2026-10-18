@@ -1,4 +1,4 @@
-//! The `subscription` table: subscriptions mirrored from the config (D28).
+//! The `subscription` table: subscriptions mirrored from the config.
 //!
 //! Rows are never deleted: a subscription removed from the config stays in the store (and in
 //! exports) with its last known dates and `removed_at_us`, and billing ignores it.
@@ -56,7 +56,7 @@ macro_rules! select {
 const AFTER: &str = select!("WHERE revision > ?1 ORDER BY revision LIMIT ?2");
 const ACTIVE: &str = select!("WHERE removed_at_us IS NULL ORDER BY subscription_id");
 
-/// Makes the table mirror `subscriptions` (D28): inserts or updates each by id, and tombstones
+/// Makes the table mirror `subscriptions`: inserts or updates each by id, and tombstones
 /// every live row whose id is absent with `removed_at_us = now`. Tombstoning and reviving bump
 /// the revision so sinks see it.
 pub(crate) fn mirror(

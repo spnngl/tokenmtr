@@ -2,7 +2,7 @@
 //!
 //! The daemon implements [`Handler`] for the request kinds with side effects and publishes
 //! [`Event`]s on an [`EventBus`]. Everything protocol-level lives here: the `Hello` handshake
-//! (D52), `Subscribe`, framing and shutdown.
+//!, `Subscribe`, framing and shutdown.
 
 use std::sync::Arc;
 use std::time::Duration;

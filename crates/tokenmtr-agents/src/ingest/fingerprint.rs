@@ -1,4 +1,4 @@
-//! Checkpoint comparison (D15): decides, from a stored checkpoint and the file as it is now,
+//! Checkpoint comparison: decides, from a stored checkpoint and the file as it is now,
 //! whether to skip a file, resume it at the stored offset, or parse it from zero.
 
 use std::fs::{self, File};
@@ -91,7 +91,7 @@ pub enum Plan {
     },
 }
 
-/// Compares `checkpoint` with `stat` (D15). `hash_before` computes the last-line hash before an
+/// Compares `checkpoint` with `stat`. `hash_before` computes the last-line hash before an
 /// offset in the file as it is now; it runs only when the file changed in place.
 pub fn decide(
     checkpoint: Option<&Checkpoint>,

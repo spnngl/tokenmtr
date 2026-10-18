@@ -1,4 +1,4 @@
-//! Timing of the hot path (D48): one 5000-event transaction. Run in release:
+//! Timing of the hot path: one 5000-event transaction. Run in release:
 //! `cargo test --release -p tokenmtr-store -- --ignored --nocapture throughput`.
 
 use std::time::{Duration, Instant};

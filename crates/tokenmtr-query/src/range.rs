@@ -1,4 +1,4 @@
-//! Calendar ranges and buckets in the configured zone (D8).
+//! Calendar ranges and buckets in the configured zone.
 
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
@@ -102,7 +102,7 @@ impl DateRange {
     }
 }
 
-/// A calendar period of the recap and of budgets (D34).
+/// A calendar period of the recap and of budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Period {
@@ -239,7 +239,7 @@ impl Bucket {
         }
     }
 
-    /// The smallest bucket that keeps `range` within `max_points` points (D47).
+    /// The smallest bucket that keeps `range` within `max_points` points.
     #[must_use]
     pub fn pick(range: &DateRange, max_points: u32) -> Self {
         let days = range.days();

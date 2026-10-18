@@ -2,6 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- Deliberately not sandboxed: the app reads ~/.claude and ~/.pi and talks to a Unix socket (D2). -->
+  <!-- Deliberately not sandboxed: the app reads ~/.claude and ~/.pi and talks to a Unix socket. -->
 </dict>
 </plist>

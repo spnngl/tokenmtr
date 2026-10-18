@@ -1,4 +1,4 @@
-//! The global shortcut (D44): `menubar.shortcut` toggles the recap, re-read when the config
+//! The global shortcut: `menubar.shortcut` toggles the recap, re-read when the config
 //! may have changed.
 
 use tauri::{AppHandle, Manager as _, Wry};

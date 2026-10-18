@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{OnceLock, mpsc};
+use std::sync::{Arc, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -15,8 +15,8 @@ use tokenmtr_core::{
 use tokenmtr_platform::{ThreadPriority, set_thread_priority};
 use tokenmtr_store::{
     Checkpoint, IngestRun, IngestWrite, IssueKind, IssueUpdate, ParseIssue as StoredIssue,
-    ProfiledToolCall, SessionSignal, Store, StoreRead as _, StoreReader, StoredCheckpoint,
-    ToolResultFlag,
+    ProfiledToolCall, RepriceScope, SessionSignal, Store, StoreRead as _, StoreReader,
+    StoredCheckpoint, ToolResultFlag,
 };
 
 use super::error::IngestError;
@@ -30,14 +30,14 @@ use crate::project::ProjectResolver;
 use crate::source::{ByteOffset, SourceFile};
 use crate::{AgentKind, AgentSource, DriftReason, ParseIssue, ParseOutcome, discover};
 
-/// Events per store transaction (D48).
+/// Events per store transaction.
 const CHUNK: usize = 5000;
 
 /// An unterminated last line older than this was left by a crashed writer: it is skipped as
 /// malformed, so the next appended line is not glued to it.
 const ABANDONED_TAIL: SignedDuration = SignedDuration::from_mins(10);
 
-/// Subject of the per-scan drift issue (D42): the share of failed usage-bearing lines over every
+/// Subject of the per-scan drift issue: the share of failed usage-bearing lines over every
 /// file of one scan.
 pub const SCAN_ISSUE_SUBJECT: &str = "scan";
 
@@ -51,7 +51,7 @@ pub enum ScanMode {
     Full,
 }
 
-/// How hard a scan may compete with the user's other work (D47).
+/// How hard a scan may compete with the user's other work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanPriority {
     /// A person waits for it (`scan`, first run, `doctor`): files parse in parallel at full
@@ -126,9 +126,11 @@ pub struct Ingestor {
     clock: fn() -> Timestamp,
     /// The parse pool of user-initiated scans, built by the first one that needs it.
     pool: OnceLock<rayon::ThreadPool>,
-    /// Whether this process already retried the cwds that fell back to themselves (D50): the
+    /// Whether this process already retried the cwds that fell back to themselves: the
     /// first scan does, so a restart retries them; a full scan retries every cwd.
     fallbacks_retried: bool,
+    /// Raised by the owner to end a running scan or reprice early (daemon shutdown).
+    stop: Arc<AtomicBool>,
     #[cfg(test)]
     pub(crate) crash_before_commit: bool,
 }
@@ -145,6 +147,7 @@ impl Ingestor {
             reader,
             clock: Timestamp::now,
             pool: OnceLock::new(),
+            stop: Arc::default(),
             #[cfg(test)]
             crash_before_commit: false,
         }
@@ -161,6 +164,23 @@ impl Ingestor {
     pub fn with_clock(mut self, clock: fn() -> Timestamp) -> Self {
         self.clock = clock;
         self
+    }
+
+    /// Shares `stop` with the owner: once raised, a running [`scan`](Self::scan) or
+    /// [`reprice`](Self::reprice) ends with [`IngestError::Stopped`] before its next file or
+    /// page, keeping what it already committed. Every later call stops at once too.
+    #[must_use]
+    pub fn with_stop(mut self, stop: Arc<AtomicBool>) -> Self {
+        self.stop = stop;
+        self
+    }
+
+    /// Fails with [`IngestError::Stopped`] once the stop flag is raised.
+    fn check_stop(&self) -> Result<(), IngestError> {
+        if self.stop.load(Ordering::Relaxed) {
+            return Err(IngestError::Stopped);
+        }
+        Ok(())
     }
 
     /// Every root of every profile: what the watcher watches.
@@ -191,13 +211,15 @@ impl Ingestor {
             .any(|source| source.owns(path) && source.profiles().iter().any(|p| p.contains(path)))
     }
 
-    /// Runs one scan and returns what it did. Only a store failure ends it early; a file that
-    /// cannot be read or parsed becomes a parse issue and the other files go on.
+    /// Runs one scan and returns what it did. Only a store failure or the stop flag
+    /// ([`with_stop`](Self::with_stop)) ends it early; a file that cannot be read or parsed
+    /// becomes a parse issue and the other files go on.
     pub fn scan(
         &mut self,
         store: &mut Store,
         request: &ScanRequest,
     ) -> Result<ScanReport, IngestError> {
+        self.check_stop()?;
         let wall = Instant::now();
         let now = (self.clock)();
         apply_priority(request.priority);
@@ -224,6 +246,7 @@ impl Ingestor {
             .map(|source| AgentState::new(source.id(), selected(request, source.id()), now))
             .collect();
         let mut tasks = self.plan(store, request, now, &mut states)?;
+        self.check_stop()?;
         tasks.sort_by_key(|task| std::cmp::Reverse(task.remaining()));
 
         let machine = store.machine_id();
@@ -241,6 +264,8 @@ impl Ingestor {
             crash_before_commit: self.crash_before_commit,
         };
         self.parse_all(&mut run, request.priority)?;
+        // The parallel workers skip the files left once the flag is raised.
+        self.check_stop()?;
         for slot in 0..run.states.len() {
             if run.states[slot].selected {
                 run.flush(slot)?;
@@ -274,6 +299,7 @@ impl Ingestor {
                 && request.paths.is_none()
                 && source.id() == AgentId::CLAUDE
             {
+                self.check_stop()?;
                 let scan = self.import_aggregates(store, source, now)?;
                 state.scan.aggregates = Some(scan);
             }
@@ -293,8 +319,20 @@ impl Ingestor {
         })
     }
 
+    /// Re-estimates the stored events of `scope` with the active pricing snapshot and the
+    /// configured overrides, one write transaction per 1000 events; returns how many
+    /// changed. Reported costs never change. An event the snapshot cannot price keeps its
+    /// estimate, and so does one already estimated from the active snapshot (the store lacks the
+    /// per-line surcharge inputs, so re-estimating it could only lose them).
+    pub fn reprice(&mut self, store: &mut Store, scope: RepriceScope) -> Result<u64, IngestError> {
+        let now = (self.clock)();
+        let stop = &self.stop;
+        self.pricer
+            .reprice(store, scope, now, || stop.load(Ordering::Relaxed))
+    }
+
     /// Compares every candidate file with its checkpoint and returns the parse tasks. New files
-    /// get a placeholder checkpoint so their events can carry a source-file id (D45).
+    /// get a placeholder checkpoint so their events can carry a source-file id.
     fn plan(
         &self,
         store: &mut Store,
@@ -399,13 +437,14 @@ impl Ingestor {
     /// Parses every task and hands the results to the writer. A user-initiated scan with more
     /// than one file fans the parsing out over a rayon pool; results come back through a bounded
     /// channel, so memory stays bounded while the writer — this thread — is the only one
-    /// touching the store (D48).
+    /// touching the store.
     fn parse_all(&self, run: &mut Run<'_>, priority: ScanPriority) -> Result<(), IngestError> {
         let tasks = run.tasks;
         let sources = &self.settings.sources;
         let parallel = priority == ScanPriority::UserInitiated && tasks.len() > 1;
         if !parallel {
             for (index, task) in tasks.iter().enumerate() {
+                self.check_stop()?;
                 run.handle(parse_task(&sources[task.slot], task, index))?;
             }
             return Ok(());
@@ -413,6 +452,7 @@ impl Ingestor {
         let pool = self.pool()?;
         let threads = pool.current_num_threads().min(tasks.len());
         let cancel = AtomicBool::new(false);
+        let stop = &*self.stop;
         std::thread::scope(|scope| {
             let (tx, rx) = mpsc::sync_channel::<Parsed>(threads);
             let producer = scope.spawn(|| {
@@ -421,7 +461,7 @@ impl Ingestor {
                         .into_par_iter()
                         .with_max_len(1)
                         .for_each_with(tx, |tx, index| {
-                            if cancel.load(Ordering::Relaxed) {
+                            if cancel.load(Ordering::Relaxed) || stop.load(Ordering::Relaxed) {
                                 return;
                             }
                             let task = &tasks[index];
@@ -432,7 +472,7 @@ impl Ingestor {
             });
             let mut outcome = Ok(());
             for parsed in &rx {
-                if let Err(err) = run.handle(parsed) {
+                if let Err(err) = self.check_stop().and_then(|()| run.handle(parsed)) {
                     cancel.store(true, Ordering::Relaxed);
                     outcome = Err(err);
                     break;
@@ -446,7 +486,7 @@ impl Ingestor {
         })
     }
 
-    /// Imports Claude's stats cache for the days before the first transcript event (D38).
+    /// Imports Claude's stats cache for the days before the first transcript event.
     fn import_aggregates(
         &self,
         store: &mut Store,
@@ -576,7 +616,7 @@ fn record_file_problem(
 }
 
 /// Maps an agent-side issue to the stored shape. `subject` is the file the issue was found in;
-/// issues on the same `(agent, kind, subject)` merge in the store (D42).
+/// issues on the same `(agent, kind, subject)` merge in the store.
 fn to_stored(agent: AgentId, subject: &str, issue: &ParseIssue, at: Timestamp) -> StoredIssue {
     let (kind, subject, count, sample) = match issue {
         ParseIssue::FormatDrift {

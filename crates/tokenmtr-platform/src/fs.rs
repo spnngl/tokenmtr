@@ -1,4 +1,4 @@
-//! Durable file writes (D49).
+//! Durable file writes.
 //!
 //! On Apple targets `File::sync_all` issues `fcntl(F_FULLFSYNC)`, which is the only call that
 //! flushes the drive cache, so every durability point here uses it.

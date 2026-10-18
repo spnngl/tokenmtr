@@ -11,7 +11,7 @@ use tokenmtr_platform::{
 };
 
 /// The name of the CLI binary the app bundles as its sidecar.
-const SIDECAR_NAME: &str = "tokenmtr";
+const SIDECAR_NAME: &str = tokenmtr_core::brand::CLI_NAME;
 /// The app's version; the bundled daemon has the same one.
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -19,7 +19,7 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[must_use]
 pub fn client_info() -> ClientInfo {
     ClientInfo {
-        name: "tokenmtr-app".to_owned(),
+        name: format!("{}-app", tokenmtr_core::brand::CLI_NAME),
         version: APP_VERSION.to_owned(),
         schema: Some(tokenmtr_store::SCHEMA_VERSION),
     }
@@ -108,7 +108,7 @@ pub enum RepairOutcome {
     Repaired,
 }
 
-/// Points an installed plist at the bundled sidecar again when it differs (D23).
+/// Points an installed plist at the bundled sidecar again when it differs.
 ///
 /// # Errors
 ///
@@ -157,7 +157,7 @@ pub enum Link {
     },
     /// Nobody answers.
     Offline,
-    /// The daemon speaks another protocol or store schema (D52).
+    /// The daemon speaks another protocol or store schema.
     Incompatible {
         /// The daemon's package version.
         daemon_version: String,
@@ -177,7 +177,7 @@ impl Link {
     }
 
     /// The link a `Welcome` means: a daemon on a newer store schema than this app reads is
-    /// incompatible even though the protocol matches (D52).
+    /// incompatible even though the protocol matches.
     #[must_use]
     pub fn from_welcome(daemon: &DaemonInfo) -> Self {
         let daemon_version = daemon.daemon_version.clone();

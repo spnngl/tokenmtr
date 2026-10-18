@@ -1,4 +1,4 @@
-//! Backup files (D37): naming, listing and pruning. The daemon and the CLI share them.
+//! Backup files: naming, listing and pruning. The daemon and the CLI share them.
 
 use std::fs;
 use std::io;

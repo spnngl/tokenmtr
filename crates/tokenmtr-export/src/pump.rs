@@ -1,10 +1,10 @@
-//! The cursor pump (D17): moves rows from the store to sinks, at least once.
+//! The cursor pump: moves rows from the store to sinks, at least once.
 //!
 //! For each sink and dataset the pump reads `revision > cursor ORDER BY revision LIMIT batch`,
-//! redacts (D40), hands the batch to the sink and moves the cursor to the batch's last revision
+//! redacts, hands the batch to the sink and moves the cursor to the batch's last revision
 //! **only after the sink returned `Ok`**, i.e. after the rows are durable. A crash between delivery
 //! and the cursor move redelivers the batch; sinks are idempotent on the row id, so nothing is
-//! duplicated. Every attempt is recorded as a `sink_run` for health (D41). A failing sink stops its
+//! duplicated. Every attempt is recorded as a `sink_run` for health. A failing sink stops its
 //! own run and never touches the others.
 
 use std::collections::BTreeMap;

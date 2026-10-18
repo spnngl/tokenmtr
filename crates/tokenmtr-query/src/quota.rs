@@ -1,4 +1,4 @@
-//! Quota meters, history and the plan advisor (D33, D35).
+//! Quota meters, history and the plan advisor.
 
 use std::collections::BTreeMap;
 
@@ -88,7 +88,7 @@ pub struct QuotaWindowView {
     pub resets_at: Option<Timestamp>,
     /// Seconds until the reset, never negative.
     pub resets_in_secs: Option<i64>,
-    /// Whether the window will be exhausted before it resets (D33).
+    /// Whether the window will be exhausted before it resets.
     pub eta: QuotaEta,
 }
 
@@ -231,7 +231,7 @@ pub struct QuotaHistory {
     pub resets: Vec<Timestamp>,
 }
 
-/// Quota history of every polled window of `agent` in `range` (D33 `/quota`).
+/// Quota history of every polled window of `agent` in `range` (the `/quota` screen).
 ///
 /// # Errors
 ///
@@ -276,7 +276,7 @@ pub fn quota_history(
     Ok(by_window.into_values().collect())
 }
 
-/// The advisor's verdict and the inputs behind it (D35).
+/// The advisor's verdict and the inputs behind it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AdvisorReport {
     /// Agent.

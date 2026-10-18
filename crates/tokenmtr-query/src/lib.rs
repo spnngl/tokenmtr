@@ -15,7 +15,7 @@
 //! - Callers map config into [`BudgetSpec`], [`SinkSpec`] and [`RecapConfig`];
 //!   this crate does not depend on `tokenmtr-config`.
 //!
-//! # Time (D8)
+//! # Time
 //!
 //! Events are grouped in SQL by 15-minute UTC cell, then bucketed in Rust by the
 //! context zone. Zone offsets are multiples of 15 minutes, so a cell never
@@ -23,7 +23,7 @@
 //! [`SeriesPoint::minutes`] carries the real length. Heatmap weekdays are
 //! `1` = Monday … `7` = Sunday; hours are local.
 //!
-//! # Money (D10, D11, D27, D28, D46)
+//! # Money
 //!
 //! - API value is `reported ?? estimated`; events with neither count as
 //!   `unpriced_events` and contribute zero.
@@ -41,7 +41,7 @@
 //!   events by API-value share, so any breakdown sums to the total. Idle fee days
 //!   appear only in unscoped views ([`Filters::is_scoped`] is false).
 //!   `roi` is subscription API value over the fees allocated.
-//! - Session and heatmap views skip daily aggregates (D38) and carry no fees.
+//! - Session and heatmap views skip daily aggregates and carry no fees.
 //!
 //! # JSON shapes
 //!
@@ -87,10 +87,10 @@ mod usage;
 
 pub use billing::{BillingMonth, BillingReport, SubscriptionLine, billing};
 pub use breakdowns::{
-    BranchRow, HeatCell, Heatmap, ModelRow, ProjectRow, SessionCompactions, SessionDetail,
-    SessionEvent, SessionPage, SessionRow, SessionToolCall, SignalDay, SignalsReport, ToolRow,
-    ToolsReport, Totals, UnresolvedCwd, branches, heatmap, models, overview, projects,
-    session_detail, sessions, signals, tools, unresolved_cwds,
+    BranchRow, Breakdown, HeatCell, Heatmap, ModelRow, ProjectRow, SessionCompactions,
+    SessionDetail, SessionEvent, SessionPage, SessionRow, SessionToolCall, SignalDay,
+    SignalsReport, ToolRow, ToolsReport, Totals, UnresolvedCwd, branches, heatmap, models,
+    overview, projects, session_detail, sessions, signals, tools, unresolved_cwds,
 };
 pub use context::{FxPolicy, QueryContext, WeekStart, load_fx_rates, load_subscriptions};
 pub use error::{FilterError, QueryError};

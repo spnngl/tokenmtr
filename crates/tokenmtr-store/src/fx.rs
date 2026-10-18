@@ -1,4 +1,4 @@
-//! The `fx_rate` table: EUR per USD by publication date (D27).
+//! The `fx_rate` table: EUR per USD by publication date.
 
 use std::sync::LazyLock;
 

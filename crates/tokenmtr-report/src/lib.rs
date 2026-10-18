@@ -1,8 +1,8 @@
-//! Period reports (D46) as Markdown, CSV or HTML.
+//! Period reports as Markdown, CSV or HTML.
 //!
 //! Three steps, all pure:
 //!
-//! 1. Fill a [`ReportInput`] (a later phase does this from `tokenmtr-query`).
+//! 1. Fill a [`ReportInput`] (`tokenmtr-app` builds it from `tokenmtr-query` results).
 //! 2. [`Report::from_input`] validates it and allocates each subscription's fee over the projects
 //!    that drew from it, in proportion to their API value. The allocated fees add up exactly to
 //!    the fees paid.

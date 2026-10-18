@@ -20,7 +20,7 @@ use tokenmtr_query::{
     AlertView, BackupView, BudgetSpec, DateRange, Filters, FxRateView, Period, QueryContext,
     QuotaMeter, Recap, RecapConfig, Selection, SinkSpec, Status,
 };
-use tokenmtr_store::{BackupRun, Store, StoreRead, StoreReader};
+use tokenmtr_store::{BackupRun, RepriceScope, Store, StoreRead, StoreReader};
 
 use crate::backup::{BackupFile, backup_path, list_backups, prune_backups};
 use crate::error::AppError;
@@ -32,7 +32,7 @@ use crate::settings::{
     recap_config, sink_specs, store_path,
 };
 
-/// The detected plan of one account (from the provider's account endpoint, D26).
+/// The detected plan of one account (from the provider's account endpoint).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AccountSummary {
     /// The agent.
@@ -65,7 +65,7 @@ pub struct FxSummary {
     pub latest: Option<FxRateView>,
 }
 
-/// The active pricing snapshot (D11).
+/// The active pricing snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PricingSnapshotInfo {
     /// First 12 hex characters of the body's sha256.
@@ -100,7 +100,7 @@ pub struct PricingSummary {
 ///
 /// Queries take `&self`. Actions that write the store (`scan_direct`, `backup_direct`) refuse
 /// while a daemon runs, and hold the daemon lock so none starts meanwhile: it is the only
-/// writer (D1).
+/// writer.
 pub struct AppContext {
     paths: Paths,
     transport: ControlTransport,
@@ -119,7 +119,7 @@ impl AppContext {
     /// # Errors
     ///
     /// [`AppError::Config`] for an invalid config; [`AppError::Store`] when the store cannot be
-    /// opened, including a newer schema (D52) or an older one no daemon has migrated yet.
+    /// opened, including a newer schema or an older one no daemon has migrated yet.
     pub fn load(
         paths: Paths,
         transport: ControlTransport,
@@ -222,7 +222,7 @@ impl AppContext {
         recap_config(&self.config)
     }
 
-    /// The `status --json` document (D43): system health and one recap per followed agent
+    /// The `status --json` document: system health and one recap per followed agent
     /// (`menubar.agents`).
     ///
     /// # Errors
@@ -238,7 +238,7 @@ impl AppContext {
         )?)
     }
 
-    /// The recap of one tab (D34).
+    /// The recap of one tab.
     ///
     /// # Errors
     ///
@@ -325,6 +325,7 @@ impl AppContext {
             });
         let mut unpriced_models: Vec<UnpricedModel> =
             tokenmtr_query::models(&self.reader, &ctx, &Filters::new(whole_history(&ctx)?))?
+                .rows
                 .into_iter()
                 .filter(|row| row.usage.unpriced_events > 0)
                 .map(|row| UnpricedModel {
@@ -396,7 +397,7 @@ impl AppContext {
         })
     }
 
-    /// Builds and renders a client report (D46).
+    /// Builds and renders a client report.
     ///
     /// # Errors
     ///
@@ -425,7 +426,7 @@ impl AppContext {
         Ok(report)
     }
 
-    /// Adds a `[[subscriptions]]` entry to the config file, keeping its comments (D28).
+    /// Adds a `[[subscriptions]]` entry to the config file, keeping its comments.
     ///
     /// # Errors
     ///
@@ -450,7 +451,7 @@ impl AppContext {
         IngestSettings::from_config(&self.config, &self.paths, &*self.env)
     }
 
-    /// Sets `cleanupPeriodDays = 3650` in the `settings.json` of a Claude profile (D53).
+    /// Sets `cleanupPeriodDays = 3650` in the `settings.json` of a Claude profile.
     ///
     /// # Errors
     ///
@@ -496,6 +497,19 @@ impl AppContext {
         Ok(ingestor.scan(&mut store, &request)?)
     }
 
+    /// Re-estimates stored events with the active pricing snapshot while no daemon runs:
+    /// the unpriced ones, or every one with [`RepriceScope::All`]. Returns how many changed.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::DaemonRunning`] while a daemon holds the lock; store or ingest failures.
+    pub fn reprice_direct(&self, scope: RepriceScope) -> Result<u64, AppError> {
+        let _lock = lock_daemon(&self.transport, Duration::ZERO)?;
+        let mut store = Store::open(&self.store_path)?;
+        let mut ingestor = Ingestor::open(self.ingest_settings(), &self.store_path)?;
+        Ok(ingestor.reprice(&mut store, scope)?)
+    }
+
     /// What `doctor` reports about agent files, checkpoints, issues and retention.
     ///
     /// # Errors
@@ -507,7 +521,7 @@ impl AppContext {
     }
 }
 
-/// The directories of the configured sinks, checked against protected folders (D50).
+/// The directories of the configured sinks, checked against protected folders.
 #[must_use]
 pub fn sink_dirs(paths: &Paths, config: &Config) -> Vec<Utf8PathBuf> {
     config

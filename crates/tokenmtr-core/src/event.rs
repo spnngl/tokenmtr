@@ -10,7 +10,7 @@ use crate::ids::{
 use crate::money::UsdMicros;
 use crate::pricing::PricingVersion;
 
-/// Disjoint token columns (D9).
+/// Disjoint token columns.
 ///
 /// `reasoning` is informational: it is a subset of `output` and is never summed into totals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -39,14 +39,14 @@ impl TokenCounts {
             .saturating_add(self.cache_write_1h)
     }
 
-    /// `input_uncached + cache_read + cache_write_5m + cache_write_1h + output` (D9).
+    /// `input_uncached + cache_read + cache_write_5m + cache_write_1h + output`.
     #[must_use]
     pub const fn total_tokens(&self) -> u64 {
         self.prompt_tokens().saturating_add(self.output)
     }
 }
 
-/// Per-request billing modifiers Anthropic reports in `usage` (D11): `speed`, `inference_geo` and
+/// Per-request billing modifiers Anthropic reports in `usage`: `speed`, `inference_geo` and
 /// `server_tool_use.web_search_requests`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct PriceModifiers {
@@ -58,7 +58,7 @@ pub struct PriceModifiers {
     pub web_search_requests: u64,
 }
 
-/// An estimated API cost and the price that produced it (D10).
+/// An estimated API cost and the price that produced it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Estimate {
     /// Estimated pay-as-you-go cost.
@@ -79,7 +79,7 @@ pub enum CostSource {
     Unpriced,
 }
 
-/// Both costs stored for one event (D10). Either may be absent.
+/// Both costs stored for one event. Either may be absent.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct EventCost {
     reported: Option<UsdMicros>,
@@ -108,7 +108,7 @@ impl EventCost {
         self.estimated.as_ref()
     }
 
-    /// `reported ?? estimated`, else unpriced (D10).
+    /// `reported ?? estimated`, else unpriced.
     #[must_use]
     pub fn api_cost(&self) -> ApiCost {
         match (self.reported, &self.estimated) {
@@ -167,7 +167,7 @@ pub enum EventKind {
     BranchSummary,
     /// A standalone usage entry.
     Auxiliary,
-    /// A synthetic per-day, per-model row imported from a stats cache (D38).
+    /// A synthetic per-day, per-model row imported from a stats cache.
     DailyAggregate,
 }
 
@@ -182,7 +182,7 @@ pub struct Capabilities {
     pub subscription: bool,
 }
 
-/// One tool invocation: name and error flag, never arguments or results (D32).
+/// One tool invocation: name and error flag, never arguments or results.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
     /// Agent that invoked the tool.
@@ -203,7 +203,7 @@ pub struct ToolCall {
     pub is_error: Option<bool>,
 }
 
-/// A session-level signal (D32).
+/// A session-level signal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SignalKind {
@@ -223,7 +223,7 @@ pub struct ToolName<'a> {
 }
 
 /// Splits `mcp__<server>__<tool>` at the first `__` after the prefix, so tool names that
-/// themselves contain `__` stay intact (D32). Anything else is returned unsplit.
+/// themselves contain `__` stay intact. Anything else is returned unsplit.
 #[must_use]
 pub fn split_mcp_tool_name(name: &str) -> ToolName<'_> {
     let whole = ToolName {
@@ -267,7 +267,7 @@ pub struct UsageEvent {
     pub cwd: Option<Utf8PathBuf>,
     /// Git branch at the time.
     pub git_branch: Option<String>,
-    /// Resolved project (D31).
+    /// Resolved project.
     pub project: Option<ProjectKey>,
     /// Client label from `[[projects]]` rules.
     pub client: Option<String>,

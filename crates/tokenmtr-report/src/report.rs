@@ -236,7 +236,7 @@ fn split_fees(input: &ReportInput) -> Result<Fees, ReportError> {
 
 impl Report {
     /// Checks the input and allocates each subscription's fee over the projects that drew from
-    /// it, in proportion to their API value (D46).
+    /// it, in proportion to their API value.
     ///
     /// # Errors
     ///

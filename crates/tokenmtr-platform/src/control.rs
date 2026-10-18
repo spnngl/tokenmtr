@@ -1,4 +1,4 @@
-//! Control channel transport (D24): a Unix domain socket at `<data_dir>/control.sock`, guarded
+//! Control channel transport: a Unix domain socket at `<data_dir>/control.sock`, guarded
 //! by the daemon lock `<data_dir>/daemon.lock`.
 //!
 //! The transport carries bytes only; [`crate::framing`] splits them into lines and the control

@@ -1,4 +1,4 @@
-//! pi collector tests over the invented fixtures in `fixtures/pi` (Phase 5 "Done when").
+//! pi collector tests over the invented fixtures in `fixtures/pi`.
 
 use std::fs;
 
@@ -545,6 +545,19 @@ proptest! {
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
         prop_assert_eq!(with, without);
     }
+}
+
+#[test]
+fn a_negative_reported_cost_is_dropped_and_flags_the_event_approximate() -> TestResult {
+    let file = SourceFile::new("/x/p/s.jsonl".into(), ProfileId::default_profile());
+    let ctx = pi::LineContext::new(&file, None)?;
+    let line = br#"{"type":"usage","timestamp":"2026-03-02T09:00:00.000Z","provider":"anthropic","model":"claude-haiku-4-5","usage":{"input":10,"output":5,"cost":{"total":-0.5}}}"#;
+    let mut batch = ParseBatch::new();
+    let _ = pi::parse_line(&ctx, line, &mut batch);
+    let event = batch.events().first().ok_or("no event")?;
+    assert_eq!(event.reported_cost, None);
+    assert!(event.approximate);
+    Ok(())
 }
 
 #[test]

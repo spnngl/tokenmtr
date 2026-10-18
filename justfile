@@ -35,16 +35,20 @@ dev:
 bindings:
     UPDATE_BINDINGS=1 cargo test -p tokenmtr-desktop --lib bindings
 
+# Regenerate the UI's golden fixtures (apps/desktop/src/shared/schemas/__fixtures__) from the Rust response types.
+goldens:
+    UPDATE_GOLDENS=1 cargo test -p tokenmtr-desktop --lib goldens
+
 # Signed .app and .dmg (docs/release.md): gates, then sidecar and `tauri build` with the local identity.
 # Extra flags pass through, e.g. `just release --target universal-apple-darwin` or `--unsigned`.
 release *FLAGS: check
     nu scripts/release.nu {{FLAGS}}
 
-# Fuzz one target for five minutes (nightly toolchain, D54): just fuzz claude_line
+# Fuzz one target for five minutes (nightly toolchain): just fuzz claude_line
 fuzz target:
     cd fuzz && cargo +nightly fuzz run {{target}} -- -max_total_time=300 "$PWD/seeds/{{target}}"
 
-# Replay fuzz seeds plus truncated and bit-flipped variants on stable (D54).
+# Replay fuzz seeds plus truncated and bit-flipped variants on stable.
 fuzz-smoke:
     cd fuzz && cargo test --lib
 
@@ -52,6 +56,6 @@ fuzz-smoke:
 fuzz-seeds:
     nu scripts/fuzz-seeds.nu
 
-# Create the stable local code-signing certificate once (D51); --dry-run prints the commands.
+# Create the stable local code-signing certificate once; --dry-run prints the commands.
 signing-cert *args:
     nu scripts/signing-cert.nu {{args}}

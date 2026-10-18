@@ -1,4 +1,4 @@
-//! The menu-bar item (D29): icon, title and native menu.
+//! The menu-bar item: icon, title and native menu.
 //!
 //! The title text is computed by plain functions over [`TrayFigures`]; only [`install`] and
 //! [`refresh`] touch Tauri.
@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager as _, Wry};
 use tokenmtr_app::AppContext;
 use tokenmtr_config::MenubarTitle;
 use tokenmtr_core::Currency;
+use tokenmtr_core::brand::{CLI_NAME, DISPLAY_NAME};
 use tokenmtr_query::{Period, Selection};
 
 use crate::backend::actions;
@@ -21,7 +22,7 @@ use crate::request::{DashboardTarget, Route};
 use crate::state::Shell;
 use crate::windows;
 
-const TRAY_ID: &str = "tokenmtr";
+const TRAY_ID: &str = CLI_NAME;
 /// Monochrome template image (44x44, black on transparent; `tray-icon.py`): macOS tints it.
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray-icon@2x.png");
 const OPEN: &str = "open";
@@ -148,11 +149,23 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
-            &MenuItem::with_id(app, OPEN, "Open TokenMtr", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                OPEN,
+                format!("Open {DISPLAY_NAME}"),
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(app, SCAN, "Scan now", true, None::<&str>)?,
             &MenuItem::with_id(app, SETTINGS, "Settings", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, QUIT, "Quit TokenMtr", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                QUIT,
+                format!("Quit {DISPLAY_NAME}"),
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
     let builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -160,7 +173,7 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .icon_as_template(true)
-        .tooltip("TokenMtr")
+        .tooltip(DISPLAY_NAME)
         .on_menu_event(on_menu)
         .on_tray_icon_event(|tray, event| {
             tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);

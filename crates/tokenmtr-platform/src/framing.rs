@@ -1,4 +1,4 @@
-//! Newline-delimited framing for the control channel (D24).
+//! Newline-delimited framing for the control channel.
 //!
 //! Split a stream with `into_split()` and give each half to a [`LineReader`] / [`LineWriter`],
 //! so one task can read requests while another pushes events.

@@ -1,6 +1,6 @@
 //! A throw-away store for tests of this crate's consumers.
 //!
-//! There is deliberately no `StoreReader::open_in_memory`. The store requires WAL (D6), and WAL
+//! There is deliberately no `StoreReader::open_in_memory`. The store requires WAL, and WAL
 //! needs a real file: an in-memory database cannot use it, and a shared-cache in-memory database
 //! has table-level locks instead of snapshot reads, so it would not behave like the writer/reader
 //! pair of production (a reader would block, or be blocked by, the open write transaction).

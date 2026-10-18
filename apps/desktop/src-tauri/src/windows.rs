@@ -1,4 +1,4 @@
-//! The two windows (D29, D47): the recap popover under the tray icon, and the main window that
+//! The two windows: the recap popover under the tray icon, and the main window that
 //! exists only while it is open.
 
 use std::sync::{Arc, Mutex};
@@ -9,6 +9,7 @@ use tauri::{
     WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_positioner::{Position, WindowExt as _};
+use tokenmtr_core::brand::DISPLAY_NAME;
 
 use crate::push::NAVIGATE;
 use crate::request::DashboardTarget;
@@ -94,7 +95,7 @@ pub fn corner_position(monitor: Area, window: (f64, f64), scale: f64) -> (f64, f
 /// The webview cannot be created.
 pub fn create_recap(app: &AppHandle<Wry>, gate: Arc<Mutex<RecapGate>>) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, RECAP, WebviewUrl::App("tray.html".into()))
-        .title("TokenMtr recap")
+        .title(format!("{DISPLAY_NAME} recap"))
         .inner_size(RECAP_WIDTH, RECAP_HEIGHT)
         .resizable(false)
         .decorations(false)
@@ -203,7 +204,7 @@ pub fn show_main(app: &AppHandle<Wry>, target: &DashboardTarget) -> tauri::Resul
         MAIN,
         WebviewUrl::App(format!("index.html{}", target.fragment()).into()),
     )
-    .title("TokenMtr")
+    .title(DISPLAY_NAME)
     .inner_size(1100.0, 760.0)
     .min_inner_size(320.0, 480.0)
     .build()?;

@@ -1,4 +1,4 @@
-//! The `account` table: identity and detected plan per agent profile (D26).
+//! The `account` table: identity and detected plan per agent profile.
 
 use jiff::Timestamp;
 use rusqlite::{Connection, Row, named_params};

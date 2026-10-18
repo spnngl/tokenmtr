@@ -1,4 +1,4 @@
-//! The daemon's control channel (D24, D52): protocol v1 types, an async [`Client`] and a
+//! The daemon's control channel: protocol v1 types, an async [`Client`] and a
 //! [`Server`] building block.
 //!
 //! Messages are JSON objects, one per line, over the platform's control transport (a Unix domain
@@ -19,8 +19,9 @@ pub use client::{Client, DaemonInfo, Subscription};
 pub use error::ClientError;
 pub use protocol::{
     AgentScanSummary, BackupSummary, ClientInfo, DaemonStatus, Dataset, ErrorKind, Event,
-    ExportSummary, IssueKind, IssueList, IssueSummary, PROTOCOL_VERSION, QuotaProfileSummary,
-    QuotaSummary, Request, Response, ScanSummary, SinkExportSummary, SinkSummary, Task,
+    ExportSummary, IssueKind, IssueList, IssueSummary, PROTOCOL_VERSION, QuotaProfileStatus,
+    QuotaProfileSummary, QuotaSummary, RepriceSummary, Request, Response, ScanSummary,
+    SinkExportSummary, SinkSummary, Task,
 };
 pub use server::{EventBus, Handler, Server, ServerInfo, Shutdown, wait_shutdown};
 

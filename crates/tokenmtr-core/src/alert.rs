@@ -1,4 +1,4 @@
-//! Alert rules (D36): pure evaluation of what should fire, deduplicated by key.
+//! Alert rules: pure evaluation of what should fire, deduplicated by key.
 
 use std::collections::HashSet;
 
@@ -78,7 +78,7 @@ impl Default for AlertConfig {
 pub struct QuotaWindowStatus {
     /// The agent whose quota this is.
     pub agent: AgentId,
-    /// The profile whose quota this is (D30); each profile has its own windows.
+    /// The profile whose quota this is; each profile has its own windows.
     pub profile: ProfileId,
     /// The window.
     pub window: WindowId,
@@ -189,7 +189,7 @@ fn is_new_instance(resets_at: Option<Timestamp>, previous: Timestamp) -> bool {
     resets_at.is_none_or(|t| t.duration_since(previous).abs() > RESET_TOLERANCE)
 }
 
-/// The alerts that should fire now (D36), skipping dedup keys in `already_fired`.
+/// The alerts that should fire now, skipping dedup keys in `already_fired`.
 ///
 /// Each quota threshold fires once per agent, profile and window instance and again after the
 /// window resets (the instance, identified by the snapped `resets_at`, changes); budgets likewise per period; a sink alert once

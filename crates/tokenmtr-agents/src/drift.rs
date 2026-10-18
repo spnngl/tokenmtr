@@ -1,4 +1,4 @@
-//! Format drift (D42): per-scan counters and the issues parsers raise. Agent-neutral.
+//! Format drift: per-scan counters and the issues parsers raise. Agent-neutral.
 
 use std::collections::BTreeSet;
 
@@ -36,7 +36,7 @@ pub enum LineClass {
 /// Lines skipped, by reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct SkippedLines {
-    /// Dropped by the byte-needle pre-filter, never parsed (D48).
+    /// Dropped by the byte-needle pre-filter, never parsed.
     pub no_needle: u64,
     /// Parsed, but no usage event (see [`LineClass::NoUsage`]).
     pub no_usage: u64,
@@ -124,7 +124,7 @@ impl DriftStats {
             .extend(other.unknown_versions.iter().cloned());
     }
 
-    /// The per-file drift issue (D42): raised as soon as one known usage-bearing line fails to
+    /// The per-file drift issue: raised as soon as one known usage-bearing line fails to
     /// map. `sample` is the skeleton of the first unmappable line.
     #[must_use]
     pub fn unmapped_issue(&self, sample: Option<KeySkeleton>) -> Option<ParseIssue> {
@@ -138,7 +138,7 @@ impl DriftStats {
         })
     }
 
-    /// The per-scan drift issue (D42): failed usage-bearing lines above
+    /// The per-scan drift issue: failed usage-bearing lines above
     /// [`DRIFT_THRESHOLD_PERCENT`] of the usage-bearing lines. Call it on the counters of a whole
     /// scan, [`merge`](Self::merge)d over its files.
     #[must_use]
@@ -165,7 +165,7 @@ pub enum DriftReason {
     StatsCacheShape,
 }
 
-/// A problem worth showing in the UI. Never holds line content (D13, D42).
+/// A problem worth showing in the UI. Never holds line content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "issue", rename_all = "snake_case")]
 pub enum ParseIssue {
@@ -195,7 +195,7 @@ pub enum ParseIssue {
 /// What one [`AgentSource::parse`](crate::AgentSource::parse) call reports.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ParseOutcome {
-    /// Offset after the last complete line. A half-written last line stays before it (D15).
+    /// Offset after the last complete line. A half-written last line stays before it.
     pub new_offset: ByteOffset,
     /// The reader's [`LineScan::last_line_hash`]: the checkpoint hash at `new_offset`, taken from
     /// the bytes parsed.

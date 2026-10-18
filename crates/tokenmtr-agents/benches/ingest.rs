@@ -1,4 +1,4 @@
-//! Ingest benchmarks (Phase 6): cold scan, 1 MB append, parser throughput with and without the
+//! Ingest benchmarks: cold scan, 1 MB append, parser throughput with and without the
 //! line pre-filter, and `upsert_events`.
 //!
 //! The corpus is generated Claude transcripts. `TOKENMTR_BENCH_MB` sets its size (default 2, so
@@ -232,7 +232,7 @@ fn append_one_megabyte(bencher: Bencher<'_, '_>) {
         });
 }
 
-/// Parser throughput on the corpus, with and without the byte pre-filter (D48).
+/// Parser throughput on the corpus, with and without the byte pre-filter.
 #[divan::bench(args = [true, false], sample_count = 5, sample_size = 1)]
 fn parse_corpus(bencher: Bencher<'_, '_>, prefilter: bool) {
     let corpus = corpus();

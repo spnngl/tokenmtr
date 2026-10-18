@@ -7,7 +7,7 @@ use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use tokenmtr_core::{Subscription, UsageEvent};
 
-/// A position in one dataset's change log (D17): the per-dataset counter value a row got when it
+/// A position in one dataset's change log: the per-dataset counter value a row got when it
 /// was inserted or last changed. `Revision::ZERO` precedes every row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Revision(u64);
@@ -85,7 +85,7 @@ pub struct Versioned<T> {
 pub struct StoredEvent {
     /// The event as ingested.
     pub event: UsageEvent,
-    /// A stats-cache aggregate (D38) on a day transcript events now cover. Kept (D14) and
+    /// A stats-cache aggregate on a day transcript events now cover. Kept and
     /// exported with the flag; every query skips it, so the day is not counted twice.
     pub superseded: bool,
 }
@@ -96,7 +96,7 @@ pub struct StoredSubscription {
     /// The subscription as last seen in the config.
     pub subscription: Subscription,
     /// When it disappeared from the config; `None` while it is configured. A removed
-    /// subscription is kept and exported (D14) but bills nothing.
+    /// subscription is kept and exported but bills nothing.
     pub removed_at: Option<Timestamp>,
 }
 
@@ -119,7 +119,7 @@ impl UpsertStats {
     }
 }
 
-/// Rows past a cursor: what a sink still has to export (D41).
+/// Rows past a cursor: what a sink still has to export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pending {
     /// How many rows have a revision above the cursor.
@@ -128,7 +128,7 @@ pub struct Pending {
     pub oldest: Option<Timestamp>,
 }
 
-/// The 32 random bytes that key redaction hashes (D40). They live in `meta`, so\n/// every backup carries them: whoever holds a backup can recompute the hashes in an export..
+/// The 32 random bytes that key redaction hashes. They live in `meta`, so\n/// every backup carries them: whoever holds a backup can recompute the hashes in an export..
 #[derive(Clone, PartialEq, Eq)]
 pub struct RedactionKey([u8; 32]);
 
@@ -145,7 +145,7 @@ impl RedactionKey {
         &self.0
     }
 
-    /// The first 16 hex characters of the blake3 hash of `value` keyed with this key (D40).
+    /// The first 16 hex characters of the blake3 hash of `value` keyed with this key.
     /// Equal inputs give equal hashes, and without the key nobody can test hashes against a list
     /// of known values.
     #[must_use]

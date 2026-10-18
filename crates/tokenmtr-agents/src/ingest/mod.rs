@@ -1,4 +1,5 @@
-//! The ingest engine (D5, D14–D16, D47, D48): turns agent files into stored events.
+//! The ingest engine: turns agent files into stored events, incrementally, with each collector
+//! isolated from the others, and never deletes an event.
 //!
 //! One scan runs these steps:
 //!
@@ -10,7 +11,7 @@
 //! 4. **Write** on the calling thread, the single writer: resolve the project, price, upsert in
 //!    transactions of at most 5000 events, then advance the checkpoints of the files whose rows
 //!    committed. A crash between the two repeats a parse and writes identical rows.
-//! 5. **Import** Claude's stats cache for days before the first transcript event (D38).
+//! 5. **Import** Claude's stats cache for days before the first transcript event.
 //!
 //! Nothing here spawns `git` or edits agent files. Every per-file failure becomes a parse issue
 //! and the scan goes on.

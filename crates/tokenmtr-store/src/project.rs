@@ -1,4 +1,4 @@
-//! The `project_map` table: working directory to project resolution (D31).
+//! The `project_map` table: working directory to project resolution.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
@@ -97,7 +97,7 @@ pub(crate) fn save(conn: &Connection, resolution: &ProjectResolution) -> Result<
 
 /// Saves `resolutions` and points the events of each directory at its project and client.
 ///
-/// Only events whose `(project, client)` differ are rewritten; each gets its own revision (D17)
+/// Only events whose `(project, client)` differ are rewritten; each gets its own revision
 /// and the dataset counter moves once. Returns how many events changed.
 pub(crate) fn reassign(
     conn: &Connection,

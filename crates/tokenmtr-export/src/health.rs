@@ -1,4 +1,4 @@
-//! Sink health (D41), a pure function of the run history and what is still pending.
+//! Sink health, a pure function of the run history and what is still pending.
 //!
 //! The caller gathers the inputs: recent `sink_run` rows of the sink and, per dataset, the
 //! [`Pending`] rows past the sink's cursor from `StoreRead::pending`.

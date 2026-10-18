@@ -1,4 +1,4 @@
-//! Per-sink redaction (D40), applied between the batch query and the sink.
+//! Per-sink redaction, applied between the batch query and the sink.
 //!
 //! `hash` replaces a value by the first 16 hex characters of its blake3 hash keyed with the
 //! install's redaction key: equal inputs give equal hashes (grouping works), and without the key

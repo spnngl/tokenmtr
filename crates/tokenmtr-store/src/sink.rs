@@ -1,4 +1,4 @@
-//! Sink bookkeeping: export runs (D41) and per-dataset cursors (D17).
+//! Sink bookkeeping: export runs and per-dataset cursors.
 
 use jiff::Timestamp;
 use rusqlite::{Connection, OptionalExtension, named_params, params};
@@ -67,7 +67,7 @@ pub(crate) fn cursor(
     Ok(revision.unwrap_or(Revision::ZERO))
 }
 
-/// Sets the cursor. Moving it backwards re-delivers rows (D17), which sinks drop when they hold
+/// Sets the cursor. Moving it backwards re-delivers rows, which sinks drop when they hold
 /// them already; to rebuild a sink, also delete its output.
 pub(crate) fn set_cursor(
     conn: &Connection,

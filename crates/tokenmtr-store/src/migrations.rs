@@ -22,7 +22,7 @@ pub(crate) fn migrations() -> Migrations<'static> {
     ])
 }
 
-/// Seeds the identity rows in the same transaction as the schema (D30, D33).
+/// Seeds the identity rows in the same transaction as the schema.
 fn seed_meta(tx: &Transaction<'_>) -> HookResult {
     tx.execute(
         "INSERT INTO meta (key, value) VALUES ('machine_id', ?1), ('redaction_key', randomblob(32))",

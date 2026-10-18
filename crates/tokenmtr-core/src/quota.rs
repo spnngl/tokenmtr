@@ -1,4 +1,4 @@
-//! Provider quota windows as observed by polling (D33).
+//! Provider quota windows as observed by polling.
 
 use jiff::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

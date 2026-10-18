@@ -1,4 +1,4 @@
-//! The one error type of the HTTP layer. It never carries request headers or bodies (D55).
+//! The one error type of the HTTP layer. It never carries request headers or bodies.
 
 /// Coarse class of a transport failure. Deliberately drops the underlying `reqwest` error, whose
 /// text can embed URLs.
@@ -42,7 +42,7 @@ pub enum RemoteError {
     #[error("invalid endpoint URL {0:?}")]
     BadUrl(String),
     /// A request URL is not on the allow-list: an [`crate::ALLOWED_HOSTS`] host over HTTPS, or a
-    /// loopback host (D13). Carries the host only.
+    /// loopback host. Carries the host only.
     #[error("host {0:?} is not allowed")]
     HostNotAllowed(String),
     /// Transport failure.
@@ -66,7 +66,7 @@ pub enum RemoteError {
 }
 
 /// Where and how a JSON document failed to parse. Keeps the category and position only: serde
-/// messages quote the offending value, which must not be echoed (D55).
+/// messages quote the offending value, which must not be echoed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct JsonPosition {
     category: serde_json::error::Category,

@@ -1,4 +1,4 @@
-//! D54 fuzz entry points: one function per parser of outside data, each fed arbitrary bytes and
+//! Fuzz entry points: one function per parser of outside data, each fed arbitrary bytes and
 //! required never to panic.
 //!
 //! `cargo-fuzz` (nightly) reaches them through the shims in `fuzz_targets/`; `cargo test --lib`

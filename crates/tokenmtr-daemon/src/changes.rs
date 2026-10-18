@@ -1,4 +1,4 @@
-//! Reacting to store writes (D47): notify subscribers, wake the sinks, evaluate alerts.
+//! Reacting to store writes: notify subscribers, wake the sinks, evaluate alerts.
 
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -19,7 +19,7 @@ pub(crate) fn std_duration(duration: SignedDuration) -> Duration {
 
 impl Ctx {
     /// Call after every store write: pushes `StoreChanged` when a head revision moved, wakes the
-    /// sinks that export what changed, and evaluates the alerts (D36). `budgets` asks for the
+    /// sinks that export what changed, and evaluates the alerts. `budgets` asks for the
     /// budget rules too; they query usage, so only ingest needs them.
     pub(crate) fn after_write(&self, budgets: bool) {
         match self.detect_changes() {

@@ -21,18 +21,18 @@ const PI_AGENT_DIR: &str = "PI_CODING_AGENT_DIR";
 pub struct IngestSettings {
     /// One collector per enabled agent, with its profiles.
     pub sources: Vec<AgentKind>,
-    /// `[[projects]]` rules, in match order (D31).
+    /// `[[projects]]` rules, in match order.
     pub rules: Vec<ProjectRule>,
-    /// `[pricing.overrides]` (D11).
+    /// `[pricing.overrides]`.
     pub overrides: Vec<Override>,
-    /// The display zone: stats-cache days sit at 12:00 in it (D38).
+    /// The display zone: stats-cache days sit at 12:00 in it.
     pub zone: TimeZone,
-    /// `import.claude_stats_cache` (D38).
+    /// `import.claude_stats_cache`.
     pub import_claude_stats_cache: bool,
-    /// macOS protected folders (D50): project resolution never reads cwds under them, and the
+    /// macOS protected folders: project resolution never reads cwds under them, and the
     /// doctor reports cwds and sinks under them.
     pub protected: Vec<Utf8PathBuf>,
-    /// `privacy.redact_paths` (D13): store keyed hashes instead of cwds and git branches.
+    /// `privacy.redact_paths`: store keyed hashes instead of cwds and git branches.
     pub redact_paths: bool,
 }
 

@@ -1,5 +1,5 @@
 //! OS integration: default locations, background service, control socket, secrets, thread
-//! priority and durable file writes. macOS is the only implemented platform (PLAN.md §4).
+//! priority and durable file writes. macOS is the only implemented platform.
 
 pub mod control;
 pub mod framing;
@@ -57,7 +57,7 @@ impl MacOs {
         }
     }
 
-    /// The concrete launchd service, for plist repair (D23), which is not part of
+    /// The concrete launchd service, for plist repair, which is not part of
     /// [`ServiceManager`].
     #[must_use]
     pub fn launchd(&self) -> &LaunchdService {

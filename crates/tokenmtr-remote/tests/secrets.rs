@@ -1,4 +1,4 @@
-//! D55: the OAuth token never reaches logs, `Debug` output or error strings.
+//! The OAuth token never reaches logs, `Debug` output or error strings.
 
 mod common;
 

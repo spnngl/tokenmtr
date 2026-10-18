@@ -1,4 +1,4 @@
-//! Key skeletons: a privacy-safe sample of a line the parser could not map (D42).
+//! Key skeletons: a privacy-safe sample of a line the parser could not map.
 
 use serde::Serialize;
 use serde_json::{Map, Value};

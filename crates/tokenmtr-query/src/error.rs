@@ -23,7 +23,7 @@ pub enum QueryError {
     /// Money arithmetic failed.
     #[error(transparent)]
     Money(#[from] MoneyError),
-    /// A EUR fee has to become USD but no FX rate is known (D27).
+    /// A EUR fee has to become USD but no FX rate is known.
     #[error("no FX rate to convert {date}")]
     NoFxRate {
         /// The day that needed a rate.

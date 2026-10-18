@@ -1,4 +1,4 @@
-//! pi collector (§5): profiles, session discovery and parsing.
+//! pi collector: profiles, session discovery and parsing.
 //!
 //! A session file is JSONL: a header line, then one entry per line. Entries form a tree through
 //! `id`/`parentId`, and a fork copies the entries of its parent under the same ids into a new
@@ -21,7 +21,7 @@ use crate::source::{ByteOffset, Profile, SourceFile};
 pub use header::{NEWEST_KNOWN_VERSION, SessionHeader};
 pub use line::{LineContext, UNATTRIBUTED_MODEL, parse_line};
 
-/// Lines without one of these are skipped unparsed (D48). Every line that yields output holds one:
+/// Lines without one of these are skipped unparsed. Every line that yields output holds one:
 /// usage blocks hold `usage`, tool calls `toolCall`, tool results `toolResult`, compaction
 /// signals `compaction`. The header line is read separately, so it needs none.
 const LINE_NEEDLES: &[&[u8]] = &[b"usage", b"toolCall", b"toolResult", b"compaction"];
@@ -44,7 +44,7 @@ impl PiSource {
         }
     }
 
-    /// Turns the line pre-filter off: every line is parsed. The output must not change (D48).
+    /// Turns the line pre-filter off: every line is parsed. The output must not change.
     #[must_use]
     pub fn without_prefilter(mut self) -> Self {
         self.needles = NeedleSet::all();
@@ -101,7 +101,7 @@ impl AgentSource for PiSource {
     /// the file whatever `start` is, so a resumed parse yields what a whole-file parse would.
     ///
     /// A header newer than [`NEWEST_KNOWN_VERSION`] adds a [`ParseIssue::UnknownVersion`] on every
-    /// call (D42) and is recorded in [`DriftStats::unknown_versions`]; the entries are still
+    /// call and is recorded in [`DriftStats::unknown_versions`]; the entries are still
     /// parsed, and drift detection tells whether they still map.
     fn parse(
         &self,

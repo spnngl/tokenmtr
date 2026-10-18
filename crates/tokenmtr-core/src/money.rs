@@ -1,4 +1,4 @@
-//! Money as integer micro-units (D7). No floats in sums.
+//! Money as integer micro-units. No floats in sums.
 
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -31,7 +31,7 @@ pub enum MoneyError {
     },
 }
 
-/// A currency we display. USD is the only stored one; EUR is derived (D27).
+/// A currency we display. USD is the only stored one; EUR is derived.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Currency {
@@ -90,7 +90,7 @@ macro_rules! micros_newtype {
                 round_to_i64(micros).map(Self)
             }
 
-            /// Converts a float amount in whole units (the pi boundary, D7), rounding half away
+            /// Converts a float amount in whole units (the pi boundary), rounding half away
             /// from zero.
             ///
             /// # Errors
@@ -153,7 +153,7 @@ impl EurPerUsd {
         Self::from_scaled(round_to_i64(scaled)?)
     }
 
-    /// Inverts the ECB quote (USD per 1 EUR, e.g. `1.0850`) into EUR per 1 USD (D27).
+    /// Inverts the ECB quote (USD per 1 EUR, e.g. `1.0850`) into EUR per 1 USD.
     ///
     /// # Errors
     ///

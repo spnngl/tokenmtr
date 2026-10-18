@@ -1,7 +1,7 @@
 //! The validated configuration: every value here is in a state the daemon can act on.
 //!
 //! Build it with [`Config::from_raw`] or the `load*` functions; fields are public for reading.
-//! Optional paths mean "use the platform default" (D21), which `tokenmtr-platform` resolves.
+//! Optional paths mean "use the platform default", which `tokenmtr-platform` resolves.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -33,7 +33,7 @@ impl Percent {
     }
 }
 
-/// `advisor.headroom` when unset (D35).
+/// `advisor.headroom` when unset.
 pub(crate) const DEFAULT_HEADROOM: Percent = Percent(80);
 
 impl TryFrom<u8> for Percent {
@@ -83,7 +83,7 @@ impl fmt::Display for ClientName {
     }
 }
 
-/// A column a sink may redact (D40).
+/// A column a sink may redact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RedactColumn {
@@ -101,7 +101,7 @@ pub enum RedactColumn {
     SessionId,
 }
 
-/// What redaction does to a column (D40).
+/// What redaction does to a column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RedactMode {
@@ -111,7 +111,7 @@ pub enum RedactMode {
     Drop,
 }
 
-/// File format of a file sink (D18).
+/// File format of a file sink.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FileFormat {
     /// Comma-separated values.
@@ -120,7 +120,7 @@ pub enum FileFormat {
     Jsonl,
 }
 
-/// How a file sink writes rows (D18).
+/// How a file sink writes rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileMode {
@@ -131,7 +131,7 @@ pub enum FileMode {
     Snapshot,
 }
 
-/// How a file sink splits files by row date (D18).
+/// How a file sink splits files by row date.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Partition {
@@ -158,7 +158,7 @@ pub enum SinkTarget {
 pub struct FileSink {
     /// File format.
     pub format: FileFormat,
-    /// Output directory; `None` is `<data_dir>/exports` (D21).
+    /// Output directory; `None` is `<data_dir>/exports`.
     pub dir: Option<Utf8PathBuf>,
     /// Append or snapshot.
     pub mode: FileMode,
@@ -169,7 +169,7 @@ pub struct FileSink {
 /// Settings of a SQLite sink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqliteSink {
-    /// Database file; `None` is `<data_dir>/exports/export.db` (D21).
+    /// Database file; `None` is `<data_dir>/exports/export.db`.
     pub path: Option<Utf8PathBuf>,
 }
 
@@ -178,11 +178,11 @@ pub struct SqliteSink {
 pub struct SinkConfig {
     /// Unique id.
     pub id: SinkId,
-    /// Minimum time between export runs (D47).
+    /// Minimum time between export runs.
     pub interval: SignedDuration,
     /// Exported datasets: non-empty, unique.
     pub datasets: Vec<Dataset>,
-    /// Per-column redaction (D40).
+    /// Per-column redaction.
     pub redact: BTreeMap<RedactColumn, RedactMode>,
     /// Kind-specific settings.
     pub target: SinkTarget,
@@ -199,7 +199,7 @@ pub enum ProfileLocation {
     ConfigDir(Utf8PathBuf),
 }
 
-/// A named group of an agent's roots with its own credentials (D30).
+/// A named group of an agent's roots with its own credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileConfig {
     /// Profile id, unique within its agent.
@@ -220,11 +220,11 @@ pub struct AgentConfig {
 /// `[machine]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachineConfig {
-    /// Display label; `None` is the host name (D30).
+    /// Display label; `None` is the host name.
     pub name: Option<String>,
 }
 
-/// The time zone that buckets days (D8).
+/// The time zone that buckets days.
 #[derive(Debug, Clone)]
 pub enum TimeZoneSetting {
     /// The system zone.
@@ -245,7 +245,7 @@ pub struct DisplayConfig {
 /// `[quota]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuotaConfig {
-    /// Whether the daemon polls quota (D26).
+    /// Whether the daemon polls quota.
     pub enabled: bool,
     /// Poll interval, at least one minute.
     pub interval: SignedDuration,
@@ -254,13 +254,13 @@ pub struct QuotaConfig {
 /// `[fx]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FxConfig {
-    /// Whether the daemon fetches ECB rates (D27).
+    /// Whether the daemon fetches ECB rates.
     pub enabled: bool,
     /// Rate that overrides the ECB entirely.
     pub fixed_eur_per_usd: Option<EurPerUsd>,
 }
 
-/// What the tray icon title shows (D29).
+/// What the tray icon title shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MenubarTitle {
@@ -283,9 +283,9 @@ pub struct MenubarConfig {
     pub agents: Vec<AgentId>,
     /// Tray title.
     pub title: MenubarTitle,
-    /// Global shortcut; `None` disables (D44). Parsed by the desktop shell.
+    /// Global shortcut; `None` disables. Parsed by the desktop shell.
     pub shortcut: Option<String>,
-    /// Window of the Live block (D58).
+    /// Window of the Live block.
     pub live_window: SignedDuration,
 }
 
@@ -294,21 +294,21 @@ pub struct MenubarConfig {
 pub struct AlertSettings {
     /// Rule inputs for `tokenmtr_core::evaluate_alerts`: thresholds sorted and unique.
     pub rules: AlertConfig,
-    /// Daemon heartbeat age after which the app raises `daemon_stale` (D36).
+    /// Daemon heartbeat age after which the app raises `daemon_stale`.
     pub daemon_stale_after: SignedDuration,
 }
 
 /// `[advisor]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdvisorConfig {
-    /// Maximum scaled utilization a recommended plan may reach (D35).
+    /// Maximum scaled utilization a recommended plan may reach.
     pub headroom: Percent,
 }
 
 /// `[backup]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackupConfig {
-    /// Whether the daemon backs up daily (D37).
+    /// Whether the daemon backs up daily.
     pub enabled: bool,
     /// Time between backups.
     pub interval: SignedDuration,
@@ -321,11 +321,11 @@ pub struct BackupConfig {
 /// `[import]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImportConfig {
-    /// Import Claude's stats cache on each scan (D38).
+    /// Import Claude's stats cache on each scan.
     pub claude_stats_cache: bool,
 }
 
-/// One `[[projects]]` rule (D31): the first rule whose glob matches a cwd names its project.
+/// One `[[projects]]` rule: the first rule whose glob matches a cwd names its project.
 #[derive(Debug, Clone)]
 pub struct ProjectRule {
     pub(crate) matcher: GlobMatcher,
@@ -362,7 +362,7 @@ pub struct BudgetScope {
     pub clients: Option<Vec<ClientName>>,
 }
 
-/// One `[[budgets]]` entry (D34): the core budget plus its filters.
+/// One `[[budgets]]` entry: the core budget plus its filters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BudgetEntry {
     /// Limit, period and measure.
@@ -374,7 +374,7 @@ pub struct BudgetEntry {
 /// `[pricing]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PricingConfig {
-    /// Whether the daemon refreshes the `LiteLLM` snapshot daily (D11).
+    /// Whether the daemon refreshes the `LiteLLM` snapshot daily.
     pub auto_update: bool,
     /// Prices that beat `LiteLLM`.
     pub overrides: Vec<Override>,
@@ -418,7 +418,7 @@ pub struct LoggingConfig {
 /// `[daemon]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DaemonConfig {
-    /// Safety-net full sweep interval (D16).
+    /// Safety-net full sweep interval.
     pub scan_interval: SignedDuration,
     /// Whether file system events trigger scans.
     pub watch: bool,
@@ -429,14 +429,14 @@ pub struct DaemonConfig {
 /// `[store]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoreConfig {
-    /// Store file; `None` is `<data_dir>/usage.db` (D21).
+    /// Store file; `None` is `<data_dir>/usage.db`.
     pub path: Option<Utf8PathBuf>,
 }
 
 /// `[privacy]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrivacyConfig {
-    /// Hash paths at ingest (D13).
+    /// Hash paths at ingest.
     pub redact_paths: bool,
 }
 
@@ -467,7 +467,7 @@ pub struct Config {
     pub budgets: Vec<BudgetEntry>,
     /// `[pricing]`.
     pub pricing: PricingConfig,
-    /// `[[subscriptions]]`: ids unique, none overlapping (D28).
+    /// `[[subscriptions]]`: ids unique, none overlapping.
     pub subscriptions: Vec<Subscription>,
     /// `[daemon]`.
     pub daemon: DaemonConfig,

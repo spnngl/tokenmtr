@@ -34,6 +34,7 @@ pub fn fast_timing() -> Timing {
             quiet: Duration::from_millis(100),
             max_wait: Duration::from_millis(500),
         },
+        root_poll: Duration::from_millis(100),
         event_coalesce: Duration::from_millis(300),
         reload_debounce: Duration::from_millis(100),
         min_slack: Duration::from_millis(50),

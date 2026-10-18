@@ -4,7 +4,6 @@
 pub mod advisor;
 pub mod alert;
 pub mod billing;
-pub mod brand;
 pub mod budget;
 pub mod dataset;
 pub mod event;
@@ -16,6 +15,9 @@ pub mod pricing;
 pub mod quota;
 #[cfg(test)]
 mod testing;
+
+/// Every product-name constant (the leaf crate `tokenmtr-brand`).
+pub use tokenmtr_brand as brand;
 
 pub use advisor::{Advice, PlanFit, Recommendation, Verdict, advise};
 pub use alert::{Alert, AlertConfig, AlertInputs, AlertKind, evaluate_alerts};

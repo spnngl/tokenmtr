@@ -1,10 +1,10 @@
-//! `SQLite` sink (D39): one table per dataset, queryable with `sqlite3`, `DuckDB` or Datasette.
+//! `SQLite` sink: one table per dataset, queryable with `sqlite3`, `DuckDB` or Datasette.
 //!
 //! Each batch is one transaction of `INSERT … ON CONFLICT(id) DO UPDATE … WHERE
 //! excluded.revision > revision`, so a row exists once, at its highest delivered revision, and
 //! redelivery is a no-op. The `_schema` table holds [`EXPORT_SCHEMA_VERSION`]; a file written by
 //! another version is refused rather than mixed. The connection uses `synchronous = FULL` and
-//! `fullfsync` so a committed batch survives power loss (D49), and the default rollback journal so
+//! `fullfsync` so a committed batch survives power loss, and the default rollback journal so
 //! the export stays a single file.
 
 use std::fs::{self, OpenOptions};
@@ -53,7 +53,7 @@ impl SqliteSink {
         if let Some(dir) = path.parent().filter(|d| !d.as_str().is_empty()) {
             fs::create_dir_all(dir).map_err(|e| SinkError::io("create", dir, e))?;
         }
-        // Touch the file first so a refused path reports `PermissionDenied` (D50), which
+        // Touch the file first so a refused path reports `PermissionDenied`, which
         // `SQLite` would flatten into "unable to open database file".
         let mut options = OpenOptions::new();
         options.append(true).create(true);

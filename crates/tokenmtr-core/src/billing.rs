@@ -1,4 +1,4 @@
-//! Subscriptions, billing mode and fee proration (D28), plus the plan catalog.
+//! Subscriptions, billing mode and fee proration, plus the plan catalog.
 
 use std::num::NonZeroU32;
 
@@ -98,7 +98,7 @@ pub struct SubscriptionSpec {
     pub end: Option<Date>,
 }
 
-/// A flat-fee plan covering some agents' traffic to one provider over a date range (D28).
+/// A flat-fee plan covering some agents' traffic to one provider over a date range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SubscriptionSpec")]
 pub struct Subscription {
@@ -219,7 +219,7 @@ impl Subscription {
 
     /// Whether this subscription covers the event: agent, profile (when narrowed), provider and
     /// date (`start ≤ day < end`, by the event's calendar date in `tz`, the display time zone
-    /// that buckets days and prorates fees, D8).
+    /// that buckets days and prorates fees).
     #[must_use]
     pub fn covers(&self, event: &UsageEvent, tz: &TimeZone) -> bool {
         self.agents.contains(&event.agent)
@@ -231,7 +231,7 @@ impl Subscription {
             && self.is_active_on(event.at.to_zoned(tz.clone()).date())
     }
 
-    /// Whether two subscriptions would both cover some event (a config error, D28).
+    /// Whether two subscriptions would both cover some event (a config error).
     #[must_use]
     pub fn overlaps(&self, other: &Self) -> bool {
         let shares_agent = self.agents.iter().any(|a| other.agents.contains(a));
@@ -264,7 +264,7 @@ pub fn find_overlap(subscriptions: &[Subscription]) -> Option<(&SubscriptionId, 
 }
 
 /// `subscription` when one covers the event (by its calendar date in `tz`), otherwise `api`
-/// (D28). With overlapping subscriptions, which is a config error, the first match wins.
+///. With overlapping subscriptions, which is a config error, the first match wins.
 #[must_use]
 pub fn billing_mode(
     event: &UsageEvent,
@@ -305,7 +305,7 @@ fn period_bounds(start: Date, period: BillingPeriod, day: Date) -> Option<(Date,
 }
 
 /// The fee charged for one day: `fee / days in the billing period containing the day`, rounded
-/// half away from zero (D28). Zero outside `start ≤ day < end`, so rounding can leave a period's
+/// half away from zero. Zero outside `start ≤ day < end`, so rounding can leave a period's
 /// days summing to within a few micros of the fee.
 #[must_use]
 pub fn prorated_fee(subscription: &Subscription, day: Date) -> Money {
@@ -386,7 +386,7 @@ pub struct PlanSpec {
     pub quota_multiplier: NonZeroU32,
 }
 
-/// The plan catalog (`pricing/plans.toml`): USD list prices and quota ratios (D28, D35).
+/// The plan catalog (`pricing/plans.toml`): USD list prices and quota ratios.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanCatalog {
     plans: Vec<PlanSpec>,
@@ -451,7 +451,7 @@ impl PlanCatalog {
         self.plans.iter().find(|p| p.plan == plan)
     }
 
-    /// The default subscription fee for a plan and period (D28), when the catalog has one.
+    /// The default subscription fee for a plan and period, when the catalog has one.
     #[must_use]
     pub fn default_fee(&self, plan: Plan, period: BillingPeriod) -> Option<Money> {
         let spec = self.get(plan)?;

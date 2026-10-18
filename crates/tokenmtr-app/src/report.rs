@@ -1,4 +1,4 @@
-//! Client reports (D46): the query results of one period mapped onto the report crate.
+//! Client reports: the query results of one period mapped onto the report crate.
 
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -197,7 +197,7 @@ fn report_input(
 
     let mut accounts: BTreeMap<(String, Option<String>), ProjectAcc> = BTreeMap::new();
     let mut collect = |filters: &Filters, subscription: Option<&str>| -> Result<(), AppError> {
-        for row in projects(reader, &ctx, filters)? {
+        for row in projects(reader, &ctx, filters)?.rows {
             let name = row
                 .name
                 .or(row.project)
@@ -278,6 +278,7 @@ fn model_inputs(
     filters: &Filters,
 ) -> Result<Vec<ModelInput>, AppError> {
     Ok(models(reader, ctx, filters)?
+        .rows
         .into_iter()
         .map(|row| ModelInput {
             model: row.model,

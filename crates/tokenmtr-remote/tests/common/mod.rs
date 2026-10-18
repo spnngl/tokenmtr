@@ -10,7 +10,7 @@ use wiremock::MockServer;
 
 pub type TestResult = Result<(), Box<dyn Error>>;
 
-/// The fake OAuth token every test uses; it must never show up in output (D55).
+/// The fake OAuth token every test uses; it must never show up in output.
 pub const FAKE_TOKEN: &str = "sk-ant-oat01-FAKE-TOKEN-0000000000000000";
 
 pub fn fixture(name: &str) -> Result<Vec<u8>, std::io::Error> {

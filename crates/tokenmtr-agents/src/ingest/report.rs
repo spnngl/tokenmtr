@@ -53,7 +53,7 @@ impl Upserts {
     }
 }
 
-/// What the stats-cache import did for an agent (D38).
+/// What the stats-cache import did for an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct AggregateScan {
     /// Aggregate events found in the files.
@@ -79,7 +79,7 @@ pub struct AgentScan {
     pub files_failed: u64,
     /// Bytes consumed by the parses.
     pub bytes_parsed: u64,
-    /// Parse counters, summed over the files (D42).
+    /// Parse counters, summed over the files.
     pub drift: DriftStats,
     /// Usage events written.
     pub events: Upserts,
@@ -157,7 +157,7 @@ impl AgentScan {
 pub struct ScanReport {
     /// One entry per scanned agent, in settings order.
     pub agents: Vec<AgentScan>,
-    /// Working directories whose project changed because a `[[projects]]` rule changed (D31).
+    /// Working directories whose project changed because a `[[projects]]` rule changed.
     pub cwds_reresolved: u64,
     /// Stored events that moved to another project or client because of that.
     pub events_reassigned: u64,

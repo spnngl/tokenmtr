@@ -46,7 +46,7 @@ pub struct Totals {
     pub cached_input_percent: f64,
     /// What cache reads saved against uncached input prices; absent without a pricing catalog.
     pub cache_savings_micros: Option<i64>,
-    /// API value of subscription-covered usage divided by the fees allocated to it (D28);
+    /// API value of subscription-covered usage divided by the fees allocated to it;
     /// absent when no subscription fee applies.
     pub roi: Option<f64>,
     /// Distinct sessions with traffic.
@@ -166,6 +166,17 @@ pub fn overview(
     })
 }
 
+/// The rows of one breakdown (models, projects, branches) and the currency of their money
+/// fields, serialized as `{ currency, rows }`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Breakdown<T> {
+    /// Currency of every `*_micros` field of the rows except `api_value_usd_micros`, as
+    /// [`Totals::currency`].
+    pub currency: Currency,
+    /// The rows, in the order the query documents.
+    pub rows: Vec<T>,
+}
+
 /// One model of the models screen.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ModelRow {
@@ -192,7 +203,7 @@ pub fn models(
     reader: &StoreReader,
     ctx: &QueryContext,
     filters: &Filters,
-) -> Result<Vec<ModelRow>, QueryError> {
+) -> Result<Breakdown<ModelRow>, QueryError> {
     let fetched = fetch(reader, ctx, filters, Dim::Model, Scope::All)?;
     let mut by_model: BTreeMap<String, Usage> = BTreeMap::new();
     for row in &fetched.rows {
@@ -232,7 +243,10 @@ pub fn models(
             .cmp(&a.usage.api_value_micros)
             .then_with(|| a.model.cmp(&b.model))
     });
-    Ok(rows)
+    Ok(Breakdown {
+        currency: ctx.currency(),
+        rows,
+    })
 }
 
 #[expect(clippy::cast_precision_loss, reason = "display ratio of micro amounts")]
@@ -240,7 +254,7 @@ fn ratio_signed(a: i64, b: i64) -> f64 {
     a as f64 / b as f64
 }
 
-/// One project (D31) of the projects screen.
+/// One project of the projects screen.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProjectRow {
     /// Project key; absent for events no rule or repository could place.
@@ -257,7 +271,7 @@ pub struct ProjectRow {
 }
 
 /// Projects of `filters`, biggest paid cost first. Paid cost is each project's share of the
-/// subscription fees by API value (D46).
+/// subscription fees by API value.
 ///
 /// # Errors
 ///
@@ -266,7 +280,7 @@ pub fn projects(
     reader: &StoreReader,
     ctx: &QueryContext,
     filters: &Filters,
-) -> Result<Vec<ProjectRow>, QueryError> {
+) -> Result<Breakdown<ProjectRow>, QueryError> {
     let fetched = fetch(reader, ctx, filters, Dim::Project, Scope::All)?;
     let mut by_key: BTreeMap<(Option<String>, Option<String>), Usage> = BTreeMap::new();
     for row in &fetched.rows {
@@ -301,7 +315,10 @@ pub fn projects(
             .then_with(|| b.usage.api_value_micros.cmp(&a.usage.api_value_micros))
             .then_with(|| a.project.cmp(&b.project))
     });
-    Ok(rows)
+    Ok(Breakdown {
+        currency: ctx.currency(),
+        rows,
+    })
 }
 
 /// One git branch of the insights screen.
@@ -323,7 +340,7 @@ pub fn branches(
     reader: &StoreReader,
     ctx: &QueryContext,
     filters: &Filters,
-) -> Result<Vec<BranchRow>, QueryError> {
+) -> Result<Breakdown<BranchRow>, QueryError> {
     let fetched = fetch(reader, ctx, filters, Dim::Branch, Scope::All)?;
     let mut by_branch: BTreeMap<Option<String>, Usage> = BTreeMap::new();
     for row in &fetched.rows {
@@ -339,10 +356,13 @@ pub fn branches(
             .cmp(&a.usage.api_value_micros)
             .then_with(|| a.branch.cmp(&b.branch))
     });
-    Ok(rows)
+    Ok(Breakdown {
+        currency: ctx.currency(),
+        rows,
+    })
 }
 
-/// A working directory no rule or repository could place into a project (D31).
+/// A working directory no rule or repository could place into a project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UnresolvedCwd {
     /// The directory.
@@ -406,7 +426,7 @@ pub struct SessionRow {
     pub project: Option<String>,
     /// Models used, sorted.
     pub models: Vec<String>,
-    /// Tool calls recorded for the session (D32).
+    /// Tool calls recorded for the session.
     pub tool_calls: u64,
     /// Tool calls that failed.
     pub tool_errors: u64,
@@ -440,7 +460,7 @@ struct SessionAcc {
     usage: Usage,
 }
 
-/// Sessions (real traffic, no daily aggregates, D38) of `filters`.
+/// Sessions (real traffic, no stats-cache daily aggregates) of `filters`.
 ///
 /// # Errors
 ///
@@ -724,8 +744,8 @@ pub struct Heatmap {
     pub cells: Vec<HeatCell>,
 }
 
-/// Activity by local weekday and hour (real traffic only, D38). DST hours that do not exist or
-/// repeat are counted where the local clock puts them.
+/// Activity by local weekday and hour (real traffic only, no stats-cache aggregates). DST hours
+/// that do not exist or repeat are counted where the local clock puts them.
 ///
 /// # Errors
 ///
@@ -780,7 +800,7 @@ pub struct ToolRow {
     pub sessions: u64,
 }
 
-/// Tool-call insights (D32).
+/// Tool-call insights.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ToolsReport {
     /// Per tool, most called first.
@@ -884,7 +904,7 @@ pub struct SessionCompactions {
     pub compactions: u64,
 }
 
-/// Error and compaction signals (D32).
+/// Error and compaction signals.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SignalsReport {
     /// Every local day of the range, zero-filled.

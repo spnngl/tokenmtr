@@ -16,19 +16,23 @@ use tokenmtr_remote::Endpoints;
 pub struct Timing {
     /// How often the heartbeat is written into the store.
     pub heartbeat: Duration,
-    /// Debounce of file events (D16).
+    /// Debounce of file events.
     pub watch: Debounce,
-    /// `StoreChanged` is pushed to subscribers at most this often (D47).
+    /// How often the watcher checks whether a missing agent root appeared, to start watching it.
+    /// It only wakes for this while some root is missing.
+    pub root_poll: Duration,
+    /// `StoreChanged` is pushed to subscribers at most this often.
     pub event_coalesce: Duration,
     /// A config file event triggers a reload this long after the first event.
     pub reload_debounce: Duration,
-    /// Smallest slack of a periodic job (D47: 10% of its period, at least this).
+    /// Smallest slack of a periodic job (10% of its period, at least this): jobs due within it
+    /// share one wakeup.
     pub min_slack: Duration,
     /// Longest wait between two attempts of a failing sink.
     pub export_retry_cap: Duration,
-    /// How often the price list is refreshed (D11).
+    /// How often the price list is refreshed.
     pub pricing_interval: Duration,
-    /// How often ECB rates are refreshed (D27).
+    /// How often ECB rates are refreshed.
     pub fx_interval: Duration,
     /// How long to wait before retrying a failed FX or price list download.
     pub network_retry: Duration,
@@ -44,6 +48,7 @@ impl Default for Timing {
         Self {
             heartbeat: Duration::from_secs(60),
             watch: Debounce::default(),
+            root_poll: Duration::from_secs(60),
             event_coalesce: Duration::from_secs(1),
             reload_debounce: Duration::from_millis(500),
             min_slack: Duration::from_secs(1),
@@ -61,11 +66,11 @@ impl Default for Timing {
 pub struct Settings {
     /// Platform directories.
     pub paths: Paths,
-    /// The config file; a missing file means the defaults (D21).
+    /// The config file; a missing file means the defaults.
     pub config_path: Utf8PathBuf,
     /// Where the control socket lives.
     pub transport: ControlTransport,
-    /// Where OAuth credentials come from (D26).
+    /// Where OAuth credentials come from.
     pub secrets: Arc<dyn SecretStore + Send + Sync>,
     /// The environment agents read their directories from.
     pub env: Arc<dyn Env + Send + Sync>,

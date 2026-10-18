@@ -1,4 +1,4 @@
-//! Alert evaluation (D36): gather the inputs, run the core rules, store and announce new alerts.
+//! Alert evaluation: gather the inputs, run the core rules, store and announce new alerts.
 
 use jiff::Timestamp;
 use tokenmtr_app::{budget_specs, query_context};

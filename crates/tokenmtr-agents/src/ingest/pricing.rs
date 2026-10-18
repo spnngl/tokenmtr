@@ -1,4 +1,4 @@
-//! Pricing of ingested events (D9–D11).
+//! Pricing of ingested events.
 //!
 //! - A cost the agent reported wins over any estimate, with one exception: pi writes
 //!   `cost.total = 0` for models it cannot price. A zero reported cost on an event with tokens is
@@ -8,7 +8,7 @@
 //!   inputs (tokens, model, provider, service tier) are unchanged and that version is a stored
 //!   snapshot. A new snapshot therefore prices only events that were unpriced. An estimate made by
 //!   an override carries the override's version, so editing or removing the override
-//!   re-estimates the events it priced (D11).
+//!   re-estimates the events it priced.
 //! - The store's active snapshot is used, except that the embedded one replaces it when it is
 //!   newer (an upgrade) or when the stored body no longer parses. Models the replaced snapshot
 //!   priced stay priced ([`carry_forward`]).
@@ -23,9 +23,14 @@ use tokenmtr_core::{
     Estimate, Override, ParsedEvent, PriceQuery, PriceSource, PricingCatalog, PricingVersion,
     UsageEvent, estimate,
 };
-use tokenmtr_store::{Store, StoreRead, StoredPricingSnapshot};
+use tokenmtr_store::{
+    RepriceCursor, RepriceEvent, RepriceScope, Repriced, Store, StoreRead, StoredPricingSnapshot,
+};
 
 use super::error::IngestError;
+
+/// Events re-estimated per write transaction.
+const REPRICE_PAGE: usize = 1000;
 
 /// The active snapshot, parsed once per version.
 struct Active {
@@ -52,15 +57,17 @@ impl Pricer {
     }
 
     /// Follows the store's active snapshot. A store without one, with an unreadable one, or
-    /// with one older than the snapshot embedded in the binary gets the embedded one (D11), so
+    /// with one older than the snapshot embedded in the binary gets the embedded one, so
     /// pricing works offline from the first scan.
+    ///
+    /// Each call reads only the active version; the body is loaded and parsed when it changed.
     pub fn refresh(&mut self, store: &mut Store, now: Timestamp) -> Result<(), IngestError> {
-        let stored = store.active_pricing_snapshot()?;
-        if let Some(snapshot) = &stored
-            && self.active.as_ref().map(|a| &a.version) == Some(&snapshot.version)
+        if let Some(version) = store.active_pricing_version()?
+            && self.active.as_ref().map(|a| &a.version) == Some(&version)
         {
             return Ok(());
         }
+        let stored = store.active_pricing_snapshot()?;
         let (version, catalog) = match stored {
             Some(snapshot) if !embedded_is_newer(&snapshot) => {
                 match PricingCatalog::parse(&snapshot.body) {
@@ -86,6 +93,61 @@ impl Pricer {
             snapshots,
         });
         Ok(())
+    }
+
+    /// Re-estimates the stored events of `scope` with the active snapshot and the overrides
+    ///, one write transaction per [`REPRICE_PAGE`] events; returns how many changed.
+    ///
+    /// An event the active snapshot cannot price keeps its estimate, and under
+    /// [`RepriceScope::All`] so does one already estimated from the active snapshot: the store
+    /// lacks the per-line surcharge inputs (fast mode, region, web searches), so re-estimating it
+    /// could only lose them.
+    ///
+    /// Ends with [`IngestError::Stopped`] before the next page once `stopped` returns true.
+    pub fn reprice(
+        &mut self,
+        store: &mut Store,
+        scope: RepriceScope,
+        now: Timestamp,
+        stopped: impl Fn() -> bool,
+    ) -> Result<u64, IngestError> {
+        self.refresh(store, now)?;
+        let Some(active) = &self.active else {
+            return Ok(0);
+        };
+        let price = |event: &RepriceEvent| {
+            if event
+                .estimate
+                .as_ref()
+                .is_some_and(|stored| stored.pricing_version == active.version)
+            {
+                return None;
+            }
+            let query = PriceQuery {
+                model: &event.model,
+                provider: event.provider.as_ref(),
+                tokens: &event.tokens,
+                service_tier: event.service_tier.as_deref(),
+                modifiers: None,
+            };
+            estimate(&query, &active.catalog, &self.overrides).map(|priced| Repriced {
+                estimate: priced.estimate,
+                approximate: priced.approximate,
+            })
+        };
+        let mut cursor = RepriceCursor::default();
+        let mut repriced = 0_u64;
+        loop {
+            if stopped() {
+                return Err(IngestError::Stopped);
+            }
+            let page = store.reprice(scope, cursor, REPRICE_PAGE, price)?;
+            repriced = repriced.saturating_add(page.repriced);
+            match page.next {
+                Some(next) => cursor = next,
+                None => return Ok(repriced),
+            }
+        }
     }
 
     /// Applies the zero-cost rule to `event` and returns its estimate: the stored one when the
@@ -181,7 +243,7 @@ fn same_inputs(stored: &UsageEvent, event: &ParsedEvent) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use tokenmtr_core::{ModelId, UsdMicros};
+    use tokenmtr_core::{AgentId, ModelId, UsdMicros};
     use tokenmtr_store::TempStore;
 
     use super::*;
@@ -262,6 +324,78 @@ mod tests {
             .unwrap();
         let catalog = pricer.price(&reader, &mut event).unwrap().unwrap();
         assert_ne!(catalog.usd, UsdMicros::new(1_000_000));
+    }
+
+    #[test]
+    fn reprice_estimates_unpriced_events_then_all_stale_estimates() {
+        let mut temp = TempStore::new().unwrap();
+        let machine = temp.store().machine_id();
+        let unpriced = parsed_event("a", "2026-03-01T00:00:00Z", 1000, 500);
+        let stale = Estimate {
+            usd: UsdMicros::new(7),
+            pricing_version: PricingVersion::of_body(b"old"),
+        };
+        let old = parsed_event("b", "2026-03-01T00:00:00Z", 1000, 500)
+            .into_usage_event(&machine, Some(stale.clone()));
+        temp.store_mut()
+            .upsert_events(&[unpriced.into_usage_event(&machine, None), old])
+            .unwrap();
+        let mut pricer = Pricer::new(Vec::new());
+        let store = temp.store_mut();
+        let now = Timestamp::UNIX_EPOCH;
+        assert_eq!(
+            pricer
+                .reprice(store, RepriceScope::Unpriced, now, || false)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            pricer
+                .reprice(store, RepriceScope::Unpriced, now, || false)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            pricer
+                .reprice(store, RepriceScope::All, now, || false)
+                .unwrap(),
+            1,
+            "only `b`"
+        );
+        assert_eq!(
+            pricer
+                .reprice(store, RepriceScope::All, now, || false)
+                .unwrap(),
+            0
+        );
+        let active = store.active_pricing_version().unwrap().unwrap();
+        let b = store
+            .usage_event_by_key(AgentId::CLAUDE, &"b".parse().unwrap())
+            .unwrap()
+            .unwrap()
+            .row;
+        let estimate = b.cost.estimated().unwrap();
+        assert_eq!(estimate.pricing_version, active);
+        assert_ne!(estimate.usd, stale.usd);
+    }
+
+    #[test]
+    fn refresh_follows_a_new_active_version() {
+        let mut temp = TempStore::new().unwrap();
+        let mut pricer = Pricer::new(Vec::new());
+        pricer
+            .refresh(temp.store_mut(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        let body = br#"{"tokenmtr-test-model": {"mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06}}"#;
+        let version = temp
+            .store_mut()
+            .put_pricing_snapshot(body, Timestamp::UNIX_EPOCH, Some("test"))
+            .unwrap();
+        pricer
+            .refresh(temp.store_mut(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        assert_eq!(pricer.active.as_ref().map(|a| &a.version), Some(&version));
+        assert!(pricer.active.as_ref().unwrap().snapshots.contains(&version));
     }
 
     #[test]

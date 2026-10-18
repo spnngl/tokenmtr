@@ -1,4 +1,4 @@
-//! Time series per day, week or month in the configured zone (D8, D47).
+//! Time series per day, week or month in the configured zone.
 
 use std::collections::BTreeMap;
 

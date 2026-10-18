@@ -1,4 +1,4 @@
-//! `tokenmtr service`: the launchd background service (D23).
+//! `tokenmtr service`: the launchd background service.
 
 use anyhow::{Context, bail};
 use camino::Utf8PathBuf;

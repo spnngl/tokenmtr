@@ -6,12 +6,12 @@ use tokenmtr_agents::ingest::{ScanPriority, ScanReport, ScanRequest};
 use tokenmtr_config::Config;
 use tokenmtr_control::{
     AgentScanSummary, BackupSummary, DaemonStatus, ErrorKind, ExportSummary, Handler, IssueKind,
-    IssueList, IssueSummary, QuotaSummary, Request, Response, ScanSummary, SinkExportSummary,
-    SinkSummary, Task,
+    IssueList, IssueSummary, QuotaSummary, RepriceSummary, Request, Response, ScanSummary,
+    SinkExportSummary, SinkSummary, Task,
 };
 use tokenmtr_core::SinkId;
 use tokenmtr_platform::ThreadPriority;
-use tokenmtr_store::{IssueKind as StoreIssueKind, SCHEMA_VERSION, StoreRead};
+use tokenmtr_store::{IssueKind as StoreIssueKind, RepriceScope, SCHEMA_VERSION, StoreRead};
 
 use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
@@ -77,6 +77,16 @@ impl ControlHandler {
                 Ok(Response::BackedUp(BackupSummary {
                     path: backup.path,
                     size_bytes: backup.size_bytes,
+                }))
+            }
+            Request::Reprice { all } => {
+                let scope = if all {
+                    RepriceScope::All
+                } else {
+                    RepriceScope::Unpriced
+                };
+                Ok(Response::Repriced(RepriceSummary {
+                    repriced: ctx.reprice_now(scope).await?,
                 }))
             }
             Request::RefreshQuota => Ok(Response::QuotaRefreshed(QuotaSummary {
@@ -192,7 +202,7 @@ fn scan_summary(report: &ScanReport) -> ScanSummary {
     }
 }
 
-/// The error answer for `error`: its class and a message free of credentials (D55).
+/// The error answer for `error`: its class and a message free of credentials.
 fn failure(error: &DaemonError) -> Response {
     let kind = match error {
         DaemonError::Disabled(_) => ErrorKind::Disabled,

@@ -1,8 +1,8 @@
-//! Claude `stats-cache.json` importer (D38): coarse per-day, per-model totals for days whose
+//! Claude `stats-cache.json` importer: coarse per-day, per-model totals for days whose
 //! transcripts Claude Code already deleted.
 //!
 //! The file format is not documented. The parser reads only the fields below and ignores the
-//! rest; a file or row that does not match is counted, never guessed at (D42).
+//! rest; a file or row that does not match is counted, never guessed at.
 //!
 //! ```json
 //! { "dailyModelTokens": [ { "date": "2025-10-01", "tokensByModel": { "<model>": 12345 } } ],
@@ -20,7 +20,7 @@ use tokenmtr_core::{
     TokenCounts,
 };
 
-/// The session every imported aggregate carries. Core requires a session; D38 asks for none.
+/// The session every imported aggregate carries. Core requires a session; aggregates have none.
 pub const AGGREGATE_SESSION: &str = "stats-cache";
 
 /// Outcome of reading one `stats-cache.json`.
@@ -87,7 +87,7 @@ impl Mix {
     }
 }
 
-/// Parses a `stats-cache.json` body. Each day becomes events at 12:00 in `zone` (D38).
+/// Parses a `stats-cache.json` body. Each day becomes events at 12:00 in `zone`.
 #[must_use]
 pub fn parse(body: &[u8], profile: &ProfileId, zone: &TimeZone) -> StatsCache {
     let Ok(root) = serde_json::from_slice::<Value>(body) else {

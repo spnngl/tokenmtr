@@ -1,7 +1,7 @@
-//! Claude quota polling and plan detection (D26).
+//! Claude quota polling and plan detection.
 //!
 //! One poll per Claude profile with its own credentials. Tokens are read inside a blocking task,
-//! live in [`ClaudeCredentials`] (a `SecretString`) and never reach a log line or an error (D55).
+//! live in [`ClaudeCredentials`] (a `SecretString`) and never reach a log line or an error.
 //! They are kept in memory until they expire or the server rejects them, so the Keychain is not
 //! read on every poll. Failed polls back off ([`ProfileRuntime::record`]).
 
@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use tokenmtr_config::{ProfileConfig, ProfileLocation};
-use tokenmtr_control::QuotaProfileSummary;
+use tokenmtr_control::{QuotaProfileStatus as Status, QuotaProfileSummary};
 use tokenmtr_core::alert::QuotaWindowStatus;
 use tokenmtr_core::forecast::RESET_TOLERANCE;
 use tokenmtr_core::{AgentId, ProfileId, QuotaWindow};
@@ -37,17 +37,13 @@ struct Polled {
     account: AccountInfo,
     /// `None` when the poll was skipped because the profile is backing off: nothing is stored.
     outcome: Option<QuotaOutcome>,
-    status: &'static str,
+    status: Status,
     /// The account to save when plan detection ran.
     detected: Option<AccountInfo>,
 }
 
 impl Polled {
-    fn without_windows(
-        profile: ProfileId,
-        outcome: Option<QuotaOutcome>,
-        status: &'static str,
-    ) -> Self {
+    fn without_windows(profile: ProfileId, outcome: Option<QuotaOutcome>, status: Status) -> Self {
         Self {
             profile,
             account: AccountInfo::default(),
@@ -150,7 +146,7 @@ impl Ctx {
             .map(|poll| QuotaProfileSummary {
                 agent: AgentId::CLAUDE,
                 profile: poll.profile.as_str().to_owned(),
-                status: poll.status.to_owned(),
+                status: poll.status,
             })
             .collect();
         self.blocking(ThreadPriority::Background, move |ctx| {
@@ -178,7 +174,7 @@ impl Ctx {
                 };
             }
             if state.not_before.is_some_and(|at| started < at) {
-                return Ok(Polled::without_windows(profile.id, None, "backoff"));
+                return Ok(Polled::without_windows(profile.id, None, Status::Backoff));
             }
             let fresh = state
                 .credentials
@@ -217,7 +213,7 @@ impl Ctx {
                     return Ok(Polled::without_windows(
                         profile.id,
                         Some(QuotaOutcome::Failed),
-                        "failed",
+                        Status::Failed,
                     ));
                 }
             }
@@ -232,7 +228,7 @@ impl Ctx {
             .map(|credentials| credentials.account().clone())
             .unwrap_or_default();
         let detected = match (&credentials, status) {
-            (Some(credentials), "ok") if self.account_is_stale(&profile.id) => {
+            (Some(credentials), Status::Ok) if self.account_is_stale(&profile.id) => {
                 match source.fetch_account(credentials).await {
                     Ok(info) => Some(info.or(account.clone())),
                     Err(error) => {
@@ -344,24 +340,24 @@ impl Ctx {
     }
 }
 
-/// The store outcome and the `refresh_quota` status string of a remote outcome. 403 and 429
+/// The store outcome and the `refresh_quota` status of a remote outcome. 403 and 429
 /// are stored as `failed`: the store and the app know no finer kinds, and neither proves the
 /// token is gone.
-fn store_outcome(outcome: Remote) -> (QuotaOutcome, &'static str) {
+fn store_outcome(outcome: Remote) -> (QuotaOutcome, Status) {
     match outcome {
-        Remote::Ok(snapshot) => (QuotaOutcome::Windows(snapshot.windows), "ok"),
-        Remote::TokenExpired => (QuotaOutcome::TokenExpired, "token_expired"),
-        Remote::SignedOut => (QuotaOutcome::SignedOut, "signed_out"),
-        Remote::Forbidden => (QuotaOutcome::Failed, "forbidden"),
-        Remote::RateLimited { .. } => (QuotaOutcome::Failed, "rate_limited"),
-        Remote::Malformed => (QuotaOutcome::Failed, "malformed"),
-        Remote::NetworkDown => (QuotaOutcome::Failed, "network_down"),
+        Remote::Ok(snapshot) => (QuotaOutcome::Windows(snapshot.windows), Status::Ok),
+        Remote::TokenExpired => (QuotaOutcome::TokenExpired, Status::TokenExpired),
+        Remote::SignedOut => (QuotaOutcome::SignedOut, Status::SignedOut),
+        Remote::Forbidden => (QuotaOutcome::Failed, Status::Forbidden),
+        Remote::RateLimited { .. } => (QuotaOutcome::Failed, Status::RateLimited),
+        Remote::Malformed => (QuotaOutcome::Failed, Status::Malformed),
+        Remote::NetworkDown => (QuotaOutcome::Failed, Status::NetworkDown),
     }
 }
 
 /// `resets_at`, or `previous` when both are known and within [`RESET_TOLERANCE`]: the API
 /// jitters the reset time between polls, and keeping the first value keeps the alert instance
-/// (D36) stable even when the jitter crosses a rounding boundary.
+/// stable even when the jitter crosses a rounding boundary.
 fn same_instance(resets_at: Option<Timestamp>, previous: Option<Timestamp>) -> Option<Timestamp> {
     match (resets_at, previous) {
         (Some(at), Some(previous)) if at.duration_since(previous).abs() <= RESET_TOLERANCE => {
@@ -388,7 +384,7 @@ fn claude_profiles(config: &tokenmtr_config::Config) -> Vec<ProfileConfig> {
         .unwrap_or_default()
 }
 
-/// Where a profile's OAuth credentials live (D26). Profiles with explicit roots only have no
+/// Where a profile's OAuth credentials live. Profiles with explicit roots only have no
 /// credentials of their own and are skipped before this.
 fn credential_location(
     paths: &tokenmtr_platform::Paths,

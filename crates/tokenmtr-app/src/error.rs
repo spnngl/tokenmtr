@@ -15,7 +15,7 @@ pub enum AppError {
     /// The config is missing, invalid or cannot be edited.
     #[error(transparent)]
     Config(#[from] ConfigError),
-    /// The store cannot be opened, restored or backed up. A newer schema (D52) lands here.
+    /// The store cannot be opened, restored or backed up. A newer schema lands here.
     #[error(transparent)]
     Store(#[from] StoreError),
     /// A query failed.
@@ -42,7 +42,7 @@ pub enum AppError {
         #[source]
         source: io::Error,
     },
-    /// The action needs the only writer (D1) gone, but the daemon answers on its socket.
+    /// The action needs the only writer gone, but the daemon answers on its socket.
     #[error("the daemon is running (control socket {socket}); stop it first")]
     DaemonRunning {
         /// The socket that accepted a connection.
@@ -51,7 +51,7 @@ pub enum AppError {
     /// A request value is out of range or does not name anything.
     #[error("{0}")]
     InvalidRequest(String),
-    /// An agent's own settings file cannot be updated (D53).
+    /// An agent's own settings file cannot be updated.
     #[error("{path}: {reason}")]
     AgentSettings {
         /// The settings file.

@@ -1,5 +1,5 @@
 //! Errors of the ingest engine. Per-file problems are not errors: they are recorded as issues and
-//! the scan goes on (D5). These end a scan.
+//! the scan goes on. These end a scan.
 
 use camino::Utf8PathBuf;
 use tokenmtr_core::{IdError, PricingError};
@@ -35,6 +35,10 @@ pub enum IngestError {
     /// A stored value is outside what this build understands (a schema drift).
     #[error("unexpected stored value: {0}")]
     Corrupt(String),
+    /// The stop flag was raised (daemon shutdown): the scan or the reprice ended between two
+    /// files or pages. Everything committed so far stays; the rest is redone next time.
+    #[error("stopped")]
+    Stopped,
     /// A test stopped the writer between the rows and the checkpoints.
     #[cfg(test)]
     #[error("simulated crash before the checkpoints")]

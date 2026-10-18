@@ -1,4 +1,4 @@
-//! The `usage_event` table: one row per billed LLM call (D12).
+//! The `usage_event` table: one row per billed LLM call.
 
 use std::sync::LazyLock;
 
@@ -74,7 +74,7 @@ const BY_KEY: &str = select!("WHERE agent = ?1 AND dedup_key = ?2");
 const BY_ID: &str = select!("WHERE event_id = ?1");
 const BY_CWD: &str = select!("WHERE cwd = ?1 AND id > ?2 ORDER BY id LIMIT ?3");
 
-/// Inserts or updates events by `(agent, dedup_key)`, last write wins (D12).
+/// Inserts or updates events by `(agent, dedup_key)`, last write wins.
 pub(crate) fn upsert(
     conn: &Connection,
     now: Timestamp,
@@ -165,7 +165,7 @@ pub(crate) fn by_cwd(
         .collect()
 }
 
-/// When the first event of `(agent, profile)` that is not a stats-cache aggregate happened (D38).
+/// When the first event of `(agent, profile)` that is not a stats-cache aggregate happened.
 pub(crate) fn earliest_transcript(
     conn: &Connection,
     agent: AgentId,
@@ -188,7 +188,7 @@ pub(crate) fn earliest_transcript(
 }
 
 /// Flags the stats-cache aggregates of `(agent, profile)` at or after `from` as superseded. Each
-/// newly flagged row gets its own revision (D17) and the dataset counter moves once. Returns how
+/// newly flagged row gets its own revision and the dataset counter moves once. Returns how
 /// many rows changed.
 pub(crate) fn supersede_aggregates_from(
     conn: &Connection,
@@ -257,10 +257,11 @@ fn decode_stored(row: &Row<'_>) -> Result<Versioned<StoredEvent>, StoreError> {
     })
 }
 
-fn decode(row: &Row<'_>) -> Result<Versioned<UsageEvent>, StoreError> {
+/// The estimate of a `usage_event` row: both cost columns set, or neither.
+pub(crate) fn decode_estimate(row: &Row<'_>) -> Result<Option<Estimate>, StoreError> {
     let estimated_usd: Option<i64> = row.get("cost_estimated_usd_micros")?;
     let pricing_version: Option<String> = row.get("pricing_version")?;
-    let estimate = match (estimated_usd, pricing_version) {
+    Ok(match (estimated_usd, pricing_version) {
         (Some(usd), Some(version)) => Some(Estimate {
             usd: UsdMicros::new(usd),
             pricing_version: PricingVersion::try_from(version).map_err(CodecError::from)?,
@@ -273,7 +274,11 @@ fn decode(row: &Row<'_>) -> Result<Versioned<UsageEvent>, StoreError> {
             }
             .into());
         }
-    };
+    })
+}
+
+fn decode(row: &Row<'_>) -> Result<Versioned<UsageEvent>, StoreError> {
+    let estimate = decode_estimate(row)?;
     let reported: Option<i64> = row.get("cost_reported_usd_micros")?;
     let cwd: Option<String> = row.get("cwd")?;
     let source_file: Option<i64> = row.get("source_file_id")?;

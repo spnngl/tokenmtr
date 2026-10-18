@@ -1,4 +1,4 @@
-//! The export schema (D19, D39): the one place that names every exported column.
+//! The export schema: the one place that names every exported column.
 //!
 //! CSV headers, JSONL keys, `SQLite` DDL and `docs/export-schema.md` are all generated from
 //! [`schema`]. A column added here appears everywhere; there is no second list to update.
@@ -10,7 +10,7 @@
 //! - [`DatasetSchema::partition_column`], when set, is a [`ColumnType::Timestamp`] or
 //!   [`ColumnType::Date`] column that never changes for a given id, so a row never moves between
 //!   partition files;
-//! - every redactable column is nullable: `drop` empties it (D40), which is an empty CSV field,
+//! - every redactable column is nullable: `drop` empties it, which is an empty CSV field,
 //!   JSON `null` and SQL `NULL` alike.
 
 use std::fmt::Write as _;
@@ -23,15 +23,15 @@ use tokenmtr_config::RedactColumn;
 use tokenmtr_store::{Dataset, Revision};
 
 /// Version of the export schema; written to the `SQLite` sink's `_schema` table and bumped on any
-/// column change (D19).
+/// column change.
 pub const EXPORT_SCHEMA_VERSION: u32 = 2;
 
 /// The fixed number of fractional digits of a [`ColumnType::Decimal`] column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scale {
-    /// Six digits: money (D7).
+    /// Six digits: money.
     Micros,
-    /// Nine digits: FX rates (D27).
+    /// Nine digits: FX rates.
     Nanos,
 }
 
@@ -114,7 +114,7 @@ pub struct Column {
     pub ty: ColumnType,
     /// Whether the value can be empty (CSV empty field, JSON `null`, SQL `NULL`).
     pub nullable: bool,
-    /// The D40 redaction name that applies to this column, when it is redactable.
+    /// The per-sink redaction name that applies to this column, when it is redactable.
     pub redact: Option<RedactColumn>,
     /// One-line meaning, shown in `docs/export-schema.md`.
     pub doc: &'static str,
@@ -265,7 +265,11 @@ static USAGE_EVENTS: [Column; 29] = [
         COUNT,
         "Reasoning tokens, when reported separately.",
     ),
-    col("total_tokens", COUNT, "Sum of all token columns."),
+    col(
+        "total_tokens",
+        COUNT,
+        "input_uncached + cache_read + cache_write_5m + cache_write_1h + output; reasoning is part of output.",
+    ),
     opt("cost_reported_usd", USD, "Cost the agent reported, in USD."),
     opt(
         "cost_estimated_usd",
@@ -411,7 +415,7 @@ static QUOTA_SNAPSHOTS: [Column; 12] = [
     col(
         "window_id",
         ColumnType::Text,
-        "Quota window id, e.g. `five_hour`; empty when the poll failed.",
+        "Quota window id, e.g. `five_hour`; `''` (never NULL) when the poll failed.",
     ),
     opt(
         "window_label",
@@ -622,7 +626,7 @@ pub fn schema_markdown() -> String {
     out
 }
 
-/// The config name of a redactable column (D40).
+/// The config name of a redactable column.
 #[must_use]
 pub const fn redact_name(column: RedactColumn) -> &'static str {
     match column {

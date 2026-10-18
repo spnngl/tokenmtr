@@ -1,4 +1,4 @@
-//! The `session_signal` table: API errors and compactions per session (D32).
+//! The `session_signal` table: API errors and compactions per session.
 
 use jiff::Timestamp;
 use rusqlite::{Connection, named_params};

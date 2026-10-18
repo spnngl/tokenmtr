@@ -1,4 +1,4 @@
-//! Claude account and plan detection (D26, D35). Holds non-secret fields only.
+//! Claude account and plan detection. Holds non-secret fields only.
 
 use serde::{Deserialize, Serialize};
 use tokenmtr_core::Plan;
@@ -80,7 +80,7 @@ struct ProfileOrganization {
     rate_limit_tier: Option<String>,
 }
 
-/// Why a profile body was rejected: category and position only, never the offending value (D55).
+/// Why a profile body was rejected: category and position only, never the offending value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("profile response is not the expected JSON ({0})")]
 pub struct ProfileParseError(JsonPosition);

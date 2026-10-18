@@ -1,4 +1,4 @@
-//! Plan advisor (D35): which subscription plan fits the observed quota usage.
+//! Plan advisor: which subscription plan fits the observed quota usage.
 
 use jiff::SignedDuration;
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,7 @@ pub enum Advice {
     Recommend(Recommendation),
 }
 
-/// Recommends a plan from the last 30 days of quota snapshots (D35).
+/// Recommends a plan from the last 30 days of quota snapshots.
 ///
 /// Each window kind's peak is rescaled from the `current` plan to every catalog plan by the ratio
 /// of their quota multipliers; the cheapest plan whose peaks are both within `headroom` percent

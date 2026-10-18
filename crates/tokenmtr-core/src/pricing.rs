@@ -1,4 +1,4 @@
-//! API-cost estimation from `LiteLLM`'s price list (D10, D11).
+//! API-cost estimation from `LiteLLM`'s price list.
 //!
 //! Rates are read through `rust_decimal`, never `f64`, and kept as integer pico-USD per token.
 //! Costs are summed in pico-USD and rounded once to micro-USD. Resolution follows `LiteLLM`'s own
@@ -108,7 +108,7 @@ pub enum PricingError {
     },
 }
 
-/// First 12 hex characters of a sha256 (D11): of a snapshot body, or of an override.
+/// First 12 hex characters of a sha256: of a snapshot body, or of an override.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "String")]
 pub struct PricingVersion(String);
@@ -267,7 +267,7 @@ struct Resolved {
 }
 
 impl Resolved {
-    /// Fills the cache rates `cache` lacks: Anthropic's multipliers for Claude (D11), else
+    /// Fills the cache rates `cache` lacks: Anthropic's multipliers for Claude, else
     /// `LiteLLM`'s fallback, recorded as guessed.
     fn new(input: u64, output: u64, reasoning: u64, cache: TierRates, claude: bool) -> Self {
         let (read, minutes, hour) = if claude {
@@ -622,7 +622,7 @@ impl Override {
     }
 
     /// The version stamped on the estimates it makes: a hash of the override itself, so editing
-    /// it changes the version and re-estimates the events it priced (D11).
+    /// it changes the version and re-estimates the events it priced.
     #[must_use]
     pub const fn version(&self) -> &PricingVersion {
         &self.version
@@ -690,7 +690,7 @@ pub struct PricingCatalog {
 }
 
 impl PricingCatalog {
-    /// Parses a `model_prices_and_context_window.json` body (D11). Entries that are not
+    /// Parses a `model_prices_and_context_window.json` body. Entries that are not
     /// `mode` `chat` or `responses`, or lack a base input/output rate, are dropped.
     ///
     /// # Errors
@@ -749,7 +749,7 @@ impl PricingCatalog {
         self.dropped_rates
     }
 
-    /// Validates a downloaded catalog before it replaces `previous`, the active one (D11): it
+    /// Validates a downloaded catalog before it replaces `previous`, the active one: it
     /// must price the anchor models (`claude-opus-4-7`, `claude-sonnet-4-5`, `gpt-5`) and at
     /// least half as many models as `previous`. Carried models count for neither.
     ///
@@ -774,7 +774,7 @@ impl PricingCatalog {
 }
 
 /// `body` plus every priced entry of `previous` that `body` lacks, marked with [`CARRIED_KEY`],
-/// so models `LiteLLM` drops stay priced (D11). `body` comes back unchanged when nothing is
+/// so models `LiteLLM` drops stay priced. `body` comes back unchanged when nothing is
 /// missing, so its version stays the hash of the download.
 ///
 /// # Errors
@@ -802,7 +802,7 @@ pub fn carry_forward(body: &[u8], previous: &[u8]) -> Result<Vec<u8>, PricingErr
     Ok(serde_json::to_vec(&entries)?)
 }
 
-/// First hit wins (D11): the exact id; `{provider}/{id}` (also under `LiteLLM`'s provider name);
+/// First hit wins: the exact id; `{provider}/{id}` (also under `LiteLLM`'s provider name);
 /// the id with its routing prefixes stripped one at a time; then the fully stripped id without a
 /// `-v1:0` version, without a `-YYYYMMDD` or `@YYYYMMDD` date, and as the Bedrock key
 /// `anthropic.{id}-v1:0`.
@@ -926,7 +926,7 @@ pub struct Priced {
 }
 
 /// Estimates the API cost of one event. Overrides win over `LiteLLM`, whose catalog wins over the
-/// legacy table. `None` means unpriced: no rate matched (never guess silently, D10).
+/// legacy table. `None` means unpriced: no rate matched (never guess silently).
 #[must_use]
 pub fn estimate(
     query: &PriceQuery<'_>,

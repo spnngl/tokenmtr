@@ -20,7 +20,7 @@ use crate::setup::Setup;
 
 /// Track and export coding-agent usage.
 #[derive(Debug, Parser)]
-#[command(name = "tokenmtr", version)]
+#[command(name = tokenmtr_core::brand::CLI_NAME, version)]
 struct Cli {
     /// Config file; defaults to the platform config location (or `TOKENMTR_CONFIG`).
     #[arg(long, global = true)]
@@ -44,12 +44,14 @@ enum Command {
     Alerts(read::AlertsArgs),
     /// Write a backup now, or list the backups.
     Backup(data::BackupArgs),
-    /// Replace the store with a backup (the daemon must not run).
+    /// Replace the store with a backup: stops the daemon, then restarts the service.
     Restore(data::RestoreArgs),
     /// Delete the store, its backups and the logs.
     Erase(data::EraseArgs),
     /// Ingest the agents' files now.
     Scan(data::ScanArgs),
+    /// Re-estimate stored events with the active pricing snapshot.
+    Reprice(data::RepriceArgs),
     /// Check the config, the store, the daemon and the agents' files.
     Doctor(system::DoctorArgs),
     /// Install, remove or inspect the background service.
@@ -82,6 +84,7 @@ fn main() -> anyhow::Result<()> {
         Command::Restore(args) => data::restore(&setup, args),
         Command::Erase(args) => data::erase(&setup, args),
         Command::Scan(args) => data::scan(&setup, args),
+        Command::Reprice(args) => data::reprice(&setup, args),
         Command::Doctor(args) => system::doctor(&setup, args),
         Command::Service(action) => service::service(&setup, action),
         Command::Quota(args) => read::quota(&setup, args),

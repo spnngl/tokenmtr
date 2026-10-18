@@ -1,6 +1,7 @@
 //! The state every daemon task shares, and the helpers around it.
 
 use std::collections::{BTreeSet, HashMap};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, RwLock};
 use std::time::Duration;
 
@@ -21,34 +22,33 @@ use crate::error::DaemonError;
 use crate::scheduler::Scheduler;
 use crate::settings::Settings;
 
-/// One unit of scheduled work (D47).
+/// One unit of scheduled work.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Job {
     /// Write the heartbeat into the store.
     Heartbeat,
-    /// Scan every agent file: the periodic sweep (D16).
+    /// Scan every agent file: the periodic sweep.
     Sweep,
-    /// Write a backup (D37).
+    /// Write a backup.
     Backup,
-    /// Poll Claude quota (D26).
+    /// Poll Claude quota.
     Quota,
-    /// Refresh ECB rates (D27).
+    /// Refresh ECB rates.
     Fx,
-    /// Refresh the price list (D11).
+    /// Refresh the price list.
     Pricing,
-    /// Export pending rows to one sink (D47).
+    /// Export pending rows to one sink.
     Export(SinkId),
-    /// Push coalesced `StoreChanged` events to subscribers (D47).
+    /// Push coalesced `StoreChanged` events to subscribers.
     Publish,
-    /// Reload the config file (D22).
+    /// Reload the config file.
     Reload,
 }
 
-/// The config in force and what was derived from it once.
+/// The config in force.
 #[derive(Debug)]
 pub(crate) struct Active {
     pub config: Config,
-    pub ingest: IngestSettings,
 }
 
 /// What the file watcher should watch.
@@ -108,17 +108,20 @@ pub(crate) struct Runtime {
 pub(crate) struct Ctx {
     pub settings: Settings,
     pub store_path: Utf8PathBuf,
-    /// The single writer (D1).
+    /// The single writer.
     pub store: Mutex<Store>,
     /// A second connection: queries, backups and head checks never wait for a write.
     pub reader: Mutex<StoreReader>,
     /// A third connection that only writes the heartbeat: a scan, export or backup holding
-    /// `store` for minutes never delays it, so the app does not see a stale daemon (D36).
+    /// `store` for minutes never delays it, so the app does not see a stale daemon.
     pub beat: Mutex<Store>,
     /// A fourth connection for sink exports: cursors and run history are written in short
     /// transactions, and the slow sink I/O between them never holds `store`.
     pub exports: Mutex<Store>,
     pub ingestor: Mutex<Ingestor>,
+    /// Shared with every ingestor; raised by `Daemon::shutdown` so a running scan or reprice
+    /// ends between two files or pages, within the shutdown grace.
+    pub stopping: Arc<AtomicBool>,
     pub sinks: Mutex<Vec<ConfiguredSink>>,
     pub active: RwLock<Arc<Active>>,
     pub run: Mutex<Runtime>,
@@ -142,7 +145,7 @@ impl Ctx {
         Arc::clone(&self.active.read().unwrap_or_else(PoisonError::into_inner))
     }
 
-    /// Slack of a periodic job (D47): 10% of its period, at least [`Timing::min_slack`].
+    /// Slack of a periodic job: 10% of its period, at least [`Timing::min_slack`].
     ///
     /// [`Timing::min_slack`]: crate::Timing::min_slack
     pub(crate) fn slack(&self, period: Duration) -> Duration {
@@ -177,7 +180,7 @@ impl Ctx {
     }
 
     /// Runs `work` on a blocking thread at `priority`, then puts the thread back to background
-    /// priority (D47).
+    /// priority.
     pub(crate) async fn blocking<T, F>(
         self: &Arc<Self>,
         priority: ThreadPriority,

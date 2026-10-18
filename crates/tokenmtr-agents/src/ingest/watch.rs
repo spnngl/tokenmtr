@@ -1,4 +1,4 @@
-//! File watching for the daemon (D16): raw `notify` events, our own debounce, a startup rescan.
+//! File watching for the daemon: raw `notify` events, our own debounce, a startup rescan.
 //!
 //! [`WatchCore`] holds all decisions and takes explicit instants, so tests drive it without a
 //! clock or a file system. The daemon's watcher task owns the OS watcher and feeds it.
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use camino::{Utf8Path, Utf8PathBuf};
 use notify::EventKind;
 
-/// A path is scanned this long after its last event (D16).
+/// A path is scanned this long after its last event.
 pub const QUIET: Duration = Duration::from_secs(2);
 
 /// A path that keeps changing is scanned at least this long after its first pending event, so a
@@ -149,7 +149,7 @@ pub struct WatchCore {
 }
 
 impl WatchCore {
-    /// A core that starts with a pending [`WatchBatch::Rescan`]: the startup rescan (D16).
+    /// A core that starts with a pending [`WatchBatch::Rescan`]: the startup rescan.
     #[must_use]
     pub fn new(timing: Debounce) -> Self {
         Self {

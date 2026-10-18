@@ -1,4 +1,4 @@
-//! The atomic write of one ingest flush (D15, D48).
+//! The atomic write of one ingest flush.
 //!
 //! A flush stores events, tool calls, signals, tool-result flags, parse-issue changes and file
 //! checkpoints together. Committing the checkpoints in the same transaction as the rows they

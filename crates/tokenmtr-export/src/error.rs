@@ -6,14 +6,14 @@ use camino::Utf8PathBuf;
 use tokenmtr_core::IdError;
 use tokenmtr_store::StoreError;
 
-/// Why a sink failed to deliver a batch. Recorded in `sink_run.error` and shown by D41 health.
+/// Why a sink failed to deliver a batch. Recorded in `sink_run.error` and shown by sink health.
 #[derive(Debug, thiserror::Error)]
 pub enum SinkError {
-    /// The OS refused access to a path: typically a macOS-protected folder (D50).
+    /// The OS refused access to a path: typically a macOS-protected folder.
     #[error(
         "access to {path} was refused; macOS protects Documents, Desktop, Downloads and cloud \
          folders: grant Full Disk Access or Files and Folders to the TokenMtr binary, or point \
-         the sink at a folder outside them (D50)"
+         the sink at a folder outside them"
     )]
     PermissionDenied {
         /// The refused path.
@@ -64,7 +64,7 @@ pub enum SinkError {
 }
 
 impl SinkError {
-    /// Classifies an I/O error, mapping `PermissionDenied` to its own variant (D50).
+    /// Classifies an I/O error, mapping `PermissionDenied` to its own variant.
     pub(crate) fn io(op: &'static str, path: &camino::Utf8Path, source: io::Error) -> Self {
         if source.kind() == io::ErrorKind::PermissionDenied {
             Self::PermissionDenied {

@@ -1,4 +1,5 @@
-//! Commands that change data: `scan`, `backup`, `restore`, `erase`, `config`, `doctor`.
+//! Commands that change data: `scan`, `reprice`, `backup`, `restore`, `erase`, `config`,
+//! `doctor`.
 
 mod common;
 
@@ -62,6 +63,39 @@ fn scan_ingests_the_agents_files_directly() -> TestResult {
     let reader = StoreReader::open(&home.store_path())?;
     // Two seeded events plus the scanned one.
     assert_eq!(reader.usage_events_after(Revision::ZERO, 100)?.len(), 3);
+    Ok(())
+}
+
+fn repriced(home: &Home, args: &[&str]) -> Result<u64, Box<dyn std::error::Error>> {
+    let output = home
+        .tokenmtr()
+        .args(["reprice", "--json"])
+        .args(args)
+        .output()?;
+    assert!(output.status.success(), "{output:?}");
+    let json: Value = serde_json::from_slice(&output.stdout)?;
+    Ok(json["repriced"].as_u64().ok_or("no `repriced` count")?)
+}
+
+#[test]
+fn reprice_estimates_once_then_has_nothing_left() -> TestResult {
+    let home = seeded()?;
+    repriced(&home, &[])?;
+    assert_eq!(
+        repriced(&home, &[])?,
+        0,
+        "every priceable event is estimated"
+    );
+    assert_eq!(
+        repriced(&home, &["--all"])?,
+        0,
+        "estimates follow the active snapshot"
+    );
+    home.tokenmtr()
+        .arg("reprice")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 events repriced"));
     Ok(())
 }
 

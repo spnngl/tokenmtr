@@ -1,4 +1,4 @@
-//! Claude quota polling (D26): `GET /api/oauth/usage` with the user's OAuth token.
+//! Claude quota polling: `GET /api/oauth/usage` with the user's OAuth token.
 
 use std::time::Duration;
 
@@ -27,7 +27,7 @@ pub enum QuotaOutcome {
     /// HTTP 200 with a body that parsed.
     Ok(QuotaSnapshot),
     /// The credentials' `expiresAt` has passed (no request sent), or HTTP 401: Claude Code must
-    /// refresh or re-login. This crate never refreshes (D26).
+    /// refresh or re-login. This crate never refreshes.
     TokenExpired,
     /// HTTP 403: the token is valid but may not read the usage (revoked scope, account type).
     Forbidden,
@@ -64,7 +64,7 @@ impl QuotaPoll {
 
 /// The `extra_usage` object (pay-as-you-go credits on top of a plan), as Claude reports it.
 /// Amounts are raw numbers: their unit is not documented (believed to be minor currency units,
-/// unverified), so D28's "paid cost" use must verify it first.
+/// unverified), so using them as the paid cost of a subscription must verify it first.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ExtraUsage {
     /// Whether extra usage is switched on for the account.
@@ -105,12 +105,12 @@ struct RawWindow {
 }
 
 /// Why a usage body was rejected. Carries the position and category only: serde messages quote
-/// the offending value, which must not be echoed (D55).
+/// the offending value, which must not be echoed.
 #[derive(Debug, thiserror::Error)]
 #[error("quota response is not the expected JSON ({0})")]
 pub struct QuotaParseError(JsonPosition);
 
-/// Parses one part of the response; a part of the wrong shape is logged (category only, D55)
+/// Parses one part of the response; a part of the wrong shape is logged (category only, no body)
 /// and dropped.
 fn part<T: serde::de::DeserializeOwned>(name: &str, raw: Option<serde_json::Value>) -> Option<T> {
     match serde_json::from_value(raw?) {
@@ -242,7 +242,7 @@ impl ClaudeQuota {
         }
     }
 
-    /// Fetches the account email and organization from `/api/oauth/profile` (D26, once a day)
+    /// Fetches the account email and organization from `/api/oauth/profile` (once a day)
     /// and merges them with the plan and tier already known from `credentials`.
     ///
     /// # Errors

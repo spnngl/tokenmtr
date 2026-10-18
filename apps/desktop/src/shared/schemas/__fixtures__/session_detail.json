@@ -83,5 +83,14 @@
       "is_error": null
     }
   ],
-  "signals": [["2026-05-03T12:40:11Z", "api_error"], ["2026-05-03T13:30:02Z", "compaction"]]
+  "signals": [
+    [
+      "2026-05-03T12:40:11Z",
+      "api_error"
+    ],
+    [
+      "2026-05-03T13:30:02Z",
+      "compaction"
+    ]
+  ]
 }

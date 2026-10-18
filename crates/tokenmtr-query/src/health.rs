@@ -1,4 +1,4 @@
-//! Operational state: sinks (D41), daemon, ingestion, parse issues, alerts, backups, FX rates.
+//! Operational state: sinks, daemon, ingestion, parse issues, alerts, backups, FX rates.
 
 use jiff::civil::Date;
 use jiff::{SignedDuration, Timestamp};
@@ -294,7 +294,7 @@ pub fn parse_issues(
     Ok(out)
 }
 
-/// A fired alert (D36).
+/// A fired alert.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AlertView {
     /// When it fired.
@@ -337,7 +337,7 @@ pub fn alerts(
     Ok(out)
 }
 
-/// One backup attempt (D37).
+/// One backup attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BackupView {
     /// Start.

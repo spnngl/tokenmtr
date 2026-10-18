@@ -1,4 +1,4 @@
-//! Reading Claude Code's OAuth credentials, read-only (D26, D55).
+//! Reading Claude Code's OAuth credentials, read-only.
 //!
 //! The daemon never refreshes or writes the token: Claude Code owns it. The access token lives
 //! only in a [`SecretString`]; no error here carries credential text.
@@ -25,10 +25,10 @@ const CONFIG_DIR_HASH_LEN: usize = 8;
 /// The Keychain service Claude Code uses when `CLAUDE_CONFIG_DIR` is set to `config_dir`:
 /// `Claude Code-credentials-<first 8 hex of sha256(config_dir)>`.
 ///
-/// Derived from Claude Code's behaviour as remembered, **not verified on a real install**
-/// (PLAN.md Phase 10 step 1): Claude Code ships as compiled bytecode, so the derivation cannot be
-/// read from the package, and no install with a custom config dir was at hand. The hash input is the path string exactly as the variable holds
-/// it (Claude Code also NFC-normalizes it, which only matters for non-ASCII paths). Override
+/// Derived from Claude Code's behaviour as remembered, **not verified on a real install**:
+/// Claude Code ships as compiled bytecode, so the derivation cannot be read from the package, and
+/// no install with a custom config dir was at hand. The hash input is the path string exactly as
+/// the variable holds it (Claude Code also NFC-normalizes it, which only matters for non-ASCII paths). Override
 /// with [`CredentialLocation::with_keychain_service`] when the real name differs.
 #[must_use]
 pub fn keychain_service_for_config_dir(config_dir: &Utf8Path) -> String {
@@ -64,7 +64,7 @@ pub struct CredentialLocation {
 }
 
 impl CredentialLocation {
-    /// The `default` profile (D26): Keychain `Claude Code-credentials`, then
+    /// The `default` profile: Keychain `Claude Code-credentials`, then
     /// `<home>/.claude/.credentials.json`.
     #[must_use]
     pub fn default_profile(home: &Utf8Path) -> Self {
@@ -80,7 +80,7 @@ impl CredentialLocation {
         }
     }
 
-    /// Any other profile (D26): `<config_dir>/.credentials.json`, then the Keychain item Claude
+    /// Any other profile: `<config_dir>/.credentials.json`, then the Keychain item Claude
     /// Code names after the config dir ([`keychain_service_for_config_dir`]).
     #[must_use]
     pub fn config_dir(config_dir: &Utf8Path) -> Self {

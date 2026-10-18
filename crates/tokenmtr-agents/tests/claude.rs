@@ -1,4 +1,4 @@
-//! Claude collector tests over the redacted fixtures in `fixtures/claude` (Phase 4 "Done when").
+//! Claude collector tests over the redacted fixtures in `fixtures/claude`.
 
 use std::fs;
 

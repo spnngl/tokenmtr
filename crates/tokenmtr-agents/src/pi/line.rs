@@ -1,5 +1,5 @@
-//! pi line parser (§5, D32, D48): borrowed, partial serde structs, as for Claude Code. Fields we
-//! do not read are skipped without allocating.
+//! pi line parser: borrowed, partial serde structs that read usage and tool metadata, never
+//! content, as for Claude Code. Fields we do not read are skipped without allocating.
 //!
 //! Usage hides in five places, and only the assistant one names its model:
 //!
@@ -313,10 +313,14 @@ fn map_event(
         output,
         reasoning: usage.reasoning.unwrap_or(0).min(output),
     };
-    let reported_cost = match usage.cost.as_ref().and_then(|cost| cost.total) {
+    let raw_cost = match usage.cost.as_ref().and_then(|cost| cost.total) {
         Some(total) => Some(UsdMicros::from_f64(total).ok()?),
         None => None,
     };
+    // A negative cost is a pi bug, not a refund: drop it, so the event is estimated and flagged
+    // approximate like a zero reported cost.
+    let negative_cost = raw_cost.is_some_and(|cost| cost < UsdMicros::ZERO);
+    let reported_cost = raw_cost.filter(|_| !negative_cost);
     if tokens == TokenCounts::default() && reported_cost.is_none_or(|cost| cost == UsdMicros::ZERO)
     {
         return Some(Mapping::Empty);
@@ -330,7 +334,7 @@ fn map_event(
     Some(Mapping::Event(Box::new(ParsedEvent {
         agent: AgentId::PI,
         profile: ctx.profile.clone(),
-        dedup_key: dedup_key(entry, source, &tokens, reported_cost)?,
+        dedup_key: dedup_key(entry, source, &tokens, raw_cost)?,
         at: at?,
         session: ctx.session.clone()?,
         parent_session: ctx.parent_session.clone(),
@@ -339,7 +343,7 @@ fn map_event(
         cwd: ctx.cwd.clone(),
         git_branch: None,
         source_file: ctx.source_file,
-        approximate: false,
+        approximate: negative_cost,
         provider: source
             .provider
             .filter(|provider| !provider.is_empty())
@@ -353,7 +357,7 @@ fn map_event(
     })))
 }
 
-/// The assistant `responseId`, else a key built from what pi never rewrites (D12): the entry
+/// The assistant `responseId`, else a key built from what pi never rewrites: the entry
 /// timestamp text, the event kind, provider, model, token counts and cost in micro-USD, joined
 /// with `|`.
 ///

@@ -1,4 +1,4 @@
-//! Wire types of control protocol v1 (D24, D52).
+//! Wire types of control protocol v1.
 //!
 //! Every message is one JSON object on one line. The `type` field names the variant. Requests go
 //! client → daemon; each gets exactly one [`Response`], except [`Request::Subscribe`], which is
@@ -53,6 +53,11 @@ pub enum Request {
     },
     /// Write a backup now.
     BackupNow,
+    /// Re-estimate stored events with the active pricing snapshot.
+    Reprice {
+        /// Every event instead of the unpriced ones only.
+        all: bool,
+    },
     /// Poll Claude quota now.
     RefreshQuota,
     /// Re-read the config file now.
@@ -61,7 +66,7 @@ pub enum Request {
     Issues,
     /// Start receiving [`Event`]s on this connection.
     Subscribe,
-    /// Stop the daemon gracefully, as SIGTERM does (D56). Answered before the daemon stops.
+    /// Stop the daemon gracefully, as SIGTERM does. Answered before the daemon stops.
     Shutdown,
 }
 
@@ -74,7 +79,7 @@ pub enum Event {
         /// Datasets with new rows, ascending.
         datasets: Vec<Dataset>,
     },
-    /// An alert was written for the first time (D36).
+    /// An alert was written for the first time.
     AlertFired {
         /// The alert.
         alert: Alert,
@@ -113,6 +118,8 @@ pub enum Response {
     Exported(ExportSummary),
     /// Answer to [`Request::BackupNow`].
     BackedUp(BackupSummary),
+    /// Answer to [`Request::Reprice`].
+    Repriced(RepriceSummary),
     /// Answer to [`Request::RefreshQuota`].
     QuotaRefreshed(QuotaSummary),
     /// Answer to [`Request::Reload`]: the new config is active.
@@ -132,7 +139,7 @@ pub enum Response {
     Error {
         /// Machine-readable class.
         kind: ErrorKind,
-        /// Human-readable cause; never contains credentials (D55).
+        /// Human-readable cause; never contains credentials.
         message: String,
     },
 }
@@ -256,6 +263,13 @@ pub struct BackupSummary {
     pub size_bytes: u64,
 }
 
+/// Result of a repricing pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepriceSummary {
+    /// Events whose estimate changed.
+    pub repriced: u64,
+}
+
 /// Result of a quota refresh.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuotaSummary {
@@ -270,8 +284,32 @@ pub struct QuotaProfileSummary {
     pub agent: AgentId,
     /// The profile id.
     pub profile: String,
-    /// `ok`, `signed_out`, `token_expired`, `malformed`, `network_down` or `failed`.
-    pub status: String,
+    /// What the poll found.
+    pub status: QuotaProfileStatus,
+}
+
+/// The outcome of one profile's quota poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaProfileStatus {
+    /// The windows were read and stored.
+    Ok,
+    /// No credentials were found.
+    SignedOut,
+    /// The token expired, locally or by a 401.
+    TokenExpired,
+    /// The server answered 403.
+    Forbidden,
+    /// The server answered 429.
+    RateLimited,
+    /// The answer did not parse.
+    Malformed,
+    /// The server could not be reached.
+    NetworkDown,
+    /// The credentials could not be read.
+    Failed,
+    /// Skipped: the profile waits after earlier failures; nothing was stored.
+    Backoff,
 }
 
 /// Open problems.
@@ -287,7 +325,7 @@ pub struct IssueList {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IssueKind {
-    /// A line shape the parser does not know (D42).
+    /// A line shape the parser does not know.
     FormatDrift,
     /// A log format version the parser does not know.
     UnknownVersion,

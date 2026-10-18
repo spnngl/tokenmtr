@@ -1,5 +1,6 @@
-//! Claude Code line parser (§5, D32, D48): borrowed, partial serde structs. Fields we do not
-//! read are skipped without allocating, so large tool outputs are scanned but never copied.
+//! Claude Code line parser: borrowed, partial serde structs that read usage and tool metadata,
+//! never content. Fields we do not read are skipped without allocating, so large tool outputs are
+//! scanned but never copied.
 
 use std::borrow::Cow;
 
@@ -291,7 +292,7 @@ fn modifiers(usage: &Usage<'_>) -> PriceModifiers {
     }
 }
 
-/// `"{message.id}|{requestId}"`, else `uuid` (D12).
+/// `"{message.id}|{requestId}"`, else `uuid`.
 fn dedup_key(line: &Line<'_>, message: &Message<'_>) -> Option<DedupKey> {
     let key = match message.id.as_deref().filter(|id| !id.is_empty()) {
         Some(id) => format!("{id}|{}", line.request_id.as_deref().unwrap_or_default()),

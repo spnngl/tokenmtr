@@ -1,4 +1,4 @@
-//! The single scheduler (D47): one task sleeping until the next deadline of any job.
+//! The single scheduler: one task sleeping until the next deadline of any job.
 //!
 //! There are no per-task interval tickers: an idle daemon wakes only for a deadline in the
 //! [`Timetable`], a control request or a file event. Jobs re-arm themselves when they finish.

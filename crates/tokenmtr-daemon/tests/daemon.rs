@@ -1,5 +1,5 @@
 //! The daemon in-process on temp dirs: ingest, sinks, control requests, push events, alerts,
-//! reload, shutdown (Phase 8 "Done when").
+//! reload, shutdown.
 
 mod common;
 
@@ -61,6 +61,36 @@ async fn appended_line_reaches_the_store_and_the_csv_sink() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_root_created_after_start_is_watched_without_waiting_for_the_sweep() -> TestResult {
+    let env = Env::new()?;
+    std::fs::remove_dir_all(env.home.join("pi"))?;
+    // No sweep during the test: only the watcher can find the new root.
+    let config = env
+        .config_text("")
+        .replace("scan_interval = \"2s\"", "scan_interval = \"1h\"");
+    std::fs::write(&env.config_path, config)?;
+    let daemon = env.start(fast_timing()).await?;
+    let mut client = env.client().await?;
+    // Let the startup rescan finish first, so it cannot be the one finding the file.
+    let started = std::time::Instant::now();
+    while client.status().await?.last_scan_at.is_none() {
+        assert!(started.elapsed() < FIVE_SECONDS, "no startup scan");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let log = env.pi_log();
+    std::fs::create_dir_all(log.parent().ok_or("no parent")?)?;
+    std::fs::write(&log, common::pi_session())?;
+    assert!(
+        eventually(FIVE_SECONDS, || env.usage_events() == 1).await,
+        "new root: {} events",
+        env.usage_events()
+    );
+    daemon.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn scan_now_and_backup_now_through_the_client() -> TestResult {
     let env = Env::new()?;
     seed_logs(&env)?;
@@ -73,6 +103,9 @@ async fn scan_now_and_backup_now_through_the_client() -> TestResult {
     assert!(backup.path.as_str().ends_with(".db.zst"), "{}", backup.path);
     assert!(backup.path.is_file());
     assert!(backup.size_bytes > 0);
+    // The scan priced every event it could; nothing is left for either pass.
+    assert_eq!(client.reprice(false).await?.repriced, 0);
+    assert_eq!(client.reprice(true).await?.repriced, 0);
 
     let status = client.status().await?;
     assert!(status.last_scan_at.is_some());

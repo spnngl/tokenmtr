@@ -1,5 +1,5 @@
-//! The exportable datasets (D17, Phase 7): one revision counter, one cursor per sink, one export
-//! table or file family each.
+//! The exportable datasets, which sinks pull by revision: one revision counter, one cursor per
+//! sink, one export table or file family each.
 
 use std::fmt;
 

@@ -1,8 +1,8 @@
-//! Backup and restore of the database file (D37, D49).
+//! Backup and restore of the database file.
 //!
 //! A backup is a consistent snapshot taken with `SQLite`'s online backup API, so it works while
 //! the daemon writes. The snapshot is checked with `PRAGMA integrity_check`, compressed with zstd
-//! and moved into place with the fsync dance of D49: write a temporary file next to the target,
+//! and moved into place with the macOS fsync dance: write a temporary file next to the target,
 //! `sync_all`, rename, sync the directory.
 
 use std::fs::{self, File};

@@ -1,4 +1,4 @@
-//! Exporting to sinks (D47): one event-driven job per sink, with backoff on failure.
+//! Exporting to sinks: one event-driven job per sink, with backoff on failure.
 
 use std::sync::Arc;
 use std::time::Duration;

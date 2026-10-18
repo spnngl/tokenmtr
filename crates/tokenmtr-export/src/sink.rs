@@ -1,4 +1,4 @@
-//! The sink abstraction (D4, D18, D39): what a sink receives, how one is configured and the enum
+//! The sink abstraction: what a sink receives, how one is configured and the enum
 //! that dispatches to the built-in kinds.
 
 use std::collections::BTreeMap;
@@ -16,7 +16,7 @@ use crate::file::FileSink;
 use crate::schema::ExportRow;
 use crate::sqlite::SqliteSink;
 
-/// File name of the default `SQLite` export inside the exports directory (D21).
+/// File name of the default `SQLite` export inside the exports directory.
 pub const DEFAULT_SQLITE_FILE: &str = "export.db";
 
 /// Rows of one dataset in ascending revision order, redacted and ready to deliver.
@@ -36,7 +36,7 @@ impl ExportBatch {
     }
 }
 
-/// Something that durably stores batches (D17).
+/// Something that durably stores batches.
 ///
 /// `write` is idempotent: delivering rows a sink already holds, at the same or a lower revision,
 /// changes nothing. It returns only after the rows are durable, because the caller advances the
@@ -87,18 +87,18 @@ pub enum Target {
 pub struct SinkSpec {
     /// Unique id.
     pub id: SinkId,
-    /// Minimum time between runs; health measures lag against it (D41).
+    /// Minimum time between runs; health measures lag against it.
     pub interval: SignedDuration,
     /// Datasets this sink receives, in delivery order.
     pub datasets: Vec<Dataset>,
-    /// Per-column redaction (D40).
+    /// Per-column redaction.
     pub redact: BTreeMap<RedactColumn, RedactMode>,
     /// Kind-specific settings.
     pub target: Target,
 }
 
 impl SinkSpec {
-    /// Resolves a config entry: unset directories and paths become `exports_dir` (D21).
+    /// Resolves a config entry: unset directories and paths become `exports_dir`.
     #[must_use]
     pub fn from_config(config: &SinkConfig, exports_dir: &Utf8Path) -> Self {
         let target = match &config.target {
@@ -125,7 +125,7 @@ impl SinkSpec {
     }
 }
 
-/// The built-in sinks (D4). A Postgres sink would add a variant (Phase 13).
+/// The built-in sinks. A Postgres sink would add a variant.
 #[derive(Debug)]
 pub enum SinkKind {
     /// CSV or JSONL files.
@@ -136,7 +136,7 @@ pub enum SinkKind {
 
 impl SinkKind {
     /// Builds the sink for a spec. Touches no disk: directories, files and connections are created
-    /// on the first write, so a refused path surfaces as a failed run (D41, D50).
+    /// on the first write, so a refused path surfaces as a failed run.
     #[must_use]
     pub fn new(spec: &SinkSpec) -> Self {
         match &spec.target {

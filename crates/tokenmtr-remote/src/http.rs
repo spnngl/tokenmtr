@@ -1,4 +1,4 @@
-//! The shared HTTP client, endpoint base URLs and conditional GET (D13).
+//! The shared HTTP client, endpoint base URLs and conditional GET.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -9,10 +9,17 @@ use reqwest::{Client, Response, StatusCode, Url};
 
 use crate::error::{NetworkKind, RemoteError};
 
-/// `User-Agent` of every request: `tokenmtr/<workspace version>`.
-pub const USER_AGENT: &str = concat!("tokenmtr/", env!("CARGO_PKG_VERSION"));
+/// `User-Agent` of every request: `<brand CLI name>/<workspace version>`, e.g. `tokenmtr/0.1.0`.
+#[must_use]
+pub fn user_agent() -> String {
+    format!(
+        "{}/{}",
+        tokenmtr_core::brand::CLI_NAME,
+        env!("CARGO_PKG_VERSION")
+    )
+}
 
-/// The only production hosts (D13).
+/// The only production hosts.
 pub const ALLOWED_HOSTS: [&str; 3] = [
     "api.anthropic.com",
     "www.ecb.europa.eu",
@@ -37,7 +44,7 @@ const MAX_REDIRECTS: usize = 5;
 /// [`RemoteError::ClientBuild`] if the TLS backend cannot initialise.
 pub fn build_client() -> Result<Client, RemoteError> {
     Client::builder()
-        .user_agent(USER_AGENT)
+        .user_agent(user_agent())
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
         .redirect(Policy::custom(|attempt| {
@@ -51,7 +58,7 @@ pub fn build_client() -> Result<Client, RemoteError> {
         .map_err(RemoteError::ClientBuild)
 }
 
-/// Whether a request may go to `url` (D13): an [`ALLOWED_HOSTS`] host over HTTPS, or a loopback
+/// Whether a request may go to `url`: an [`ALLOWED_HOSTS`] host over HTTPS, or a loopback
 /// host over any scheme (the mock servers of tests; loopback cannot leak anything off the
 /// machine).
 fn is_allowed(url: &Url) -> bool {
@@ -79,11 +86,11 @@ fn may_follow(previous: &[Url], next: &Url) -> bool {
 /// Base URLs of the three remote hosts. Tests point them at a mock server.
 #[derive(Debug, Clone)]
 pub struct Endpoints {
-    /// Host of `/api/oauth/usage` and `/api/oauth/profile` (D26).
+    /// Host of `/api/oauth/usage` and `/api/oauth/profile`.
     pub anthropic: Url,
-    /// Host of the `eurofxref-*.xml` files (D27).
+    /// Host of the `eurofxref-*.xml` files.
     pub ecb: Url,
-    /// Host of the `LiteLLM` price list (D11).
+    /// Host of the `LiteLLM` price list.
     pub github_raw: Url,
 }
 
@@ -255,7 +262,10 @@ mod tests {
 
     #[test]
     fn user_agent_carries_the_workspace_version() {
-        assert_eq!(USER_AGENT, concat!("tokenmtr/", env!("CARGO_PKG_VERSION")));
+        assert_eq!(
+            user_agent(),
+            concat!("tokenmtr/", env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]

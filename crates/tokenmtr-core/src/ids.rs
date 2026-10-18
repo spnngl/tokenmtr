@@ -172,7 +172,7 @@ impl AgentId {
     pub const CLAUDE: Self = Self("claude");
     /// pi.
     pub const PI: Self = Self("pi");
-    /// Every known agent. A new agent adds one entry here (D4).
+    /// Every known agent. A new agent adds one entry here.
     pub const KNOWN: &'static [Self] = &[Self::CLAUDE, Self::PI];
 
     /// The agent id as text.
@@ -219,7 +219,7 @@ impl<'de> Deserialize<'de> for AgentId {
     }
 }
 
-/// Random per-installation identifier (UUID, never nil) created on first run (D30).
+/// Random per-installation identifier (UUID, never nil) created on first run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "Uuid")]
 pub struct MachineId(Uuid);
@@ -277,7 +277,7 @@ impl SourceFileId {
 }
 
 /// Globally unique usage-event id: `blake3(machine_id ‖ agent ‖ 0x00 ‖ dedup_key)` truncated to
-/// 16 bytes (D30). The NUL separator keeps `("pi", "xfoo")` and `("pix", "foo")` apart.
+/// 16 bytes. The NUL separator keeps `("pi", "xfoo")` and `("pix", "foo")` apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EventId([u8; 16]);
 

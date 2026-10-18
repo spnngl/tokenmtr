@@ -1,4 +1,4 @@
-//! Spending budgets (D34).
+//! Spending budgets.
 
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,7 @@
 //! Starting and stopping the daemon, and the job runner.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use jiff::Timestamp;
@@ -48,7 +49,7 @@ impl Daemon {
     /// untouched), [`DaemonError::Config`] when the config is invalid; store and I/O failures
     /// otherwise.
     pub async fn start(settings: Settings) -> Result<Self, DaemonError> {
-        // Lock and bind first (D1), so a second daemon fails before it touches the store. On
+        // Lock and bind first, so a second daemon fails before it touches the store. On
         // error the listener drops, removing the socket and releasing the lock.
         let listener = settings.transport.bind().await?;
         let socket = settings.transport.socket_path().to_owned();
@@ -106,6 +107,7 @@ impl Daemon {
     /// [`Timing::shutdown_grace`]: crate::Timing::shutdown_grace
     pub async fn shutdown(mut self) -> Result<(), DaemonError> {
         let deadline = Instant::now() + self.ctx.settings.timing.shutdown_grace;
+        self.ctx.stopping.store(true, Ordering::Relaxed);
         self.stop.send_replace(true);
         let drained = tokio::time::timeout_at(deadline, async {
             while self.tasks.join_next().await.is_some() {}
@@ -141,12 +143,14 @@ async fn build(
     let path = store_path(&settings.paths, &config);
     let open_path = path.clone();
     let open_ingest = ingest.clone();
+    let stopping = Arc::new(AtomicBool::new(false));
+    let open_stopping = Arc::clone(&stopping);
     let (store, beat, exports, reader, ingestor) = tokio::task::spawn_blocking(move || {
         let store = Store::open(&open_path)?;
         let beat = Store::open(&open_path)?;
         let exports = Store::open(&open_path)?;
         let reader = StoreReader::open(&open_path)?;
-        let ingestor = Ingestor::open(open_ingest, &open_path)?;
+        let ingestor = Ingestor::open(open_ingest, &open_path)?.with_stop(open_stopping);
         Ok::<_, DaemonError>((store, beat, exports, reader, ingestor))
     })
     .await??;
@@ -164,8 +168,9 @@ async fn build(
         exports: Mutex::new(exports),
         reader: Mutex::new(reader),
         ingestor: Mutex::new(ingestor),
+        stopping,
         sinks: Mutex::new(sinks),
-        active: RwLock::new(Arc::new(Active { config, ingest })),
+        active: RwLock::new(Arc::new(Active { config })),
         run: Mutex::new(Runtime {
             config_bytes: seen,
             ..Runtime::default()

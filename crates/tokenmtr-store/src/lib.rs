@@ -6,7 +6,7 @@
 //! # Connections
 //!
 //! - [`Store`]: the one writer (daemon). WAL, `synchronous=NORMAL`, `fullfsync` and
-//!   `checkpoint_fullfsync` (D6, D49). Creates and migrates the file.
+//!   `checkpoint_fullfsync`. Creates and migrates the file.
 //! - [`StoreReader`]: read-only (`SQLITE_OPEN_READ_ONLY`, `query_only`). Never blocks the writer.
 //! - [`StoreRead`]: the reads both share (export batches, cursors, checkpoints, backup).
 //!
@@ -15,7 +15,7 @@
 //! `PRAGMA user_version` is the schema version; there is no copy in `meta`, so the two cannot
 //! disagree. It equals the number of applied migrations ([`SCHEMA_VERSION`]). Both connections
 //! refuse a file whose version is higher than this build's with [`StoreError::NewerSchema`] before
-//! touching it (D52); [`StoreReader`] also refuses a lower one ([`StoreError::OlderSchema`])
+//! touching it; [`StoreReader`] also refuses a lower one ([`StoreError::OlderSchema`])
 //! because only the writer migrates.
 //!
 //! # Time and money
@@ -24,8 +24,8 @@
 //!   [`jiff::Timestamp`], so they round-trip without loss. Civil dates (subscription bounds, FX
 //!   dates) are ISO-8601 text.
 //! - `usage_event.utc_day` is the only denormalised time column: a stored generated column
-//!   holding the UTC day (days since the epoch). It serves the FX lookup (D27, "strictly before the
-//!   event's UTC date") and UTC partitioning. Zone-aware day, week and month buckets (D8) are
+//!   holding the UTC day (days since the epoch). It serves the FX lookup ("strictly before the
+//!   event's UTC date") and UTC partitioning. Zone-aware day, week and month buckets are
 //!   computed at query time from `at_us` with the configured IANA zone. They are deliberately not
 //!   stored: a stored bucket would go stale when the user changes the zone.
 //! - Money is integer USD micros in `*_usd_micros` columns ([`tokenmtr_core::UsdMicros`]);
@@ -37,13 +37,13 @@
 //! Each exported dataset ([`Dataset`]) has one counter in `dataset_revision`. An upsert gives a
 //! row the next revision only when a value column differs from the stored row; rewriting identical
 //! data changes nothing and costs no revision. Revisions are unique per dataset and gap-free.
-//! Rows of exported datasets are never deleted (D14, D17 has no delete channel): stats-cache
-//! aggregates that transcripts cover are flagged `superseded` instead
+//! Rows of exported datasets are never deleted (events are kept forever, and sinks have no delete
+//! channel): stats-cache aggregates that transcripts cover are flagged `superseded` instead
 //! ([`Store::supersede_daily_aggregates_covered_by_transcripts`]) and subscriptions removed from
-//! config get `removed_at`. An exporter reads `revision > cursor ORDER BY revision LIMIT n` (D17) through
+//! config get `removed_at`. An exporter reads `revision > cursor ORDER BY revision LIMIT n` through
 //! [`StoreRead::usage_events_after`] and its siblings, then moves its cursor with
 //! [`Store::set_sink_cursor`]. `updated_at_us` records when the revision was assigned, which is
-//! what sink lag is measured from (D41).
+//! what sink lag is measured from.
 //!
 //! # Layout
 //!
@@ -95,7 +95,9 @@ pub use fx::{FxRateRow, FxSource};
 pub use ingest::{IngestWrite, IngestWriteReport, IssueUpdate, ToolResultFlag};
 pub use issue::{IssueKind, OpenParseIssue, ParseIssue};
 pub use migrations::SCHEMA_VERSION;
-pub use pricing::{RepriceCursor, RepricePage, Repriced, StoredPricingSnapshot, UnpricedEvent};
+pub use pricing::{
+    RepriceCursor, RepriceEvent, RepricePage, RepriceScope, Repriced, StoredPricingSnapshot,
+};
 pub use project::{ProjectResolution, ProjectSource};
 pub use quota::{QuotaOutcome, QuotaPoll, QuotaReading, QuotaSample, QuotaStatus};
 pub use runs::{BackupRun, IngestRun};

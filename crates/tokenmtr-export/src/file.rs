@@ -1,4 +1,4 @@
-//! CSV and JSONL file sink (D18, D49).
+//! CSV and JSONL file sink.
 //!
 //! Files are named `<dataset>-<partition>.<csv|jsonl>`, e.g. `usage_events-2026-05.csv`, where
 //! the partition comes from the row's UTC date (`YYYY-MM`, `YYYY-MM-DD` or `all`).

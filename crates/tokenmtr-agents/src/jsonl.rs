@@ -1,9 +1,9 @@
-//! The shared line reader (D48): positioned reads into a reused buffer, `memchr` line splitting
+//! The shared line reader: positioned reads into a reused buffer, `memchr` line splitting
 //! and a byte-needle pre-filter. Any agent source built on JSONL files uses it.
 //!
 //! - Only complete lines (ending in `\n`) are handed out. A half-written last line is not
-//!   consumed: [`LineScan::new_offset`] stays before it (D15).
-//! - A line without any needle is skipped unparsed, but its bytes still count (D42).
+//!   consumed: [`LineScan::new_offset`] stays before it.
+//! - A line without any needle is skipped unparsed, but its bytes still count.
 //! - No `mmap`: a file truncated while mapped raises `SIGBUS`.
 
 use std::cell::RefCell;
@@ -23,7 +23,7 @@ pub const READ_BUFFER_BYTES: usize = 1 << 20;
 /// Lines longer than this are dropped unparsed and counted in [`LineScan::oversized`].
 pub const MAX_LINE_BYTES: usize = 128 << 20;
 
-/// The key text that makes a line usage-bearing for drift accounting (D42), in every agent.
+/// The key text that makes a line usage-bearing for drift accounting, in every agent.
 pub const USAGE_NEEDLE: &[u8] = b"usage";
 
 /// The last-line hash ([`line_hash`]) covers at most this many bytes; a longer line hashes its
@@ -34,7 +34,7 @@ pub const HASH_WINDOW: usize = 64 * 1024;
 /// precedes it (exclusive) to the end, so the line's own terminating `\n` is included. `None`
 /// for an empty window.
 ///
-/// Including the terminator makes the hash prove that the offset sits on a line boundary (D15).
+/// Including the terminator makes the hash prove that the offset sits on a line boundary.
 #[must_use]
 pub fn line_hash(window: &[u8]) -> Option<[u8; 32]> {
     let (_, body) = window.split_last()?;

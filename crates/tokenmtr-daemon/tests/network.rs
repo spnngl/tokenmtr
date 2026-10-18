@@ -59,14 +59,16 @@ fn sign_in(env: &Env) -> TestResult {
     Ok(())
 }
 
-/// Starts a daemon with quota polling on, polls once through the client, returns the status.
+/// Starts a daemon with quota polling on, polls once through the client, returns the status as
+/// it goes on the wire.
 async fn quota_status(env: &Env, base: &str) -> Result<String, Box<dyn std::error::Error>> {
     env.write_config_with(&["quota"], "")?;
     let daemon = tokenmtr_daemon::Daemon::start(settings_for(env, base)?).await?;
     let summary = env.client().await?.refresh_quota().await?;
     daemon.shutdown().await?;
     let profile = summary.profiles.first().ok_or("no profile polled")?;
-    Ok(profile.status.clone())
+    let wire = serde_json::to_value(profile.status)?;
+    Ok(wire.as_str().ok_or("status is not a string")?.to_owned())
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-//! SQL generated from the export schema (D39). Pure text; the Postgres sink reuses it.
+//! SQL generated from the export schema. Pure text; the Postgres sink reuses it.
 //!
 //! Identifiers are double-quoted because some column names (`end`, `plan`) are SQL keywords.
 //! Decimal columns are exact integers named with their unit ([`crate::schema::Column::sql_name`]).

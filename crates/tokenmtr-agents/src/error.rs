@@ -1,5 +1,5 @@
 //! Errors an agent source can return. Per-line problems are never errors: they become
-//! [`ParseIssue`](crate::ParseIssue)s and drift counters (D5, D42).
+//! [`ParseIssue`](crate::ParseIssue)s and drift counters.
 
 use camino::Utf8PathBuf;
 use tokenmtr_core::IdError;

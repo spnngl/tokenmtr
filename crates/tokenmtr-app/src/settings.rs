@@ -1,4 +1,4 @@
-//! Config → query inputs, and the file locations the config decides (D21, D37).
+//! Config → query inputs, and the file locations the config decides.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
@@ -17,7 +17,7 @@ use tokenmtr_store::StoreReader;
 
 use crate::error::AppError;
 
-/// Reads the config at `path`; a file that does not exist means the defaults (D21).
+/// Reads the config at `path`; a file that does not exist means the defaults.
 ///
 /// # Errors
 ///
@@ -31,7 +31,7 @@ pub fn load_config(path: &Utf8Path, env: &dyn Env) -> Result<Config, ConfigError
     }
 }
 
-/// The store file: `store.path`, else `usage.db` in the data directory (D21).
+/// The store file: `store.path`, else `usage.db` in the data directory.
 #[must_use]
 pub fn store_path(paths: &Paths, config: &Config) -> Utf8PathBuf {
     store_path_in(paths, Some(config))
@@ -44,7 +44,7 @@ pub(crate) fn store_path_in(paths: &Paths, config: Option<&Config>) -> Utf8PathB
         .unwrap_or_else(|| paths.data_dir().join("usage.db"))
 }
 
-/// Where backups go: `backup.dir`, else `backups` in the data directory (D37).
+/// Where backups go: `backup.dir`, else `backups` in the data directory.
 #[must_use]
 pub fn backup_dir(paths: &Paths, config: &Config) -> Utf8PathBuf {
     backup_dir_in(paths, Some(config))
@@ -57,7 +57,7 @@ pub(crate) fn backup_dir_in(paths: &Paths, config: Option<&Config>) -> Utf8PathB
         .unwrap_or_else(|| paths.data_dir().join("backups"))
 }
 
-/// The zone that buckets days (D8).
+/// The zone that buckets days.
 #[must_use]
 pub fn display_zone(config: &Config) -> TimeZone {
     match &config.display.timezone {
@@ -121,7 +121,7 @@ pub fn recap_config(config: &Config) -> RecapConfig {
 }
 
 /// The query context at `now`: the display zone, the config's currency (or `currency` when
-/// given), the FX policy (`fx.fixed_eur_per_usd` beats the stored ECB rates, D27) and the
+/// given), the FX policy (`fx.fixed_eur_per_usd` beats the stored ECB rates) and the
 /// subscriptions the store holds.
 ///
 /// # Errors
@@ -147,7 +147,7 @@ pub fn query_context(
     .with_subscriptions(load_subscriptions(reader)?))
 }
 
-/// Adds a `[[subscriptions]]` entry to the config file at `path`, keeping its comments (D28),
+/// Adds a `[[subscriptions]]` entry to the config file at `path`, keeping its comments,
 /// and returns the validated config. A file that does not exist yet starts empty.
 ///
 /// # Errors

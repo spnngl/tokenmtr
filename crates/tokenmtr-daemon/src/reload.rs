@@ -1,4 +1,4 @@
-//! Loading the config, applying a new one (D22) and arming the jobs it enables.
+//! Loading the config, applying a new one and arming the jobs it enables.
 
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
@@ -53,7 +53,7 @@ pub(crate) fn owns(settings: &IngestSettings, path: &Utf8Path) -> bool {
 }
 
 impl Ctx {
-    /// Reloads the config file (D22). An invalid file keeps the config in force and is recorded
+    /// Reloads the config file. An invalid file keeps the config in force and is recorded
     /// as the `config_error` of status and issues; a valid one replaces it everywhere. On
     /// [`ReloadCause::FileEvent`] a file whose bytes did not change since the last load is left
     /// alone, so an explicit reload followed by the watcher's does the work once.
@@ -86,14 +86,15 @@ impl Ctx {
         let config = load_config(&self.settings.config_path, &*self.settings.env)?;
         let ingest =
             IngestSettings::from_config(&config, &self.settings.paths, &*self.settings.env);
-        let ingestor = Ingestor::open(ingest.clone(), &self.store_path)?;
+        let ingestor =
+            Ingestor::open(ingest.clone(), &self.store_path)?.with_stop(Arc::clone(&self.stopping));
         let plan = watch_plan(&config, &ingest, &ingestor);
         let sinks = Self::build_sinks(&self.settings.paths, &config);
         let old = self.active();
         if store_path(&self.settings.paths, &config) != self.store_path {
             tracing::warn!("`store.path` changed: restart tokenmtr to use the new store");
         }
-        let new = Arc::new(Active { config, ingest });
+        let new = Arc::new(Active { config });
         {
             let mut current = lock(&self.ingestor);
             let mut exporters = lock(&self.sinks);
@@ -114,7 +115,7 @@ impl Ctx {
         Ok(())
     }
 
-    /// Writes the configured subscriptions (D35) into the store.
+    /// Writes the configured subscriptions into the store.
     pub(crate) fn sync_subscriptions(&self, config: &Config) {
         if let Err(error) = lock(&self.store).mirror_subscriptions(&config.subscriptions) {
             tracing::warn!(%error, "cannot store the subscriptions");
@@ -133,7 +134,7 @@ impl Ctx {
         if changed(sweep) {
             let period = std_duration(c.daemon.scan_interval);
             self.scheduler.cancel(Job::Sweep);
-            // The startup rescan is the watcher task's (D16); the sweep is the safety net.
+            // The startup rescan is the watcher task's; the sweep is the safety net.
             self.scheduler
                 .schedule_in(Job::Sweep, period, self.slack(period));
         }

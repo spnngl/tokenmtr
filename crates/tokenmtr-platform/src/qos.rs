@@ -1,4 +1,4 @@
-//! Per-thread priority (D47).
+//! Per-thread priority.
 
 use std::io;
 

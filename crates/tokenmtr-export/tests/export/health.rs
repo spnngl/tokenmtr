@@ -1,4 +1,4 @@
-//! Sink health states (D41) as a pure function.
+//! Sink health states as a pure function.
 
 use jiff::{SignedDuration, Timestamp};
 use tokenmtr_core::SinkId;

@@ -1,4 +1,4 @@
-//! What the app itself remembers between launches, in `app-state.json` (D36, D47).
+//! What the app itself remembers between launches, in `app-state.json`.
 //!
 //! Three typed values behind one small wrapper, so the rest of the shell never touches raw keys.
 

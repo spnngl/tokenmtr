@@ -1,4 +1,4 @@
-//! The `project_map` cache and re-resolution after a rule change (D31).
+//! The `project_map` cache and re-resolution after a rule change.
 //!
 //! A cwd is resolved once and stored. Changing a `[[projects]]` rule re-resolves the cwds whose
 //! stored answer no longer holds and rewrites the project and client of their events; the store
@@ -27,7 +27,7 @@ pub enum Reresolve {
     /// Those a rule change invalidated.
     Stale,
     /// Those, and every cwd that fell back to itself: a cwd that was missing or refused may be
-    /// readable now (D50). Once per process, so a daemon restart retries them.
+    /// readable now. Once per process, so a daemon restart retries them.
     StaleAndFallbacks,
     /// Every one (`scan --full`, "Retry").
     All,
@@ -36,7 +36,7 @@ pub enum Reresolve {
 /// Resolutions loaded from the store, extended as new cwds appear.
 pub struct ProjectCache {
     map: HashMap<Utf8PathBuf, ProjectResolution>,
-    /// Set under `privacy.redact_paths`: the key that replaces every stored path (D13).
+    /// Set under `privacy.redact_paths`: the key that replaces every stored path.
     redaction: Option<RedactionKey>,
 }
 

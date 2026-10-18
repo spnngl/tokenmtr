@@ -1,4 +1,4 @@
-//! [`Store`] methods of the pricing snapshots and repricing (D11), in a child module so they reach
+//! [`Store`] methods of the pricing snapshots and repricing, in a child module so they reach
 //! the store's connection and transaction helper.
 
 use std::collections::BTreeSet;
@@ -7,7 +7,7 @@ use tokenmtr_core::PricingVersion;
 
 use super::Store;
 use crate::error::StoreError;
-use crate::pricing::{self, RepriceCursor, RepricePage, Repriced, UnpricedEvent};
+use crate::pricing::{self, RepriceCursor, RepriceEvent, RepricePage, RepriceScope, Repriced};
 
 impl Store {
     /// Records `etag` as the HTTP `ETag` of the active snapshot, so a restarted daemon still asks
@@ -29,19 +29,23 @@ impl Store {
         pricing::versions(&self.conn)
     }
 
-    /// Estimates up to `limit` events after `cursor` that have neither a reported nor an
-    /// estimated cost, in one write transaction. Only the cost columns change, and only on rows
-    /// no other write touched meanwhile; each priced event gets a new revision (D17).
+    /// Re-estimates up to `limit` events of `scope` after `cursor`, in one write transaction.
+    /// `price` returns the new estimate, or `None` to leave the event alone; an estimate equal to
+    /// the stored one changes nothing. Only the cost columns change, and only on rows no other
+    /// write touched meanwhile; each changed event gets a new revision.
     ///
     /// # Errors
     ///
     /// `SQLite` failures, or a stored row that does not decode.
-    pub fn reprice_unpriced(
+    pub fn reprice(
         &mut self,
+        scope: RepriceScope,
         cursor: RepriceCursor,
         limit: usize,
-        mut price: impl FnMut(&UnpricedEvent) -> Option<Repriced>,
+        mut price: impl FnMut(&RepriceEvent) -> Option<Repriced>,
     ) -> Result<RepricePage, StoreError> {
-        self.in_transaction(|conn, now| pricing::reprice_page(conn, now, cursor, limit, &mut price))
+        self.in_transaction(|conn, now| {
+            pricing::reprice_page(conn, now, scope, cursor, limit, &mut price)
+        })
     }
 }

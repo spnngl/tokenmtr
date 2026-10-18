@@ -30,7 +30,7 @@ pub struct Diagnosis {
     pub daemon_running: bool,
     /// The background service: `not_installed`, `stopped`, `loaded` or `running`.
     pub service: Option<String>,
-    /// Folders macOS protects (D50): the daemon needs a grant to read or write inside them.
+    /// Folders macOS protects: the daemon needs a grant to read or write inside them.
     pub protected_folders: Vec<Utf8PathBuf>,
     /// Agent files, checkpoints, open issues and retention (needs a valid config and store).
     pub ingest: Option<DoctorReport>,
