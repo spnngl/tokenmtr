@@ -1,0 +1,13 @@
+---
+source: crates/tokenmtr-report/tests/report.rs
+expression: "render_csv(&Report::from_input(may()?)?)?"
+---
+section,name,client,sessions,tokens,api_value,paid,approximate,currency
+total,2026-05,,12,4500000,35.500000,105.500000,true,EUR
+project,alpha,Acme,,,25.500000,72.166667,true,EUR
+project,beta,,,,10.000000,33.333333,false,EUR
+model,claude-opus-4,,,1500000,25.500000,,true,EUR
+model,claude-sonnet-4,,,3000000,10.000000,,false,EUR
+day,2026-05-01,,,,12.000000,,false,EUR
+day,2026-05-02,,,,20.000000,,true,EUR
+day,2026-05-04,,,,3.500000,,false,EUR

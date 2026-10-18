@@ -1,0 +1,5 @@
+---
+source: crates/tokenmtr-export/tests/export/golden.rs
+expression: text
+---
+{"tool_call_id":"942b132edc576f56c7bd3b17ea8a601a","revision":7,"machine_id":"00000000-0000-0000-0000-000000000001","agent":"claude","profile":"default","session_id":"s1","event_id":null,"at_utc":"2026-05-01T10:00:00Z","tool_name":"search","mcp_server":"docs","is_error":false}

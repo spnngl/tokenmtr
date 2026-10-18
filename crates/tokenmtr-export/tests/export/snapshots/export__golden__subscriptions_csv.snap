@@ -1,0 +1,6 @@
+---
+source: crates/tokenmtr-export/tests/export/golden.rs
+expression: text
+---
+subscription_id,revision,machine_id,provider,plan,agents,profiles,fee,fee_currency,period,start,end
+claude-max,7,00000000-0000-0000-0000-000000000001,anthropic,max_5x,claude,default,100.000000,EUR,monthly,2026-01-15,

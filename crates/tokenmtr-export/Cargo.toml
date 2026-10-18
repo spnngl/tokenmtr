@@ -10,3 +10,22 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+tokenmtr-config.workspace = true
+tokenmtr-core.workspace = true
+tokenmtr-platform.workspace = true
+tokenmtr-store.workspace = true
+
+blake3.workspace = true
+camino.workspace = true
+csv.workspace = true
+jiff.workspace = true
+rusqlite.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile.workspace = true

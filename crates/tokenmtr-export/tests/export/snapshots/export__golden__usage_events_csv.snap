@@ -1,0 +1,7 @@
+---
+source: crates/tokenmtr-export/tests/export/golden.rs
+expression: text
+---
+event_id,revision,machine_id,agent,profile,provider,model,service_tier,session_id,parent_session_id,project,client,cwd,git_branch,at_utc,kind,approximate,input_uncached,cache_read,cache_write_5m,cache_write_1h,output,reasoning,total_tokens,cost_reported_usd,cost_estimated_usd,cost_source,pricing_version
+7e4e70fea2ca3cb97d3c79f382983666,7,00000000-0000-0000-0000-000000000001,claude,default,anthropic,claude-sonnet-4,standard,s1,,acme-api,Acme,/work/acme,feature/export,2026-05-01T10:00:00Z,message,false,100,2000,30,4,500,0,2634,1.500000,1.234567,reported,16a0eeb0791b
+aa03a2edb0482a33275984ad6236bc29,7,00000000-0000-0000-0000-000000000001,claude,default,anthropic,claude-sonnet-4,standard,s2,,,,,,2026-05-01T10:00:01.5Z,message,false,100,2000,30,4,500,0,2634,1.500000,1.234567,reported,16a0eeb0791b

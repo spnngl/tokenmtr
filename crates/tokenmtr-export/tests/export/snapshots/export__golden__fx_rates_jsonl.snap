@@ -1,0 +1,5 @@
+---
+source: crates/tokenmtr-export/tests/export/golden.rs
+expression: text
+---
+{"date":"2026-04-30","revision":7,"eur_per_usd":0.920500000,"source":"ecb"}

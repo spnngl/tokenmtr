@@ -1,0 +1,40 @@
+---
+source: crates/tokenmtr-report/tests/report.rs
+expression: "render_markdown(&Report::from_input(may()?)?)"
+---
+# Usage report 2026-05
+
+All projects · 2026-05-01 to 2026-05-31 · EUR
+
+| Total | |
+| --- | ---: |
+| API value | ~€35.50 |
+| Paid | ~€105.50 |
+| Sessions | 12 |
+| Tokens | 4500000 |
+
+## Projects
+
+| Project | Client | API value | Paid |
+| --- | --- | ---: | ---: |
+| alpha | Acme | ~€25.50 | ~€72.17 |
+| beta |  | €10.00 | €33.33 |
+
+## Models
+
+| Model | Tokens | API value |
+| --- | ---: | ---: |
+| claude-opus-4 | 1500000 | ~€25.50 |
+| claude-sonnet-4 | 3000000 | €10.00 |
+
+## Days
+
+| Day | API value |
+| --- | ---: |
+| 2026-05-01 | €12.00 |
+| 2026-05-02 | ~€20.00 |
+| 2026-05-04 | €3.50 |
+
+~ includes approximate events.
+
+Generated 2026-06-01T08:00:00Z.

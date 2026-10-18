@@ -1,0 +1,51 @@
+---
+source: crates/tokenmtr-report/tests/report.rs
+expression: "render_html(&Report::from_input(may()?)?)"
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Usage report 2026-05</title>
+<style>body{font:14px/1.45 -apple-system,system-ui,sans-serif;color:#1b1b1f;max-width:48rem;margin:2rem auto;padding:0 1rem}h1{font-size:1.6rem;margin:0 0 .25rem}h2{font-size:1.1rem;margin:2rem 0 .5rem}.meta,.note{color:#5b5b66}table{border-collapse:collapse;width:100%}th,td{padding:.3rem .5rem;border-bottom:1px solid #d8d8de;text-align:left}th{font-weight:600}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}@media print{body{margin:0;max-width:none}h2{break-after:avoid}tr{break-inside:avoid}}</style>
+</head>
+<body>
+<h1>Usage report 2026-05</h1>
+<p class="meta">All projects · 2026-05-01 to 2026-05-31 · EUR</p>
+<table>
+<tbody>
+<tr><th>API value</th><td class="n">~€35.50</td></tr>
+<tr><th>Paid</th><td class="n">~€105.50</td></tr>
+<tr><th>Sessions</th><td class="n">12</td></tr>
+<tr><th>Tokens</th><td class="n">4500000</td></tr>
+</tbody>
+</table>
+<h2>Projects</h2>
+<table>
+<thead><tr><th>Project</th><th>Client</th><th class="n">API value</th><th class="n">Paid</th></tr></thead>
+<tbody>
+<tr><td>alpha</td><td>Acme</td><td class="n">~€25.50</td><td class="n">~€72.17</td></tr>
+<tr><td>beta</td><td></td><td class="n">€10.00</td><td class="n">€33.33</td></tr>
+</tbody>
+</table>
+<h2>Models</h2>
+<table>
+<thead><tr><th>Model</th><th class="n">Tokens</th><th class="n">API value</th></tr></thead>
+<tbody>
+<tr><td>claude-opus-4</td><td class="n">1500000</td><td class="n">~€25.50</td></tr>
+<tr><td>claude-sonnet-4</td><td class="n">3000000</td><td class="n">€10.00</td></tr>
+</tbody>
+</table>
+<h2>Days</h2>
+<table>
+<thead><tr><th>Day</th><th class="n">API value</th></tr></thead>
+<tbody>
+<tr><td>2026-05-01</td><td class="n">€12.00</td></tr>
+<tr><td>2026-05-02</td><td class="n">~€20.00</td></tr>
+<tr><td>2026-05-04</td><td class="n">€3.50</td></tr>
+</tbody>
+</table>
+<p class="note">~ includes approximate events.</p>
+<p class="note">Generated 2026-06-01T08:00:00Z.</p>
+</body>
+</html>
