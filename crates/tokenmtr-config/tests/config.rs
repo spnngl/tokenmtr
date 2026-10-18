@@ -1,0 +1,518 @@
+//! Behavior of `tokenmtr-config`: the PLAN §6 example, every invalid case, comment-preserving
+//! edits and defaults.
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "clippy''s allow-*-in-tests covers #[test] functions, not the shared helpers"
+)]
+
+use camino::Utf8Path;
+use jiff::SignedDuration;
+use jiff::civil::date;
+use tokenmtr_config::{
+    ConfigDocument, ConfigError, ConfigFormat, FileFormat, LineCol, Partition, ProfileLocation,
+    RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
+};
+use tokenmtr_core::{
+    AgentId, BillingPeriod, Currency, EurMicros, Money, Plan, ProfileId, ProjectKey, ProviderId,
+    SubscriptionId, SubscriptionSpec, UsdMicros,
+};
+
+const EXAMPLE: &str = include_str!("fixtures/example.toml");
+const DOCS: &str = include_str!("../../../docs/config.md");
+
+fn env(key: &str) -> Option<String> {
+    (key == "HOME").then(|| "/home/u".to_owned())
+}
+
+fn parse(source: &str) -> Result<tokenmtr_config::Config, ConfigError> {
+    load_str(source, toml(), &env)
+}
+
+fn invalid(source: &str) -> (String, Violation, LineCol) {
+    match parse(source).unwrap_err() {
+        ConfigError::Invalid {
+            path,
+            violation,
+            at,
+        } => (path.to_string(), *violation, at.position.unwrap()),
+        other => panic!("expected a rule violation, got {other}"),
+    }
+}
+
+fn syntax(source: &str) -> (String, LineCol) {
+    match parse(source).unwrap_err() {
+        ConfigError::Syntax { at, message } => (message, at.position.unwrap()),
+        other => panic!("expected a syntax error, got {other}"),
+    }
+}
+
+fn toml() -> ConfigFormat {
+    ConfigFormat::from_path(Utf8Path::new("c.toml")).unwrap()
+}
+
+fn at(line: usize, column: usize) -> LineCol {
+    LineCol { line, column }
+}
+
+// -- the example and the docs ------------------------------------------------------------------
+
+#[test]
+fn docs_embed_the_example_verbatim() {
+    let block = DOCS
+        .split("```toml\n")
+        .nth(1)
+        .and_then(|rest| rest.split("```\n").next())
+        .unwrap();
+    assert_eq!(
+        block, EXAMPLE,
+        "docs/config.md drifted from tests/fixtures/example.toml"
+    );
+}
+
+#[test]
+fn the_example_parses() {
+    let config = parse(EXAMPLE).unwrap();
+
+    assert_eq!(config.display.currency, Currency::Usd);
+    assert!(matches!(config.display.timezone, TimeZoneSetting::System));
+    assert_eq!(config.quota.interval, SignedDuration::from_mins(5));
+    assert_eq!(config.menubar.agents, [AgentId::CLAUDE, AgentId::PI]);
+    assert_eq!(config.menubar.live_window, SignedDuration::from_mins(10));
+    assert_eq!(config.alerts.rules.quota_thresholds, [80, 95]);
+    assert_eq!(config.alerts.rules.budget_thresholds, [80, 100]);
+    assert_eq!(
+        config.alerts.daemon_stale_after,
+        SignedDuration::from_mins(15)
+    );
+    assert_eq!(config.advisor.headroom.get(), 80);
+    assert_eq!(config.backup.keep, 14);
+    assert_eq!(config.backup.interval, SignedDuration::from_hours(24));
+
+    let rule = &config.projects[0];
+    assert_eq!(rule.pattern(), "/home/u/work/acme-*/**");
+    assert!(rule.matches(Utf8Path::new("/home/u/work/acme-api/src/lib")));
+    assert!(!rule.matches(Utf8Path::new("/home/u/work/other/src")));
+    assert_eq!(rule.client.as_ref().unwrap().as_str(), "Acme Corp");
+
+    let budget = &config.budgets[0].budget;
+    assert_eq!(budget.amount(), Money::Eur(EurMicros::new(300_000_000)));
+
+    assert_eq!(config.pricing.overrides.len(), 1);
+
+    let subscription = &config.subscriptions[0];
+    assert_eq!(subscription.plan(), Plan::Max20x);
+    assert_eq!(subscription.fee(), Money::Usd(UsdMicros::new(200_000_000)));
+    assert_eq!(subscription.start(), date(2025, 6, 1));
+    assert_eq!(subscription.agents(), [AgentId::CLAUDE, AgentId::PI]);
+
+    let claude = &config.agents[&AgentId::CLAUDE];
+    assert!(claude.enabled);
+    assert_eq!(claude.profiles.len(), 1);
+    assert_eq!(claude.profiles[0].location, ProfileLocation::Default);
+
+    let sinks = &config.sinks;
+    assert_eq!(sinks.len(), 3);
+    assert!(matches!(
+        &sinks[0].target,
+        SinkTarget::File(f) if f.format == FileFormat::Csv && f.partition == Partition::Month
+    ));
+    assert!(matches!(&sinks[1].target, SinkTarget::Sqlite(s) if s.path.is_none()));
+    assert!(matches!(
+        &sinks[2].target,
+        SinkTarget::File(f)
+            if f.format == FileFormat::Jsonl
+                && f.dir.as_deref() == Some(Utf8Path::new("/home/u/Library/CloudStorage/Dropbox/tokenmtr"))
+    ));
+    assert_eq!(sinks[2].redact.len(), 2);
+    assert_eq!(sinks[0].datasets.len(), 5);
+}
+
+#[test]
+fn an_empty_file_is_the_default_config() {
+    let config = parse("").unwrap();
+
+    assert_eq!(config.display.currency, Currency::Usd);
+    assert!(config.quota.enabled);
+    assert_eq!(config.quota.interval, SignedDuration::from_mins(5));
+    assert_eq!(config.menubar.agents, [AgentId::CLAUDE, AgentId::PI]);
+    assert_eq!(
+        config.menubar.shortcut.as_deref(),
+        Some("Alt+CommandOrControl+U")
+    );
+    assert_eq!(config.alerts.rules, tokenmtr_core::AlertConfig::default());
+    assert_eq!(config.advisor.headroom.get(), 80);
+    assert_eq!(config.backup.keep, 14);
+    assert!(config.projects.is_empty() && config.budgets.is_empty());
+    assert!(config.subscriptions.is_empty() && config.sinks.is_empty());
+    assert!(config.pricing.auto_update);
+    assert!(!config.privacy.redact_paths);
+    assert!(config.store.path.is_none());
+    for agent in [AgentId::CLAUDE, AgentId::PI] {
+        let profiles = &config.agents[&agent].profiles;
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].id, ProfileId::default_profile());
+    }
+}
+
+#[test]
+fn fixed_rate_keeps_its_decimal_digits() {
+    let config = parse("[fx]\nfixed_eur_per_usd = 0.92\n").unwrap();
+    assert_eq!(config.fx.fixed_eur_per_usd.unwrap().scaled(), 920_000_000);
+}
+
+#[test]
+fn load_reads_a_file_and_names_it_in_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = Utf8Path::from_path(dir.path()).unwrap().join("config.toml");
+
+    std::fs::write(&path, "[display]\ncurrency = \"GBP\"\n").unwrap();
+    let error = load(&path).unwrap_err();
+    assert!(
+        error.to_string().starts_with(&format!("{path}:2:12:")),
+        "{error}"
+    );
+
+    std::fs::write(&path, EXAMPLE).unwrap();
+    assert!(load(&path).is_ok());
+
+    let other = path.with_extension("yaml");
+    assert!(matches!(
+        load(&other),
+        Err(ConfigError::UnsupportedFormat { .. })
+    ));
+}
+
+// -- invalid cases -----------------------------------------------------------------------------
+
+#[test]
+fn unknown_key_is_rejected() {
+    let (message, position) = syntax("schema_version = 1\n\n[display]\ncurrenci = \"USD\"\n");
+    assert!(message.contains("unknown field `currenci`"), "{message}");
+    assert_eq!(position, at(4, 1));
+}
+
+#[test]
+fn bad_duration_is_rejected() {
+    let (message, position) = syntax("[quota]\ninterval = \"5x\"\n");
+    assert!(message.contains("unknown duration unit"), "{message}");
+    assert_eq!(position, at(2, 12));
+}
+
+#[test]
+fn quota_interval_below_a_minute_is_rejected() {
+    let (path, violation, position) = invalid("[quota]\ninterval = \"30s\"\n");
+    assert_eq!(path, "quota.interval");
+    assert!(matches!(violation, Violation::IntervalTooShort { .. }));
+    assert_eq!(position, at(2, 12));
+}
+
+#[test]
+fn duplicate_sink_id_is_rejected() {
+    let source =
+        "[[sinks]]\nid = \"a\"\nkind = \"sqlite\"\n\n[[sinks]]\nid = \"a\"\nkind = \"csv\"\n";
+    let (path, violation, position) = invalid(source);
+    assert_eq!(path, "sinks[1].id");
+    assert!(matches!(violation, Violation::DuplicateSinkId(id) if id.as_str() == "a"));
+    assert_eq!(position, at(6, 6));
+}
+
+#[test]
+fn unknown_sink_kind_is_rejected() {
+    let (message, position) = syntax("[[sinks]]\nid = \"w\"\nkind = \"postgres\"\n");
+    assert!(message.contains("unknown variant `postgres`"), "{message}");
+    assert_eq!(position, at(3, 8));
+}
+
+#[test]
+fn sink_keys_must_fit_the_kind() {
+    let (path, violation, _) =
+        invalid("[[sinks]]\nid = \"a\"\nkind = \"sqlite\"\nmode = \"append\"\n");
+    assert_eq!(path, "sinks[0].mode");
+    assert!(matches!(
+        violation,
+        Violation::FieldNotAllowed {
+            kind: "sqlite",
+            field: "mode"
+        }
+    ));
+}
+
+const SUBSCRIPTION: &str = "\
+[[subscriptions]]
+id = \"a\"
+provider = \"anthropic\"
+plan = \"pro\"
+agents = [\"claude\"]
+period = \"monthly\"
+start = \"2025-01-01\"
+";
+
+#[test]
+fn overlapping_subscriptions_are_rejected() {
+    let source = format!(
+        "{SUBSCRIPTION}\n[[subscriptions]]\nid = \"b\"\nprovider = \"anthropic\"\nplan = \"max_5x\"\nagents = [\"claude\"]\nperiod = \"monthly\"\nstart = \"2025-03-01\"\n"
+    );
+    let (path, violation, position) = invalid(&source);
+    assert_eq!(path, "subscriptions[1]");
+    assert!(matches!(
+        violation,
+        Violation::OverlappingSubscriptions { first, second }
+            if first.as_str() == "a" && second.as_str() == "b"
+    ));
+    assert_eq!(position.line, 9);
+}
+
+#[test]
+fn subscriptions_with_disjoint_dates_are_accepted() {
+    let source = format!(
+        "{SUBSCRIPTION}end = \"2025-03-01\"\n\n[[subscriptions]]\nid = \"b\"\nprovider = \"anthropic\"\nplan = \"max_5x\"\nagents = [\"claude\"]\nperiod = \"monthly\"\nstart = \"2025-03-01\"\n"
+    );
+    assert_eq!(parse(&source).unwrap().subscriptions.len(), 2);
+}
+
+#[test]
+fn menubar_agents_must_be_enabled() {
+    let source = "[menubar]\nagents = [\"claude\", \"pi\"]\n\n[agents.pi]\nenabled = false\n";
+    let (path, violation, position) = invalid(source);
+    assert_eq!(path, "menubar.agents[1]");
+    assert!(matches!(violation, Violation::AgentDisabled(agent) if agent == AgentId::PI));
+    assert_eq!(position, at(2, 21));
+}
+
+#[test]
+fn team_plan_needs_an_explicit_fee() {
+    let source = SUBSCRIPTION.replace("\"pro\"", "\"team\"");
+    let (path, violation, _) = invalid(&source);
+    assert_eq!(path, "subscriptions[0]");
+    assert!(matches!(
+        violation,
+        Violation::FeeRequired {
+            plan: Plan::Team,
+            ..
+        }
+    ));
+
+    let with_fee = format!("{source}fee = 30.0\n");
+    assert_eq!(
+        parse(&with_fee).unwrap().subscriptions[0].fee(),
+        Money::Usd(UsdMicros::new(30_000_000))
+    );
+}
+
+#[test]
+fn eur_subscription_without_fee_is_rejected() {
+    let source = format!("{SUBSCRIPTION}fee_currency = \"EUR\"\n");
+    let (_, violation, _) = invalid(&source);
+    assert!(matches!(
+        violation,
+        Violation::FeeRequired {
+            currency: Currency::Eur,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn profiles_of_one_agent_must_not_share_roots() {
+    let source = "\
+[[agents.claude.profiles]]
+id = \"a\"
+roots = [\"~/.claude/projects\"]
+
+[[agents.claude.profiles]]
+id = \"b\"
+roots = [\"~/.claude/projects/work\"]
+";
+    let (path, violation, position) = invalid(source);
+    assert_eq!(path, "agents.claude.profiles[1].roots");
+    assert!(
+        matches!(violation, Violation::SharedRoot { profile, other, .. }
+        if profile.as_str() == "b" && other.as_str() == "a")
+    );
+    assert_eq!(position.line, 7);
+}
+
+#[test]
+fn separate_roots_and_config_dirs_are_accepted() {
+    let source = "\
+[[agents.claude.profiles]]
+id = \"a\"
+roots = [\"~/.claude/projects\"]
+
+[[agents.claude.profiles]]
+id = \"work\"
+config_dir = \"~/.claude-work\"
+";
+    let config = parse(source).unwrap();
+    let profiles = &config.agents[&AgentId::CLAUDE].profiles;
+    assert_eq!(profiles.len(), 3, "implicit default is added");
+    assert_eq!(profiles[0].id, ProfileId::default_profile());
+}
+
+#[test]
+fn budget_must_name_a_declared_profile() {
+    let source = "[[budgets]]\nid = \"m\"\nperiod = \"month\"\namount = 10\nprofiles = [\"default\", \"work\"]\n";
+    let (path, violation, position) = invalid(source);
+    assert_eq!(path, "budgets[0].profiles[1]");
+    assert!(matches!(violation, Violation::UnknownProfile(p) if p.as_str() == "work"));
+    assert_eq!(position, at(5, 24));
+}
+
+#[test]
+fn project_glob_must_parse() {
+    let (path, violation, position) =
+        invalid("[[projects]]\nmatch = \"~/work/[abc\"\nname = \"x\"\n");
+    assert_eq!(path, "projects[0].match");
+    assert!(matches!(violation, Violation::InvalidGlob { .. }));
+    assert_eq!(position, at(2, 9));
+}
+
+#[test]
+fn tilde_needs_a_home() {
+    let result = load_str("[store]\npath = \"~/usage.db\"\n", toml(), &|_: &str| None);
+    let Err(ConfigError::Invalid { violation, .. }) = result else {
+        panic!("expected a rule violation");
+    };
+    assert!(matches!(*violation, Violation::HomeUnset { .. }));
+}
+
+#[test]
+fn relative_paths_are_rejected() {
+    let (_, violation, _) = invalid("[store]\npath = \"usage.db\"\n");
+    assert!(matches!(violation, Violation::RelativePath { .. }));
+}
+
+#[test]
+fn unsupported_schema_version_is_rejected() {
+    let (_, violation, position) = invalid("schema_version = 2\n");
+    assert!(matches!(
+        violation,
+        Violation::UnsupportedSchemaVersion { found: 2, .. }
+    ));
+    assert_eq!(position, at(1, 18));
+}
+
+#[test]
+fn duplicate_budget_scope_entries_are_rejected() {
+    let source = "[[budgets]]\nid = \"m\"\nperiod = \"month\"\namount = 10\nagents = [\"claude\", \"claude\"]\n";
+    let (path, violation, _) = invalid(source);
+    assert_eq!(path, "budgets[0].agents[1]");
+    assert!(matches!(violation, Violation::DuplicateEntry(_)));
+}
+
+// -- editing -----------------------------------------------------------------------------------
+
+const COMMENTED: &str = "\
+# my config
+schema_version = 1
+
+[display]
+currency = \"EUR\"  # shown everywhere
+
+[[projects]]  # first match wins
+match = \"~/work/acme-*/**\"
+name = \"acme\"
+
+# subscriptions go below
+[daemon]
+watch = true  # keep on
+";
+
+fn subscription_spec() -> SubscriptionSpec {
+    SubscriptionSpec {
+        id: SubscriptionId::try_from("claude-max").unwrap(),
+        provider: ProviderId::try_from("anthropic").unwrap(),
+        plan: Plan::Max20x,
+        agents: vec![AgentId::CLAUDE],
+        profiles: None,
+        fee: Money::Usd(UsdMicros::new(200_000_000)),
+        period: BillingPeriod::Monthly,
+        start: date(2025, 6, 1),
+        end: None,
+    }
+}
+
+#[test]
+fn adding_entries_keeps_comments_and_existing_text() {
+    let mut document = ConfigDocument::new(COMMENTED, toml());
+
+    document
+        .add_subscription(&subscription_spec(), &env)
+        .unwrap();
+    let config = document
+        .add_project_rule(
+            &RawProject {
+                pattern: "~/oss/**".to_owned(),
+                name: ProjectKey::try_from("oss").unwrap(),
+                client: None,
+            },
+            &env,
+        )
+        .unwrap();
+
+    assert_eq!(config.subscriptions.len(), 1);
+    assert_eq!(config.projects.len(), 2);
+    assert_eq!(config.projects[1].name.as_str(), "oss");
+    assert_eq!(
+        document.text(),
+        "\
+# my config
+schema_version = 1
+
+[display]
+currency = \"EUR\"  # shown everywhere
+
+[[projects]]  # first match wins
+match = \"~/work/acme-*/**\"
+name = \"acme\"
+
+[[projects]]
+match = \"~/oss/**\"
+name = \"oss\"
+
+# subscriptions go below
+[daemon]
+watch = true  # keep on
+
+[[subscriptions]]
+id = \"claude-max\"
+provider = \"anthropic\"
+plan = \"max_20x\"
+agents = [\"claude\"]
+fee = 200.0
+fee_currency = \"USD\"
+period = \"monthly\"
+start = \"2025-06-01\"
+"
+    );
+}
+
+#[test]
+fn a_rejected_edit_leaves_the_document_unchanged() {
+    let mut document = ConfigDocument::new(COMMENTED, toml());
+    document
+        .add_subscription(&subscription_spec(), &env)
+        .unwrap();
+    let before = document.text().to_owned();
+
+    let error = document
+        .add_subscription(&subscription_spec(), &env)
+        .unwrap_err();
+
+    assert!(matches!(error, ConfigError::Invalid { .. }), "{error}");
+    assert_eq!(document.text(), before);
+}
+
+#[test]
+fn an_edited_example_still_parses() {
+    let mut document = ConfigDocument::new(EXAMPLE, toml());
+    let mut spec = subscription_spec();
+    spec.id = SubscriptionId::try_from("extra").unwrap();
+    spec.provider = ProviderId::try_from("openai").unwrap();
+    document.add_subscription(&spec, &env).unwrap();
+
+    assert!(document.text().starts_with(EXAMPLE.lines().next().unwrap()));
+    assert!(document.text().contains("# end = \"2026-06-01\""));
+    assert_eq!(document.config(&env).unwrap().subscriptions.len(), 2);
+}
