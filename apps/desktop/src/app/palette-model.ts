@@ -1,8 +1,8 @@
 import type { Filters } from "../shared/filters";
 import type { Currency } from "../shared/format";
+import { NAV_ITEMS, type NavPath } from "../shared/nav";
 import type { FilterOptions } from "../shared/schemas";
 import { THEMES, type Theme } from "../shared/theme";
-import { NAV_ITEMS, type NavPath } from "./nav";
 
 /** The filter dimensions the palette can set; each takes one value (`null` clears it). */
 export type PaletteDimension = "agent" | "profile" | "project" | "client" | "model";

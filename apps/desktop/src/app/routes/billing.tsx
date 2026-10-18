@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { BillingScreen } from "../../features/billing/billing-screen";
-import { joinRemotes, toRemote, useDaemonGate } from "../../features/common/use-remote";
 import { useDataSource } from "../../shared/app-context";
 import { useAdvisor, useBilling, useBudgets, useSettings } from "../../shared/queries";
+import { joinRemotes, toRemote, useDaemonGate } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 /** Billing: subscriptions, paid against API value, budgets and the plan advisor. */

@@ -18,13 +18,12 @@ const ROWS: readonly Row[] = [
 ];
 
 const COLUMNS: Column<Row>[] = [
-  { id: "name", header: "Name", cell: (row) => row.name, sortValue: (row) => row.name },
+  { header: "Name", cell: (row) => row.name, sortValue: (row) => row.name },
   {
-    id: "cost",
     header: "Cost",
     cell: (row) => row.cost,
     sortValue: (row) => row.cost,
-    align: "end",
+    numeric: true,
   },
 ];
 

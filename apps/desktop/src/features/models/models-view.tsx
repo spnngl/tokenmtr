@@ -2,10 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
 import { formatPercent, formatTokens } from "../../shared/format";
 import type { ModelRow } from "../../shared/schemas/usage";
-import { Amount } from "../common/amount";
-import { Badge } from "../common/badge";
-import { type Column, DataTable } from "../common/data-table";
-import { Section } from "../common/page";
+import { Amount, Badge, type Column, DataTable, Section } from "../../shared/ui";
 import { costSourceMix, divergentModels, type ModelsData, unpricedModels } from "./model";
 
 interface ModelsViewProps {

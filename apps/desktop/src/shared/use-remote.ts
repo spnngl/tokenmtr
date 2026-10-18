@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useDataSource } from "../../shared/app-context";
-import { useAppState } from "../../shared/queries";
+import { useDataSource } from "./app-context";
+import { useAppState } from "./queries";
 import type { Remote } from "./remote-view";
 
 /** Maps one query onto `Remote`; `offline` (daemon not running) wins over the query's own state. */

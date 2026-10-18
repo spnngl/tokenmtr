@@ -1,4 +1,4 @@
-import { micros, usage } from "../common/fixtures";
+import { micros, usage } from "../../shared/fixtures";
 import type { ModelsData } from "./model";
 
 /** Four models: priced and reported, estimated and divergent, and one unpriced. */

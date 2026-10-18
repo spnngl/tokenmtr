@@ -1,10 +1,8 @@
 import { type ReactNode, useState } from "react";
 import { Button } from "../../shared/button";
+import { type Remote, RemoteView } from "../../shared/remote-view";
 import type { SystemHealth } from "../../shared/schemas";
-import { Badge } from "../common/badge";
-import { type Column, DataTable } from "../common/data-table";
-import { PageHeader, Section } from "../common/page";
-import { type Remote, RemoteView } from "../common/remote-view";
+import { Badge, type Column, DataTable, PageHeader, Section } from "../../shared/ui";
 import { type DatasetStatus, datasetStatuses, formatInstant } from "./model";
 import { SinkCard } from "./sink-card";
 

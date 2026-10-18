@@ -1,13 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useMemo, useState } from "react";
-import { toRemote, useDaemonGate } from "../../features/common/use-remote";
-import { localGenerateReport } from "../../features/reports/local-report";
-import { ReportsScreen } from "../../features/reports/reports-screen";
-import type { ReportRequest, ReportScope } from "../../features/reports/request";
-import { downloadReport, printHtml } from "../../features/reports/save";
-import { useDataSource } from "../../shared/app-context";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
+import { ReportsScreen, type SaveStatus } from "../../features/reports/reports-screen";
+import { type ReportRequest, toReportSpec } from "../../features/reports/request";
+import { printHtml } from "../../features/reports/save";
+import { useAppConfig, useDataSource } from "../../shared/app-context";
 import type { Filters } from "../../shared/filters";
+import { formatDay } from "../../shared/format";
 import { useFilterOptions } from "../../shared/queries";
+import type { ReportScope } from "../../shared/schemas";
+import { toRemote, useDaemonGate } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 function scopeOf(filters: Filters): ReportScope {
@@ -26,7 +27,7 @@ export function ReportsRoute(): ReactNode {
   const dataSource = useDataSource();
   const options = useFilterOptions();
   const gate = useDaemonGate();
-  const generate = useMemo(() => localGenerateReport(dataSource), [dataSource]);
+  const { timeZone, now } = useAppConfig();
   const [edited, setEdited] = useState<ReportRequest | null>(null);
   const request: ReportRequest = edited ?? {
     range: filters.range,
@@ -34,10 +35,19 @@ export function ReportsRoute(): ReactNode {
     format: "markdown",
     currency: filters.currency,
   };
+  const spec = toReportSpec(request, formatDay(now(), timeZone));
   const preview = toRemote(
-    useQuery({ queryKey: ["report", request], queryFn: () => generate(request) }),
+    useQuery({ queryKey: ["report", spec], queryFn: () => dataSource.generateReport(spec) }),
     gate,
   );
+  const save = useMutation({ mutationFn: () => dataSource.saveReport(spec) });
+  const saveStatus: SaveStatus = save.isPending
+    ? { kind: "saving" }
+    : save.isError
+      ? { kind: "error", message: save.error.message }
+      : typeof save.data === "string"
+        ? { kind: "saved", path: save.data }
+        : { kind: "idle" };
   return (
     <ReportsScreen
       request={request}
@@ -45,11 +55,15 @@ export function ReportsRoute(): ReactNode {
         projects: options.data?.projects ?? [],
         clients: options.data?.clients ?? [],
       }}
-      onRequestChange={setEdited}
+      onRequestChange={(next) => {
+        save.reset();
+        setEdited(next);
+      }}
       preview={preview}
-      onSave={downloadReport}
-      onPrint={(printRequest) => {
-        void generate({ ...printRequest, format: "html" }).then(printHtml);
+      onSave={() => save.mutate()}
+      saveStatus={saveStatus}
+      onPrint={() => {
+        void dataSource.generateReport({ ...spec, format: "html" }).then(printHtml);
       }}
     />
   );

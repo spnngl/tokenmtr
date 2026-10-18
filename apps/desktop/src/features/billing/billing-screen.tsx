@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { PageHeader } from "../common/page";
-import { type Remote, RemoteView } from "../common/remote-view";
+import { type Remote, RemoteView } from "../../shared/remote-view";
+import { PageHeader } from "../../shared/ui";
 import { AdvisorPanel } from "./advisor-panel";
 import { BudgetsPanel } from "./budgets-panel";
 import { type BillingData, isBillingEmpty, type UntrackedPlan } from "./model";

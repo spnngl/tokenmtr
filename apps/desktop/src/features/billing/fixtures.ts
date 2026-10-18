@@ -1,5 +1,5 @@
+import { micros, usage } from "../../shared/fixtures";
 import type { Budget } from "../../shared/schemas";
-import { micros, usage } from "../common/fixtures";
 import type { BillingData } from "./model";
 
 const MONTHS = ["2026-03-01", "2026-04-01", "2026-05-01"] as const;

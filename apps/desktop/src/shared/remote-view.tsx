@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StateView, type ViewState } from "../../shared/state-view";
+import { StateView, type ViewState } from "./state-view";
 
 /** Where a screen's data stands. The route layer maps its query hook onto this. */
 export type Remote<T> =

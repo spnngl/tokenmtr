@@ -1,10 +1,9 @@
 import { type ReactNode, useState } from "react";
 import type { Currency } from "../../shared/format";
-import { formatTokens } from "../../shared/format";
+import { formatCurrencyMicros, formatTokens } from "../../shared/format";
 import type { Heatmap } from "../../shared/schemas/usage";
 import { SegmentedControl } from "../../shared/segmented-control";
-import { formatAmount } from "../common/amount";
-import { Section } from "../common/page";
+import { Section } from "../../shared/ui";
 import { type HeatMetric, heatGrid, heatIntensity, WEEKDAYS } from "./model";
 
 const METRICS = [
@@ -22,7 +21,7 @@ function formatMetric(value: number, metric: HeatMetric, currency: Currency): st
     case "total_tokens":
       return formatTokens(value);
     case "api_value_micros":
-      return formatAmount(value, currency);
+      return formatCurrencyMicros(value, currency);
     default:
       return metric satisfies never;
   }

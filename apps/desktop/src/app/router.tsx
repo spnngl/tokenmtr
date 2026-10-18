@@ -5,8 +5,8 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { NAV_ITEMS, type NavPath } from "../shared/nav";
 import { Layout } from "./layout";
-import { NAV_ITEMS, type NavPath } from "./nav";
 import { BillingRoute } from "./routes/billing";
 import { ExportRoute } from "./routes/export";
 import { InsightsRoute } from "./routes/insights";

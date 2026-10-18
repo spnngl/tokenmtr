@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
-import type { Remote } from "../common/remote-view";
+import type { Remote } from "../../shared/remote-view";
 import { INSIGHTS_DATA, signalDays } from "./fixtures";
 import { InsightsScreen } from "./insights-screen";
 import {

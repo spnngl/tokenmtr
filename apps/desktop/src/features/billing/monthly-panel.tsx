@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
+import { chartColor } from "../../shared/charts";
+import { mergeBuckets } from "../../shared/decimate";
 import type { Currency } from "../../shared/format";
+import { formatCurrencyMicros } from "../../shared/format";
+import { ResponsiveChart } from "../../shared/responsive-chart";
 import type { BillingReport } from "../../shared/schemas";
-import { Amount, formatAmount } from "../common/amount";
-import { ChartFrame, seriesColor } from "../common/chart-frame";
-import { type Column, DataTable } from "../common/data-table";
-import { mergeBuckets } from "../common/decimate";
-import { Section } from "../common/page";
-import { ResponsiveChart } from "../common/responsive-chart";
-import { useChartAnimation } from "../common/use-chart-animation";
+import { Amount, ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
+import { useChartAnimation } from "../../shared/use-chart-animation";
 import { formatRoi } from "./model";
 
 type Month = BillingReport["months"][number];
@@ -70,16 +69,16 @@ function MonthlyChart({
             tick={AXIS_STYLE}
             width={64}
             stroke="var(--border)"
-            tickFormatter={(value: number) => formatAmount(value, currency)}
+            tickFormatter={(value: number) => formatCurrencyMicros(value, currency)}
           />
           <Tooltip
             formatter={(value: unknown) =>
-              typeof value === "number" ? formatAmount(value, currency) : String(value)
+              typeof value === "number" ? formatCurrencyMicros(value, currency) : String(value)
             }
           />
           <Legend />
-          <Bar name="Paid" dataKey="paid" fill={seriesColor(0)} isAnimationActive={animate} />
-          <Bar name="API value" dataKey="api" fill={seriesColor(1)} isAnimationActive={animate} />
+          <Bar name="Paid" dataKey="paid" fill={chartColor(0)} isAnimationActive={animate} />
+          <Bar name="API value" dataKey="api" fill={chartColor(1)} isAnimationActive={animate} />
         </BarChart>
       )}
     </ResponsiveChart>

@@ -1,14 +1,52 @@
-import type { Currency } from "../../shared/format";
-import { formatTokens } from "../../shared/format";
-import type { ModelRow, ProjectRow, SeriesPoint, Totals } from "../../shared/schemas";
-import { formatAmount } from "../common/amount";
-import {
-  type GeneratedReport,
-  type ReportRequest,
-  rangeLabel,
-  reportFilename,
-  scopeLabel,
-} from "./request";
+import type { Filters } from "../filters";
+import type { Currency } from "../format";
+import { formatCurrencyMicros, formatTokens } from "../format";
+import type {
+  GeneratedReport,
+  ModelRow,
+  ProjectRow,
+  ReportScope,
+  ReportSpec,
+  SeriesPoint,
+  Totals,
+} from "../schemas";
+import { rangeOf } from "./aggregate";
+import { factsFor, modelsOf, projectsOf, seriesOf, totalsOf } from "./reports";
+import { sessionsOf } from "./sessions";
+
+function rangeLabel(range: ReportSpec["range"]): string {
+  return `${range.first} to ${range.last}`;
+}
+
+function scopeLabel(scope: ReportScope): string {
+  switch (scope.kind) {
+    case "all":
+      return "Everything";
+    case "project":
+      return `Project ${scope.project}`;
+    case "client":
+      return `Client ${scope.client}`;
+    default:
+      return scope satisfies never;
+  }
+}
+
+const EXTENSIONS = { markdown: "md", csv: "csv", html: "html" } as const satisfies Record<
+  ReportSpec["format"],
+  string
+>;
+
+function slug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function reportFilename(spec: ReportSpec): string {
+  const scope = spec.scope.kind === "all" ? "" : `-${slug(scopeLabel(spec.scope))}`;
+  return `tokenmtr-report-${spec.range.first}_${spec.range.last}${scope}.${EXTENSIONS[spec.format]}`;
+}
 
 /** The query results a report is made of. Money is already in `currency`. */
 export interface ReportData {
@@ -88,21 +126,18 @@ function cells(line: Line, currency: Currency): readonly string[] {
     line.name,
     line.events.toLocaleString("en-US"),
     formatTokens(line.tokens),
-    formatAmount(line.apiValue, currency),
-    formatAmount(line.paid, currency),
+    formatCurrencyMicros(line.apiValue, currency),
+    formatCurrencyMicros(line.paid, currency),
   ];
 }
 
-function summaryRows(
-  request: ReportRequest,
-  data: ReportData,
-): readonly (readonly [string, string])[] {
+function summaryRows(spec: ReportSpec, data: ReportData): readonly (readonly [string, string])[] {
   return [
-    ["Period", rangeLabel(request.range)],
-    ["Scope", scopeLabel(request.scope)],
+    ["Period", rangeLabel(spec.range)],
+    ["Scope", scopeLabel(spec.scope)],
     ["Sessions", data.totals.sessions.toLocaleString("en-US")],
-    ["API value", formatAmount(data.totals.api_value_micros, data.currency)],
-    ["Paid", formatAmount(data.totals.paid_micros, data.currency)],
+    ["API value", formatCurrencyMicros(data.totals.api_value_micros, data.currency)],
+    ["Paid", formatCurrencyMicros(data.totals.paid_micros, data.currency)],
     ["Tokens", formatTokens(data.totals.total_tokens)],
   ];
 }
@@ -111,9 +146,9 @@ function markdownCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
-function markdown(request: ReportRequest, data: ReportData): string {
+function markdown(spec: ReportSpec, data: ReportData): string {
   const out = ["# TokenMtr usage report", ""];
-  for (const [label, value] of summaryRows(request, data)) {
+  for (const [label, value] of summaryRows(spec, data)) {
     out.push(`- **${label}:** ${markdownCell(value)}`);
   }
   const note = approximateNote(data);
@@ -186,7 +221,7 @@ const HTML_STYLE =
   "td:not(:first-child),th:not(:first-child){text-align:right}" +
   "@media print{body{margin:0}h2{break-after:avoid}tr{break-inside:avoid}}";
 
-function html(request: ReportRequest, data: ReportData): string {
+function html(spec: ReportSpec, data: ReportData): string {
   const out = [
     "<!doctype html>",
     '<html lang="en">',
@@ -195,7 +230,7 @@ function html(request: ReportRequest, data: ReportData): string {
     "<h1>TokenMtr usage report</h1>",
     "<dl>",
   ];
-  for (const [label, value] of summaryRows(request, data)) {
+  for (const [label, value] of summaryRows(spec, data)) {
     out.push(`<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`);
   }
   out.push("</dl>");
@@ -221,18 +256,40 @@ function html(request: ReportRequest, data: ReportData): string {
   return `${out.join("\n")}\n`;
 }
 
-/** Renders `data` in the requested format; the later Rust renderer produces the same content. */
-export function renderReport(request: ReportRequest, data: ReportData): GeneratedReport {
-  const filename = reportFilename(request);
-  const events = data.totals.events;
-  switch (request.format) {
+/** Renders `data` in the format of `spec`; the Rust renderer (`tokenmtr-report`) produces the same sections. */
+export function renderReport(spec: ReportSpec, data: ReportData): GeneratedReport {
+  const filename = reportFilename(spec);
+  switch (spec.format) {
     case "markdown":
-      return { format: "markdown", filename, events, content: markdown(request, data) };
+      return { format: "markdown", filename, content: markdown(spec, data) };
     case "csv":
-      return { format: "csv", filename, events, content: csv(data) };
+      return { format: "csv", filename, content: csv(data) };
     case "html":
-      return { format: "html", filename, events, content: html(request, data) };
+      return { format: "html", filename, content: html(spec, data) };
     default:
-      return request.format satisfies never;
+      return spec.format satisfies never;
   }
+}
+
+/** The mock `generate_report`: aggregates the seeded facts the way the query commands do. */
+export function generateMockReport(spec: ReportSpec, empty: boolean): GeneratedReport {
+  const filters: Filters = {
+    range: { kind: "custom", from: spec.range.first, to: spec.range.last },
+    agent: null,
+    profile: null,
+    model: null,
+    project: spec.scope.kind === "project" ? spec.scope.project : null,
+    client: spec.scope.kind === "client" ? spec.scope.client : null,
+    billing: "all",
+    currency: spec.currency,
+  };
+  const facts = empty ? [] : factsFor(filters);
+  const sessions = empty ? 0 : sessionsOf(filters, 0, 1).total;
+  return renderReport(spec, {
+    currency: spec.currency,
+    totals: totalsOf(facts, spec.currency, sessions),
+    projects: projectsOf(facts, spec.currency),
+    models: modelsOf(facts, spec.currency),
+    days: seriesOf(facts, rangeOf(filters.range), spec.currency, "none").points,
+  });
 }

@@ -86,16 +86,14 @@ export function BackupsSection({ backups }: { readonly backups: readonly Backup[
   const backup = useDataAction((ds) => ds.backupNow());
   const columns: Column<Backup>[] = [
     {
-      id: "at",
       header: "When",
       cell: (row) => formatDateTime(Date.parse(row.finished_at), timeZone),
     },
     {
-      id: "result",
       header: "Result",
       cell: (row) => (row.error === null ? "OK" : `Failed: ${row.error}`),
     },
-    { id: "path", header: "File", cell: (row) => row.path ?? "—" },
+    { header: "File", cell: (row) => row.path ?? "—" },
   ];
   return (
     <Card
@@ -127,22 +125,19 @@ export function ParseIssuesSection(): ReactNode {
   const open = issues.filter((issue) => issue.resolved_at === null);
   const drift = open.filter((issue) => issue.kind === "format_drift");
   const columns: Column<ParseIssue>[] = [
-    { id: "kind", header: "Issue", cell: (row) => ISSUE_LABELS[row.kind] },
-    { id: "agent", header: "Agent", cell: (row) => row.agent },
-    { id: "subject", header: "Subject", cell: (row) => row.subject },
+    { header: "Issue", cell: (row) => ISSUE_LABELS[row.kind] },
+    { header: "Agent", cell: (row) => row.agent },
+    { header: "Subject", cell: (row) => row.subject },
     {
-      id: "count",
       header: "Count",
-      align: "end",
+      numeric: true,
       cell: (row) => row.occurrences.toLocaleString("en-US"),
     },
     {
-      id: "last",
       header: "Last seen",
       cell: (row) => formatDateTime(Date.parse(row.last_seen), timeZone),
     },
     {
-      id: "status",
       header: "Status",
       cell: (row) => (row.resolved_at === null ? "Open" : "Resolved"),
     },

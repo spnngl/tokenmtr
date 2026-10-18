@@ -1,4 +1,4 @@
-import type { Usage } from "../../shared/schemas/primitives";
+import type { Usage } from "./schemas/primitives";
 
 const MICROS = 1_000_000;
 

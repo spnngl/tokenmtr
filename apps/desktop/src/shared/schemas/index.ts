@@ -9,4 +9,5 @@ export * from "./health";
 export * from "./primitives";
 export * from "./quota";
 export * from "./recap";
+export * from "./report";
 export * from "./usage";

@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { joinRemotes, toRemote, useDaemonGate } from "../../features/common/use-remote";
 import { ModelsScreen } from "../../features/models/models-screen";
 import { useDataSource } from "../../shared/app-context";
 import { useModels, useSettings } from "../../shared/queries";
+import { joinRemotes, toRemote, useDaemonGate } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 /** Models: tokens, cost and share per model, with unpriced and divergent warnings. */

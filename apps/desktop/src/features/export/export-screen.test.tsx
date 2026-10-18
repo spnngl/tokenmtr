@@ -2,8 +2,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
+import type { Remote } from "../../shared/remote-view";
 import type { SystemHealth } from "../../shared/schemas";
-import type { Remote } from "../common/remote-view";
 import { ExportScreen } from "./export-screen";
 import { EXPORT_HEALTH, SINK_DISABLED, SINK_FAILING, SINK_HEALTHY } from "./fixtures";
 import { datasetStatuses, looksLikeProtectedFolder } from "./model";

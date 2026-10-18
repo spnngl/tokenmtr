@@ -3,17 +3,18 @@ import type { ReactNode } from "react";
 import { FilterSelect } from "../../app/filter-select";
 import { Button } from "../../shared/button";
 import { RANGE_PRESETS, type RangePreset } from "../../shared/filters";
+import { type Remote, RemoteView } from "../../shared/remote-view";
+import { type GeneratedReport, REPORT_FORMATS, type ReportScope } from "../../shared/schemas";
 import { SegmentedControl } from "../../shared/segmented-control";
-import { PageHeader, Section } from "../common/page";
-import { type Remote, RemoteView } from "../common/remote-view";
-import {
-  formatLabel,
-  type GeneratedReport,
-  REPORT_FORMATS,
-  type ReportRequest,
-  type ReportScope,
-  rangeLabel,
-} from "./request";
+import { PageHeader, Section } from "../../shared/ui";
+import { formatLabel, type ReportRequest, rangeLabel } from "./request";
+
+/** Where saving the report stands; `saved` carries the path the shell wrote. */
+export type SaveStatus =
+  | { readonly kind: "idle" }
+  | { readonly kind: "saving" }
+  | { readonly kind: "saved"; readonly path: string }
+  | { readonly kind: "error"; readonly message: string };
 
 /** Values the scope picker offers. */
 export interface ReportOptions {
@@ -26,10 +27,11 @@ interface ReportsScreenProps {
   readonly options: ReportOptions;
   readonly onRequestChange: (request: ReportRequest) => void;
   readonly preview: Remote<GeneratedReport>;
-  /** Saves the file; rejects are the caller's to show. */
-  readonly onSave: (report: GeneratedReport) => void;
+  /** Renders the request and asks the shell where to save it. */
+  readonly onSave: () => void;
+  readonly saveStatus: SaveStatus;
   /** Renders the request as HTML and opens the print dialog ("Save as PDF"). */
-  readonly onPrint: (request: ReportRequest) => void;
+  readonly onPrint: () => void;
 }
 
 type ScopeKind = ReportScope["kind"];
@@ -170,6 +172,28 @@ function Preview({ report }: { readonly report: GeneratedReport }): ReactNode {
   }
 }
 
+function SaveMessage({ status }: { readonly status: SaveStatus }): ReactNode {
+  switch (status.kind) {
+    case "idle":
+    case "saving":
+      return null;
+    case "saved":
+      return (
+        <p role="status" className="text-sm text-fg-muted">
+          Saved to {status.path}
+        </p>
+      );
+    case "error":
+      return (
+        <p role="alert" className="text-sm text-danger">
+          Could not save the report: {status.message}
+        </p>
+      );
+    default:
+      return status satisfies never;
+  }
+}
+
 /** The Reports page (D46): pick period, scope and format, preview live, save or print to PDF. */
 export function ReportsScreen({
   request,
@@ -177,40 +201,36 @@ export function ReportsScreen({
   onRequestChange,
   preview,
   onSave,
+  saveStatus,
   onPrint,
 }: ReportsScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader to="/reports" />
       <Pickers request={request} options={options} onRequestChange={onRequestChange} />
-      <RemoteView
-        remote={preview}
-        emptyWhen={(report) =>
-          report.events === 0
-            ? {
-                title: "No usage in this period",
-                hint: "Pick a longer period or another scope to get a report.",
-              }
-            : null
-        }
-      >
+      <RemoteView remote={preview} emptyWhen={() => null}>
         {(report) => (
           <Section
             title="Preview"
             description={report.filename}
             actions={
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onPress={() => onSave(report)}>
+                <Button
+                  variant="primary"
+                  isDisabled={saveStatus.kind === "saving"}
+                  onPress={onSave}
+                >
                   <Download aria-hidden className="size-4" />
                   Save {formatLabel(report.format)}
                 </Button>
-                <Button variant="secondary" onPress={() => onPrint(request)}>
+                <Button variant="secondary" onPress={onPrint}>
                   <Printer aria-hidden className="size-4" />
                   Save as PDF
                 </Button>
               </div>
             }
           >
+            <SaveMessage status={saveStatus} />
             <Preview report={report} />
           </Section>
         )}

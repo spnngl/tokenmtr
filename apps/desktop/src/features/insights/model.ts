@@ -1,3 +1,4 @@
+import { mergeBuckets } from "../../shared/decimate";
 import type { Currency } from "../../shared/format";
 import type {
   BranchRow,
@@ -7,7 +8,6 @@ import type {
   ToolRow,
   ToolsReport,
 } from "../../shared/schemas/usage";
-import { mergeBuckets } from "../common/decimate";
 
 export type SignalDay = SignalsReport["days"][number];
 

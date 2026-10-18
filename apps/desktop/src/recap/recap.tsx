@@ -88,30 +88,29 @@ export function Recap(props: RecapProps): ReactNode {
           </Tabs>
         )}
       </div>
-      <footer className="flex items-center gap-1 border-t border-border bg-surface-raised p-2">
-        <span
-          role="status"
-          className="flex min-w-0 items-center gap-1.5 pr-1 text-xs text-fg-muted"
-        >
-          <span className={`size-2 shrink-0 rounded-full ${DOT[health.level]}`} aria-hidden />
-          <span className="truncate">{health.label}</span>
+      <footer className="flex flex-col gap-2 border-t border-border bg-surface-raised p-2">
+        <span role="status" className="flex items-start gap-1.5 px-1 text-xs text-fg-muted">
+          <span className={`mt-1 size-2 shrink-0 rounded-full ${DOT[health.level]}`} aria-hidden />
+          <span>{health.label}</span>
         </span>
-        <span className="flex-1" />
-        <Button
-          onPress={() =>
-            props.onOpenDashboard(
-              selected === undefined || selected.id === ALL_TAB_ID ? null : selected.id,
-            )
-          }
-        >
-          Open dashboard
-        </Button>
-        <Button variant="quiet" onPress={props.onScanNow}>
-          Scan now
-        </Button>
-        <Button variant="quiet" aria-label="Settings" onPress={props.onOpenSettings}>
-          <Settings className="size-4" aria-hidden />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            onPress={() =>
+              props.onOpenDashboard(
+                selected === undefined || selected.id === ALL_TAB_ID ? null : selected.id,
+              )
+            }
+          >
+            Open dashboard
+          </Button>
+          <span className="flex-1" />
+          <Button variant="quiet" onPress={props.onScanNow}>
+            Scan now
+          </Button>
+          <Button variant="quiet" aria-label="Settings" onPress={props.onOpenSettings}>
+            <Settings className="size-4" aria-hidden />
+          </Button>
+        </div>
       </footer>
     </div>
   );

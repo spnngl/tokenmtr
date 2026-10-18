@@ -107,26 +107,22 @@ function UnresolvedCard(): ReactNode {
     return null;
   }
   const columns: Column<(typeof rows)[number]>[] = [
-    { id: "cwd", header: "Working directory", cell: (row) => <code>{row.cwd}</code> },
+    { header: "Working directory", cell: (row) => <code>{row.cwd}</code> },
     {
-      id: "events",
       header: "Events",
-      align: "end",
+      numeric: true,
       cell: (row) => row.events.toLocaleString("en-US"),
     },
     {
-      id: "value",
       header: "API value",
-      align: "end",
+      numeric: true,
       cell: (row) => <Amount micros={row.api_value_usd_micros} currency="USD" />,
     },
     {
-      id: "last",
       header: "Last activity",
       cell: (row) => formatDateTime(Date.parse(row.last_at), timeZone),
     },
     {
-      id: "rule",
       header: "Rule",
       cell: (row) => (
         <Button onPress={() => addRule.mutate(row.cwd)} aria-label={`Add rule for ${row.cwd}`}>

@@ -144,7 +144,12 @@ export function QuotaHistoryChart({ history }: { readonly history: QuotaHistory 
           {...AXIS}
           minTickGap={48}
         />
-        <YAxis domain={[0, 100]} unit="%" {...AXIS} width={44} />
+        <YAxis
+          domain={[0, 100]}
+          tickFormatter={(v: number) => `${Math.round(v)}%`}
+          {...AXIS}
+          width={44}
+        />
         <Tooltip
           labelFormatter={(at) => (typeof at === "number" ? formatTick(at) : String(at))}
           formatter={(v: unknown) => `${String(v)}%`}

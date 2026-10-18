@@ -12,6 +12,7 @@ import {
   budgetSchema,
   filterOptionsSchema,
   fxRateSchema,
+  generatedReportSchema,
   heatmapSchema,
   ingestStatusSchema,
   modelRowSchema,
@@ -133,6 +134,7 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     alerts: () => read("alerts", {}, z.array(alertSchema)),
     backups: () => read("backups", {}, z.array(backupSchema)),
     fxRates: () => read("fx_rates", {}, z.array(fxRateSchema)),
+    generateReport: (spec) => read("generate_report", { request: spec }, generatedReportSchema),
 
     scanNow: () => act("scan_now"),
     exportNow: () => act("export_now"),
@@ -148,5 +150,6 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     requestNotifications: (): Promise<NotificationPermissionState> =>
       read("request_notifications", {}, notificationPermissionSchema),
     completeOnboarding: () => act("complete_onboarding"),
+    saveReport: (spec) => read("save_report", { request: spec }, z.string().nullable()),
   };
 }

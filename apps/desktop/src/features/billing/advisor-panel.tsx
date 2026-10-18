@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
+import { formatCurrencyMicros } from "../../shared/format";
 import type { Advice, AdvisorReport } from "../../shared/schemas";
-import { formatAmount } from "../common/amount";
-import { Badge } from "../common/badge";
-import { type Column, DataTable } from "../common/data-table";
-import { Section } from "../common/page";
+import { Badge, type Column, DataTable, Section } from "../../shared/ui";
 import { ADVISOR_MIN_DAYS, planLabel } from "./model";
 
 type Recommendation = Extract<Advice, { advice: "recommend" }>;
@@ -27,7 +25,11 @@ function verdictText(recommendation: Recommendation): string {
 
 const FIT_COLUMNS: readonly Column<PlanFit>[] = [
   { header: "Plan", cell: (fit) => planLabel(fit.plan) },
-  { header: "Fee / month", numeric: true, cell: (fit) => formatAmount(fit.monthly_fee, "USD") },
+  {
+    header: "Fee / month",
+    numeric: true,
+    cell: (fit) => formatCurrencyMicros(fit.monthly_fee, "USD"),
+  },
   { header: "5-hour peak", numeric: true, cell: (fit) => `${fit.five_hour_peak}%` },
   { header: "7-day peak", numeric: true, cell: (fit) => `${fit.seven_day_peak}%` },
   {
@@ -62,7 +64,7 @@ function AdviceBody({ report }: { readonly report: AdvisorReport }): ReactNode {
             <Input label="Current plan" value={planLabel(advice.current)} />
             <Input
               label="Average month at API rates"
-              value={formatAmount(report.monthly_api_value_usd_micros, "USD")}
+              value={formatCurrencyMicros(report.monthly_api_value_usd_micros, "USD")}
             />
             <Input label="Peak headroom" value={`${advice.headroom}%`} />
             <Input label="Quota snapshots" value={report.snapshots.toLocaleString("en-US")} />

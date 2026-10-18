@@ -3,102 +3,61 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
-import type { Filters } from "../../shared/filters";
 
-import type { Remote } from "../common/remote-view";
-import { PROJECT, REPORT_DATA, REQUEST } from "./fixtures";
-import { localGenerateReport } from "./local-report";
-import { renderReport } from "./render";
-import { ReportsScreen } from "./reports-screen";
-import { type GeneratedReport, type ReportRequest, reportFilename } from "./request";
+import type { Remote } from "../../shared/remote-view";
+import type { GeneratedReport } from "../../shared/schemas";
+import { generated, REQUEST } from "./fixtures";
+import { ReportsScreen, type SaveStatus } from "./reports-screen";
+import { type ReportRequest, toReportSpec } from "./request";
 
 afterEach(cleanup);
 
 const OPTIONS = { projects: ["acme/web", "acme/api"], clients: ["Acme"] };
 
-describe("renderReport", () => {
-  it("renders totals, per project, per model and per day in Markdown", () => {
-    const { content, events } = renderReport(REQUEST, REPORT_DATA);
-    expect(events).toBe(2000);
-    expect(content).toContain("- **Sessions:** 42");
-    expect(content).toContain("- **API value:** $200.00");
-    expect(content).toContain("## Per project");
-    expect(content).toContain("Web \\| storefront");
-    expect(content).toContain("## Per model");
-    expect(content).toContain("## Per day");
-    expect(content).toContain("2026-05-20");
-  });
-
-  it("renders CSV with one header and neutralised formulas", () => {
-    const data = {
-      ...REPORT_DATA,
-      projects: [{ ...PROJECT, name: '=HYPERLINK("x"),y' }],
-    };
-    const { content } = renderReport({ ...REQUEST, format: "csv" }, data);
-    const lines = content.trim().split("\n");
-    expect(lines[0]).toBe("section,name,events,total_tokens,api_value_usd,paid_usd");
-    expect(lines[1]).toBe("total,Total,2000,20000000,200.00,80.00");
-    expect(content).toContain('"\'=HYPERLINK(""x""),y"');
-    expect(lines).toHaveLength(1 + 1 + 1 + 1 + 20);
-  });
-
-  it("escapes HTML and notes approximate EUR figures", () => {
-    const data = { ...REPORT_DATA, currency: "EUR" as const };
-    const { content } = renderReport({ ...REQUEST, format: "html", currency: "EUR" }, data);
-    expect(content).toContain("<!doctype html>");
-    expect(content).toContain("Web | storefront");
-    expect(content).toContain("@media print");
-    expect(content).toContain("approximate");
-    const hostile = {
-      ...REPORT_DATA,
-      projects: [{ ...PROJECT, name: "<script>alert(1)</script>" }],
-    };
-    expect(renderReport({ ...REQUEST, format: "html" }, hostile).content).not.toContain("<script>");
-  });
-
-  it("names the file after scope, range and format", () => {
-    expect(reportFilename(REQUEST)).toBe("tokenmtr-report-all-30d.md");
-    expect(
-      reportFilename({
-        ...REQUEST,
-        scope: { kind: "project", project: "acme/web" },
-        format: "csv",
-      }),
-    ).toBe("tokenmtr-report-project-acme-web-30d.csv");
-  });
-});
-
-describe("localGenerateReport", () => {
-  it("queries with the request's scope and renders the result", async () => {
-    const overview = vi.fn((_filters: Filters) => Promise.resolve(REPORT_DATA.totals));
-    const generate = localGenerateReport({
-      overview,
-      projects: () => Promise.resolve([...REPORT_DATA.projects]),
-      models: () => Promise.resolve([...REPORT_DATA.models]),
-      series: () =>
-        Promise.resolve({
-          currency: "USD",
-          bucket: "day",
-          group_by: "none",
-          points: [...REPORT_DATA.days],
-        }),
+describe("toReportSpec", () => {
+  it("pins presets to the days ending today", () => {
+    expect(toReportSpec(REQUEST, "2026-05-30").range).toEqual({
+      kind: "custom",
+      first: "2026-05-01",
+      last: "2026-05-30",
     });
-    const report = await generate({ ...REQUEST, scope: { kind: "client", client: "Acme" } });
-    expect(overview.mock.calls[0]?.[0].client).toBe("Acme");
-    expect(overview.mock.calls[0]?.[0].project).toBeNull();
-    expect(report.content).toContain("Scope:** Client Acme");
+    expect(
+      toReportSpec({ ...REQUEST, range: { kind: "preset", preset: "today" } }, "2026-05-30").range,
+    ).toEqual({ kind: "custom", first: "2026-05-30", last: "2026-05-30" });
+  });
+
+  it("keeps a custom range, scope, format and currency", () => {
+    const spec = toReportSpec(
+      {
+        range: { kind: "custom", from: "2026-04-01", to: "2026-04-15" },
+        scope: { kind: "client", client: "Acme" },
+        format: "csv",
+        currency: "EUR",
+      },
+      "2026-05-30",
+    );
+    expect(spec).toEqual({
+      range: { kind: "custom", first: "2026-04-01", last: "2026-04-15" },
+      scope: { kind: "client", client: "Acme" },
+      format: "csv",
+      currency: "EUR",
+    });
   });
 });
+
+const IDLE = { kind: "idle" } as const;
 
 function Harness({
   preview,
   onSave = vi.fn(),
   onPrint = vi.fn(),
+  saveStatus = IDLE,
   initial = REQUEST,
 }: {
   readonly preview: (request: ReportRequest) => Remote<GeneratedReport>;
-  readonly onSave?: (report: GeneratedReport) => void;
-  readonly onPrint?: (request: ReportRequest) => void;
+  readonly onSave?: () => void;
+  readonly onPrint?: () => void;
+  readonly saveStatus?: SaveStatus;
   readonly initial?: ReportRequest;
 }) {
   const [request, setRequest] = useState(initial);
@@ -109,6 +68,7 @@ function Harness({
       onRequestChange={setRequest}
       preview={preview(request)}
       onSave={onSave}
+      saveStatus={saveStatus}
       onPrint={onPrint}
     />
   );
@@ -116,25 +76,13 @@ function Harness({
 
 const ready = (request: ReportRequest): Remote<GeneratedReport> => ({
   kind: "ready",
-  data: renderReport(request, REPORT_DATA),
+  data: generated(request),
 });
 
 describe("ReportsScreen", () => {
   it("loading", () => {
     render(<Harness preview={() => ({ kind: "loading" })} />);
     expect(screen.getByRole("status").getAttribute("aria-busy")).toBe("true");
-  });
-
-  it("empty when the period holds no usage", () => {
-    render(
-      <Harness
-        preview={(request) => ({
-          kind: "ready",
-          data: { ...renderReport(request, REPORT_DATA), events: 0 },
-        })}
-      />,
-    );
-    expect(screen.getByText("No usage in this period")).toBeTruthy();
   });
 
   it("error retries", async () => {
@@ -170,9 +118,25 @@ describe("ReportsScreen", () => {
     expect(await axeViolations(container)).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "Save HTML" }));
-    expect(onSave.mock.calls[0]?.[0].filename).toBe("tokenmtr-report-all-30d.html");
+    expect(onSave).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "Save as PDF" }));
-    expect(onPrint.mock.calls[0]?.[0].format).toBe("html");
+    expect(onPrint).toHaveBeenCalledOnce();
+  });
+
+  it("shows where the report was saved, or why it was not", () => {
+    const { rerender } = render(
+      <Harness preview={ready} saveStatus={{ kind: "saved", path: "/tmp/report.md" }} />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("Saved to /tmp/report.md");
+    rerender(<Harness preview={ready} saveStatus={{ kind: "error", message: "disk full" }} />);
+    expect(screen.getByRole("alert").textContent).toContain("disk full");
+  });
+
+  it("disables Save while saving", () => {
+    render(<Harness preview={ready} saveStatus={{ kind: "saving" }} />);
+    expect(screen.getByRole("button", { name: "Save Markdown" }).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 
   it("offers project scope and reaches every control by keyboard", async () => {
@@ -186,6 +150,6 @@ describe("ReportsScreen", () => {
 
     await user.click(screen.getByRole("button", { name: /Scope/ }));
     await user.click(await screen.findByRole("option", { name: "One project" }));
-    expect(screen.getByText("Project acme/web", { exact: false })).toBeTruthy();
+    expect(screen.getAllByText("acme/web").length).toBeGreaterThan(0);
   });
 });

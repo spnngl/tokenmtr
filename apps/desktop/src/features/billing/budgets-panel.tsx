@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
+import { formatCurrencyMicros } from "../../shared/format";
 import type { Budget } from "../../shared/schemas";
+import { Badge, Section } from "../../shared/ui";
 import { UsageMeter } from "../../shared/usage-meter";
-import { formatAmount } from "../common/amount";
-import { Badge } from "../common/badge";
-import { Section } from "../common/page";
 import { budgetFraction, isOverBudget, isProjectedOver } from "./model";
 
 const PERIOD_LABELS = { day: "Daily", week: "Weekly", month: "Monthly" } as const;
@@ -14,9 +13,9 @@ function budgetLabel(budget: Budget): string {
 }
 
 function BudgetRow({ budget }: { readonly budget: Budget }): ReactNode {
-  const spent = formatAmount(budget.spent_micros, budget.currency);
-  const limit = formatAmount(budget.limit_micros, budget.currency);
-  const projected = formatAmount(budget.projected_micros, budget.currency);
+  const spent = formatCurrencyMicros(budget.spent_micros, budget.currency);
+  const limit = formatCurrencyMicros(budget.limit_micros, budget.currency);
+  const projected = formatCurrencyMicros(budget.projected_micros, budget.currency);
   return (
     <li className="flex flex-col gap-2 rounded-md border border-border bg-surface-raised p-3">
       <UsageMeter
@@ -28,7 +27,7 @@ function BudgetRow({ budget }: { readonly budget: Budget }): ReactNode {
         {isOverBudget(budget) ? (
           <Badge tone="danger">
             Over budget by{" "}
-            {formatAmount(budget.spent_micros - budget.limit_micros, budget.currency)}
+            {formatCurrencyMicros(budget.spent_micros - budget.limit_micros, budget.currency)}
           </Badge>
         ) : null}
         {isProjectedOver(budget) ? <Badge tone="warning">Projected to exceed</Badge> : null}

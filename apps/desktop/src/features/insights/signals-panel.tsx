@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
+import { chartColor } from "../../shared/charts";
+import { ResponsiveChart } from "../../shared/responsive-chart";
 import type { SignalsReport } from "../../shared/schemas/usage";
-import { ChartFrame, seriesColor } from "../common/chart-frame";
-import { type Column, DataTable } from "../common/data-table";
-import { Kpi, KpiGrid, Section } from "../common/page";
-import { ResponsiveChart } from "../common/responsive-chart";
-import { useChartAnimation } from "../common/use-chart-animation";
+import { ChartFrame, type Column, DataTable, Kpi, KpiGrid, Section } from "../../shared/ui";
+import { useChartAnimation } from "../../shared/use-chart-animation";
 import { type SignalDay, signalPoints } from "./model";
 
 type SessionRow = SignalsReport["top_sessions"][number];
@@ -50,7 +49,7 @@ function DailyChart({ days }: { readonly days: readonly SignalDay[] }): ReactNod
           <Bar
             name="Compactions"
             dataKey="compactions"
-            fill={seriesColor(1)}
+            fill={chartColor(1)}
             isAnimationActive={animate}
           />
         </BarChart>

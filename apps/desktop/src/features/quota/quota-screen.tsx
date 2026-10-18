@@ -21,22 +21,19 @@ function HistoryTable({ histories }: { readonly histories: readonly QuotaHistory
   const { timeZone } = useAppConfig();
   const columns: Column<QuotaHistory>[] = [
     {
-      id: "window",
       header: "Window",
       cell: (row) => `${row.profile} / ${windowLabel(row.window)}`,
     },
-    { id: "peak", header: "Peak", align: "end", cell: (row) => `${peak(row)}%`, sortValue: peak },
+    { header: "Peak", numeric: true, cell: (row) => `${peak(row)}%`, sortValue: peak },
     {
-      id: "latest",
       header: "Latest",
-      align: "end",
+      numeric: true,
       cell: (row) => {
         const value = latest(row);
         return value === null ? "—" : `${value}%`;
       },
     },
     {
-      id: "resets",
       header: "Resets",
       cell: (row) =>
         row.resets.length === 0
@@ -67,9 +64,14 @@ function AgentHistory({ agent }: { readonly agent: string }): ReactNode {
         <ChartFrame
           key={`${history.profile}:${history.window}`}
           title={`${agent} / ${history.profile}: ${windowLabel(history.window)}`}
-          chart={<QuotaHistoryChart history={history} />}
+          description={`Utilization history: ${history.points.length} points.`}
+          points={history.points.length}
           table={<HistoryTable histories={[history]} />}
-        />
+        >
+          <div className="h-56">
+            <QuotaHistoryChart history={history} />
+          </div>
+        </ChartFrame>
       ))}
     </>
   );

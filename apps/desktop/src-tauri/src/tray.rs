@@ -4,6 +4,7 @@
 //! [`refresh`] touch Tauri.
 
 use jiff::Timestamp;
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager as _, Wry};
@@ -19,6 +20,8 @@ use crate::state::Shell;
 use crate::windows;
 
 const TRAY_ID: &str = "tokenmtr";
+/// Monochrome template image (44x44, black on transparent; `tray-icon.py`): macOS tints it.
+const TRAY_ICON: &[u8] = include_bytes!("../icons/tray-icon@2x.png");
 const OPEN: &str = "open";
 const SCAN: &str = "scan";
 const SETTINGS: &str = "settings";
@@ -143,7 +146,8 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
             &MenuItem::with_id(app, QUIT, "Quit TokenMtr", true, None::<&str>)?,
         ],
     )?;
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+    let builder = TrayIconBuilder::with_id(TRAY_ID)
+        .icon(Image::from_bytes(TRAY_ICON)?)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .icon_as_template(true)
@@ -161,9 +165,6 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
                 windows::toggle_recap(app, &app.state::<Shell>().recap_gate);
             }
         });
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
     builder.build(app)?;
     Ok(())
 }

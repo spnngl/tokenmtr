@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { toRemote, useDaemonGate } from "../../features/common/use-remote";
 import { ExportScreen } from "../../features/export/export-screen";
 import { useAppConfig, useDataSource } from "../../shared/app-context";
 import { useSystemHealth } from "../../shared/queries";
+import { toRemote, useDaemonGate } from "../../shared/use-remote";
 
 /** Export: sink health, run history, datasets and "Export now". */
 export function ExportRoute(): ReactNode {

@@ -24,8 +24,8 @@ import {
   ChartFrame,
   type Column,
   DataTable,
+  Kpi,
   KpiGrid,
-  KpiTile,
   PageHeader,
 } from "../../shared/ui";
 import { HeatmapGrid, summarizeWeekdays, type WeekdaySummary } from "./heatmap";
@@ -38,24 +38,21 @@ const COST_GROUPS: readonly { value: Extract<GroupBy, "agent" | "model">; label:
 ];
 
 const WEEKDAY_COLUMNS = (currency: "USD" | "EUR"): Column<WeekdaySummary>[] => [
-  { id: "weekday", header: "Weekday", cell: (row) => row.weekday },
+  { header: "Weekday", cell: (row) => row.weekday },
   {
-    id: "events",
     header: "Events",
-    align: "end",
+    numeric: true,
     cell: (row) => row.events.toLocaleString("en-US"),
   },
-  { id: "tokens", header: "Tokens", align: "end", cell: (row) => formatTokens(row.tokens) },
+  { header: "Tokens", numeric: true, cell: (row) => formatTokens(row.tokens) },
   {
-    id: "value",
     header: "API value",
-    align: "end",
+    numeric: true,
     cell: (row) => <Amount micros={row.apiValueMicros} currency={currency} />,
   },
   {
-    id: "hour",
     header: "Busiest hour",
-    align: "end",
+    numeric: true,
     cell: (row) =>
       row.busiestHour === null ? "—" : `${String(row.busiestHour).padStart(2, "0")}:00`,
   },
@@ -71,26 +68,26 @@ function Kpis(): ReactNode {
   const { currency, approximate } = totals;
   return (
     <KpiGrid>
-      <KpiTile
+      <Kpi
         label="Paid"
         value={<Amount micros={totals.paid_micros} currency={currency} approximate={approximate} />}
-        hint={totals.currency_fallback ? "EUR rates unavailable: shown in USD" : undefined}
+        detail={totals.currency_fallback ? "EUR rates unavailable: shown in USD" : undefined}
       />
-      <KpiTile
+      <Kpi
         label="API value"
         value={
           <Amount micros={totals.api_value_micros} currency={currency} approximate={approximate} />
         }
-        hint={approximate ? "Includes unpriced usage" : undefined}
+        detail={approximate ? "Includes unpriced usage" : undefined}
       />
-      <KpiTile label="ROI" value={formatRoiMultiple(totals.roi)} hint="API value over fees" />
-      <KpiTile label="Tokens" value={formatTokens(totals.total_tokens)} />
-      <KpiTile
+      <Kpi label="ROI" value={formatRoiMultiple(totals.roi)} detail="API value over fees" />
+      <Kpi label="Tokens" value={formatTokens(totals.total_tokens)} />
+      <Kpi
         label="Cached input"
         value={formatPercent(totals.cached_input_percent / 100)}
-        hint="Share of input read from cache"
+        detail="Share of input read from cache"
       />
-      <KpiTile
+      <Kpi
         label="Cache savings"
         value={
           totals.cache_savings_micros === null ? (
@@ -100,8 +97,8 @@ function Kpis(): ReactNode {
           )
         }
       />
-      <KpiTile label="Output tokens" value={formatTokens(totals.output)} />
-      <KpiTile label="Sessions" value={totals.sessions.toLocaleString("en-US")} />
+      <Kpi label="Output tokens" value={formatTokens(totals.output)} />
+      <Kpi label="Sessions" value={totals.sessions.toLocaleString("en-US")} />
     </KpiGrid>
   );
 }
@@ -118,6 +115,8 @@ function CostCard(): ReactNode {
   return (
     <ChartFrame
       title="Daily cost"
+      description={`Cost per day, grouped by ${groupBy}: ${series.points.length} points.`}
+      points={series.points.length}
       actions={
         <SegmentedControl
           label="Group cost"
@@ -126,7 +125,6 @@ function CostCard(): ReactNode {
           onChange={setGroupBy}
         />
       }
-      chart={<CostChart series={series} currency={series.currency} />}
       table={
         <DataTable
           caption="Daily API value"
@@ -134,16 +132,14 @@ function CostCard(): ReactNode {
           rowKey={(point) => point.start}
           columns={[
             {
-              id: "day",
               header: "Day",
               cell: (point) => point.start,
               sortValue: (point) => point.start,
             },
             ...groups.map(
               (group): Column<(typeof series.points)[number]> => ({
-                id: group,
                 header: group,
-                align: "end",
+                numeric: true,
                 cell: (point) => (
                   <Amount
                     micros={point.groups[group]?.api_value_micros ?? 0}
@@ -154,16 +150,19 @@ function CostCard(): ReactNode {
               }),
             ),
             {
-              id: "paid",
               header: "Paid",
-              align: "end",
+              numeric: true,
               cell: (point) => <Amount micros={point.paid_micros} currency={series.currency} />,
               sortValue: (point) => point.paid_micros,
             },
           ]}
         />
       }
-    />
+    >
+      <div className="h-56">
+        <CostChart series={series} currency={series.currency} />
+      </div>
+    </ChartFrame>
   );
 }
 

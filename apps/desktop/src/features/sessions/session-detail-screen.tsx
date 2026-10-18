@@ -106,22 +106,20 @@ export function SessionDetailScreen(props: {
   const at = (iso: string): string => formatDateTime(Date.parse(iso), timeZone);
 
   const eventColumns: Column<SessionEvent>[] = [
-    { id: "at", header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
-    { id: "model", header: "Model", cell: (row) => row.model, sortValue: (row) => row.model },
-    { id: "kind", header: "Kind", cell: (row) => row.kind },
-    { id: "branch", header: "Branch", cell: (row) => row.git_branch ?? "—" },
+    { header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
+    { header: "Model", cell: (row) => row.model, sortValue: (row) => row.model },
+    { header: "Kind", cell: (row) => row.kind },
+    { header: "Branch", cell: (row) => row.git_branch ?? "—" },
     {
-      id: "tokens",
       header: "Tokens",
-      align: "end",
+      numeric: true,
       cell: (row) => formatTokens(row.total_tokens),
       sortValue: (row) => row.total_tokens,
     },
-    { id: "output", header: "Output", align: "end", cell: (row) => formatTokens(row.output) },
+    { header: "Output", numeric: true, cell: (row) => formatTokens(row.output) },
     {
-      id: "value",
       header: "API value",
-      align: "end",
+      numeric: true,
       cell: (row) => (
         <Amount
           micros={row.api_value_micros}
@@ -131,14 +129,13 @@ export function SessionDetailScreen(props: {
       ),
       sortValue: (row) => row.api_value_micros,
     },
-    { id: "source", header: "Cost source", cell: (row) => COST_SOURCE_LABEL[row.cost_source] },
+    { header: "Cost source", cell: (row) => COST_SOURCE_LABEL[row.cost_source] },
   ];
   const toolColumns: Column<SessionToolCall>[] = [
-    { id: "at", header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
-    { id: "tool", header: "Tool", cell: (row) => row.tool_name, sortValue: (row) => row.tool_name },
-    { id: "server", header: "MCP server", cell: (row) => row.mcp_server ?? "—" },
+    { header: "Time", cell: (row) => at(row.at), sortValue: (row) => row.at },
+    { header: "Tool", cell: (row) => row.tool_name, sortValue: (row) => row.tool_name },
+    { header: "MCP server", cell: (row) => row.mcp_server ?? "—" },
     {
-      id: "status",
       header: "Result",
       cell: (row) => {
         if (row.is_error === null) {

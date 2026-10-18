@@ -15,7 +15,6 @@ const PAGE_SIZE = 25;
 function columns(timeZone: string, currency: SessionPage["currency"]): Column<SessionRow>[] {
   return [
     {
-      id: "session",
       header: "Session",
       cell: (row) => (
         <Link
@@ -29,54 +28,47 @@ function columns(timeZone: string, currency: SessionPage["currency"]): Column<Se
         </Link>
       ),
     },
-    { id: "agent", header: "Agent", cell: (row) => row.agent, sortValue: (row) => row.agent },
+    { header: "Agent", cell: (row) => row.agent, sortValue: (row) => row.agent },
     {
-      id: "started",
       header: "Started",
       cell: (row) => formatDateTime(Date.parse(row.started_at), timeZone),
       sortValue: (row) => row.started_at,
     },
     {
-      id: "duration",
       header: "Duration",
-      align: "end",
+      numeric: true,
       cell: (row) => formatDuration(row.duration_secs),
       sortValue: (row) => row.duration_secs,
     },
     {
-      id: "project",
       header: "Project",
       cell: (row) => row.project ?? "—",
       sortValue: (row) => row.project ?? "",
     },
-    { id: "models", header: "Models", cell: (row) => row.models.join(", ") },
+    { header: "Models", cell: (row) => row.models.join(", ") },
     {
-      id: "tokens",
       header: "Tokens",
-      align: "end",
+      numeric: true,
       cell: (row) => formatTokens(row.total_tokens),
       sortValue: (row) => row.total_tokens,
     },
     {
-      id: "value",
       header: "API value",
-      align: "end",
+      numeric: true,
       cell: (row) => (
         <Amount micros={row.api_value_micros} currency={currency} approximate={row.approximate} />
       ),
       sortValue: (row) => row.api_value_micros,
     },
     {
-      id: "paid",
       header: "Paid",
-      align: "end",
+      numeric: true,
       cell: (row) => <Amount micros={row.paid_micros} currency={currency} />,
       sortValue: (row) => row.paid_micros,
     },
     {
-      id: "tools",
       header: "Tool calls",
-      align: "end",
+      numeric: true,
       cell: (row) =>
         row.tool_errors === 0
           ? String(row.tool_calls)

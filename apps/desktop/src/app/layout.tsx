@@ -3,9 +3,9 @@ import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Dialog, DialogTrigger, Modal, ModalOverlay } from "react-aria-components";
 import { Button } from "../shared/button";
+import { NAV_ITEMS } from "../shared/nav";
 import { AppBanners, AppGate } from "./app-gate";
 import { FilterBar } from "./filter-bar";
-import { NAV_ITEMS } from "./nav";
 import { CommandPalette } from "./palette";
 
 function NavList({ onNavigate }: { readonly onNavigate?: () => void }): ReactNode {

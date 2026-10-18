@@ -116,6 +116,22 @@ for (const theme of THEMES) {
         });
       }
 
+      test("footer shows the full health text without clipping", async ({ page }) => {
+        await page.goto("/tray.html?mock=populated");
+        await settle(page);
+        const status = page.getByRole("contentinfo").getByRole("status");
+        await expect(status).toHaveText("1 sink failing");
+        const clipped = await status.evaluate((element) =>
+          [element, ...element.querySelectorAll("*")].some(
+            (node) => node.scrollWidth > node.clientWidth,
+          ),
+        );
+        expect(clipped).toBe(false);
+        const box = await status.boundingBox();
+        expect(box?.x).toBeGreaterThanOrEqual(0);
+        expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+      });
+
       test("empty and offline", async ({ page }) => {
         await page.goto("/tray.html?mock=empty");
         await settle(page);

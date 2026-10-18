@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
+import { formatCurrencyMicros } from "../../shared/format";
 import type { AdvisorReport, BillingReport, SubscriptionLine } from "../../shared/schemas";
-import { Amount, formatAmount } from "../common/amount";
-import { Badge } from "../common/badge";
-import { type Column, DataTable } from "../common/data-table";
-import { Kpi, KpiGrid, Section } from "../common/page";
+import { Amount, Badge, type Column, DataTable, Kpi, KpiGrid, Section } from "../../shared/ui";
 import { formatRoi, planLabel, type UntrackedPlan, untrackedPlans } from "./model";
 
 interface SubscriptionsPanelProps {
@@ -29,7 +27,7 @@ function columns(report: BillingReport): readonly Column<SubscriptionLine>[] {
       header: "Fee",
       numeric: true,
       cell: (line) =>
-        `${formatAmount(line.fee_micros, line.fee_currency)} / ${line.period === "monthly" ? "month" : "year"}`,
+        `${formatCurrencyMicros(line.fee_micros, line.fee_currency)} / ${line.period === "monthly" ? "month" : "year"}`,
     },
     { header: "Since", cell: (line) => line.start },
     {

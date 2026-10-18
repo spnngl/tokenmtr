@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
-import { seriesColor } from "./chart-frame";
+import { chartColor } from "./charts";
 import { ResponsiveChart } from "./responsive-chart";
 import { useChartAnimation } from "./use-chart-animation";
 
@@ -83,7 +83,7 @@ export function HorizontalBarChart({
               key={entry.name}
               name={entry.name}
               dataKey={`s${index}`}
-              fill={entry.color ?? seriesColor(index)}
+              fill={entry.color ?? chartColor(index)}
               isAnimationActive={animate}
             />
           ))}

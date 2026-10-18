@@ -3,6 +3,7 @@ import type { AppState, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
 import { advisorOf, quotaHistoryOf, quotaLatestOf } from "./quota";
 import { recapOf } from "./recap";
+import { generateMockReport } from "./report";
 import {
   billingOf,
   branchesOf,
@@ -219,6 +220,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     alerts: () => read(() => [...ALERTS]),
     backups: () => read(() => [...BACKUPS]),
     fxRates: () => read(() => fxRatesOf()),
+    generateReport: (spec) => read(() => generateMockReport(spec, empty)),
 
     scanNow: () => act("scanNow"),
     exportNow: () => act("exportNow"),
@@ -241,6 +243,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       notifications = "granted";
       options.onAction?.("requestNotifications", []);
       return read(() => notifications);
+    },
+    saveReport: (spec) => {
+      options.onAction?.("saveReport", [spec]);
+      return read(() => `/Users/demo/Documents/${generateMockReport(spec, empty).filename}`);
     },
     completeOnboarding: () => {
       onboarded = true;

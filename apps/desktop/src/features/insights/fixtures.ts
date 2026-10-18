@@ -1,5 +1,5 @@
+import { micros, usage } from "../../shared/fixtures";
 import type { HeatCell } from "../../shared/schemas/usage";
-import { micros, usage } from "../common/fixtures";
 import type { InsightsData, SignalDay } from "./model";
 
 function isoDay(offset: number): string {

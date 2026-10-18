@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { joinRemotes, toRemote, useDaemonGate } from "../../features/common/use-remote";
 import { InsightsScreen } from "../../features/insights/insights-screen";
 import { useAppConfig } from "../../shared/app-context";
 import { useBranches, useHeatmap, useSignals, useTools } from "../../shared/queries";
+import { joinRemotes, toRemote, useDaemonGate } from "../../shared/use-remote";
 import { useFilters } from "../use-filters";
 
 /** Insights: tool calls, signals, cost per branch and the activity heatmap. */

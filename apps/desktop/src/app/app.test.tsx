@@ -159,9 +159,9 @@ describe("Quota", () => {
   it("shows both windows with their history and reset markers", async () => {
     await renderApp("/quota");
     expect(
-      await screen.findByRole("heading", { name: "claude / default: 5-hour window" }),
+      await screen.findByRole("figure", { name: "claude / default: 5-hour window" }),
     ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "claude / default: 7-day window" })).toBeTruthy();
+    expect(screen.getByRole("figure", { name: "claude / default: 7-day window" })).toBeTruthy();
     expect(screen.getByText(/Will not reach 100% before reset/)).toBeTruthy();
   });
 

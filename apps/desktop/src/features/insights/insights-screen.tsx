@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { PageHeader } from "../common/page";
-import { type Remote, RemoteView } from "../common/remote-view";
+import { type Remote, RemoteView } from "../../shared/remote-view";
+import { PageHeader } from "../../shared/ui";
 import { BranchesPanel } from "./branches-panel";
 import { HeatmapPanel } from "./heatmap-panel";
 import { type InsightsData, isInsightsEmpty } from "./model";

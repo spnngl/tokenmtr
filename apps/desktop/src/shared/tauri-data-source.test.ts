@@ -5,6 +5,13 @@ import { createMockDataSource } from "./mock";
 import { toQueryRequest } from "./schemas";
 import { createTauriDataSource, DataSourceError, type Invoke } from "./tauri-data-source";
 
+const SPEC = {
+  range: { kind: "custom", first: "2026-05-01", last: "2026-05-30" },
+  scope: { kind: "project", project: "tokenmtr" },
+  format: "csv",
+  currency: "USD",
+} as const;
+
 const FILTERS = { ...defaultFilters("USD"), range: { kind: "preset", preset: "30d" } } as const;
 
 /**
@@ -48,6 +55,8 @@ function mockInvoke(mock: DataSource): Invoke {
     backups: () => mock.backups(),
     fx_rates: () => mock.fxRates(),
     request_notifications: () => mock.requestNotifications(),
+    generate_report: () => mock.generateReport(SPEC),
+    save_report: () => mock.saveReport(SPEC),
   };
   return (command) => {
     const answer = answers[command];
@@ -94,6 +103,8 @@ describe("Tauri data source over the mock fixtures", () => {
       tauri.backups(),
       tauri.fxRates(),
       tauri.requestNotifications(),
+      tauri.generateReport(SPEC),
+      tauri.saveReport(SPEC),
     ]);
     if (scenario === "populated") {
       expect(first.rows.length).toBeGreaterThan(0);
@@ -113,6 +124,16 @@ describe("Tauri data source over the mock fixtures", () => {
     const error = await tauri.scanNow().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(DataSourceError);
     expect(error).toHaveProperty("message", "scan_now: database is locked");
+  });
+
+  it("sends a report spec as `request` and reads the saved path", async () => {
+    const invoke = vi.fn<Invoke>(async (command) => (command === "save_report" ? null : {}));
+    const tauri = createTauriDataSource(invoke);
+    await expect(tauri.saveReport(SPEC)).resolves.toBeNull();
+    expect(invoke).toHaveBeenCalledWith("save_report", { request: SPEC });
+    await expect(tauri.generateReport(SPEC)).rejects.toThrow(
+      /generate_report: unexpected response/,
+    );
   });
 
   it("sends the filters as a query request", async () => {

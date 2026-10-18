@@ -114,6 +114,14 @@ describe("routes over the seeded mock", () => {
     expect(preview.textContent).toContain("## Per day");
   });
 
+  it("Reports saves through the data source and shows the saved path", async () => {
+    const actions: string[] = [];
+    await mount(ReportsRoute, "populated", (action) => actions.push(action));
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Save Markdown" }));
+    await waitFor(() => expect(actions).toContain("saveReport"));
+    expect((await screen.findByRole("status")).textContent).toMatch(/^Saved to .*\.md$/);
+  });
+
   it("Export now calls the data source", async () => {
     const actions: string[] = [];
     await mount(ExportRoute, "populated", (action) => actions.push(action));

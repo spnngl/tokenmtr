@@ -10,6 +10,7 @@ import type {
   Budget,
   FilterOptions,
   FxRateView,
+  GeneratedReport,
   GroupBy,
   Heatmap,
   IngestStatus,
@@ -20,6 +21,7 @@ import type {
   QuotaHistory,
   QuotaMeter,
   RecapSnapshot,
+  ReportSpec,
   Series,
   SessionDetail,
   SessionOrigin,
@@ -86,6 +88,8 @@ export interface DataSource {
   alerts(): Promise<Alert[]>;
   backups(): Promise<Backup[]>;
   fxRates(): Promise<FxRateView[]>;
+  /** Renders a report (`tokenmtr-report`): the preview of the Reports screen. */
+  generateReport(spec: ReportSpec): Promise<GeneratedReport>;
 
   // Actions
   scanNow(): Promise<void>;
@@ -105,4 +109,6 @@ export interface DataSource {
   eraseAllData(): Promise<void>;
   requestNotifications(): Promise<NotificationPermissionState>;
   completeOnboarding(): Promise<void>;
+  /** Renders a report and asks where to save it; resolves with the saved path, `null` on cancel. */
+  saveReport(spec: ReportSpec): Promise<string | null>;
 }

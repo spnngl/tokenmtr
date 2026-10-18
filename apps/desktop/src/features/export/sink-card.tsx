@@ -2,8 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
 import { formatDuration } from "../../shared/format";
 import type { SinkHealth, SinkRun } from "../../shared/schemas";
-import { Badge, type Tone } from "../common/badge";
-import { type Column, DataTable } from "../common/data-table";
+import { Badge, type Column, DataTable, type Tone } from "../../shared/ui";
 import { canExport, formatInstant, looksLikeProtectedFolder } from "./model";
 
 interface SinkCardProps {

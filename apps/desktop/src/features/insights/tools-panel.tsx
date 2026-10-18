@@ -1,12 +1,10 @@
 import { type ReactNode, useState } from "react";
+import { HorizontalBarChart } from "../../shared/bar-chart";
+import { topRows } from "../../shared/decimate";
 import { formatPercent } from "../../shared/format";
 import type { ToolRow, ToolsReport } from "../../shared/schemas/usage";
 import { SegmentedControl } from "../../shared/segmented-control";
-import { HorizontalBarChart } from "../common/bar-chart";
-import { ChartFrame } from "../common/chart-frame";
-import { type Column, DataTable } from "../common/data-table";
-import { topRows } from "../common/decimate";
-import { Section } from "../common/page";
+import { ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
 import { toolLabel } from "./model";
 
 type Grouping = "tool" | "server";

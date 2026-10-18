@@ -1,13 +1,10 @@
 import type { ReactNode } from "react";
+import { HorizontalBarChart } from "../../shared/bar-chart";
+import { topRows } from "../../shared/decimate";
 import type { Currency } from "../../shared/format";
-import { formatTokens } from "../../shared/format";
+import { formatCurrencyMicros, formatTokens } from "../../shared/format";
 import type { BranchRow } from "../../shared/schemas/usage";
-import { Amount, formatAmount } from "../common/amount";
-import { HorizontalBarChart } from "../common/bar-chart";
-import { ChartFrame } from "../common/chart-frame";
-import { type Column, DataTable } from "../common/data-table";
-import { topRows } from "../common/decimate";
-import { Section } from "../common/page";
+import { Amount, ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
 import { branchLabel } from "./model";
 
 const CHART_ROWS = 10;
@@ -60,7 +57,7 @@ export function BranchesPanel({
               values: [row.api_value_micros],
             }))}
             series={[{ name: "API value" }]}
-            formatValue={(value) => formatAmount(value, currency)}
+            formatValue={(value) => formatCurrencyMicros(value, currency)}
           />
         </ChartFrame>
       )}
