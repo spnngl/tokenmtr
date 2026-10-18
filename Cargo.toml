@@ -11,6 +11,7 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+tokenmtr-app = { path = "crates/tokenmtr-app" }
 tokenmtr-core = { path = "crates/tokenmtr-core" }
 tokenmtr-config = { path = "crates/tokenmtr-config" }
 tokenmtr-store = { path = "crates/tokenmtr-store" }
@@ -57,8 +58,11 @@ uuid = { version = "1.28", features = ["v7", "serde"] }
 zstd = "0.14"
 
 # dev
+assert_cmd = "2.2"
 divan = "0.1"
 insta = { version = "1.49", features = ["json"] }
+jsonschema = { version = "0.59", default-features = false }
+predicates = "3.1"
 proptest = "1.12"
 wiremock = "0.6"
 

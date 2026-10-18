@@ -16,10 +16,11 @@ use crate::changes::std_duration;
 use crate::ctx::{Active, Ctx, Job, Runtime, lock};
 use crate::error::DaemonError;
 use crate::handler::ControlHandler;
-use crate::reload::{load_config, store_path, watch_plan};
+use crate::reload::watch_plan;
 use crate::scheduler::Scheduler;
 use crate::settings::Settings;
 use crate::watcher;
+use tokenmtr_app::{load_config, store_path};
 
 /// A running daemon: the control server, the scheduler and the watcher, all inside the current
 /// tokio runtime.

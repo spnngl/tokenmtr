@@ -1,12 +1,11 @@
 //! Alert evaluation (D36): gather the inputs, run the core rules, store and announce new alerts.
 
 use jiff::Timestamp;
+use tokenmtr_app::{budget_specs, query_context};
 use tokenmtr_control::Event;
 use tokenmtr_core::alert::{BudgetState, DriftState, QuotaWindowStatus, SinkState};
 use tokenmtr_core::{AlertInputs, evaluate_alerts};
-use tokenmtr_query::{
-    BudgetSpec, FxPolicy, QueryContext, WeekStart, budgets, load_fx_rates, load_subscriptions,
-};
+use tokenmtr_query::budgets;
 use tokenmtr_store::{IssueKind, StoreRead};
 
 use crate::ctx::{Active, Ctx, lock};
@@ -89,26 +88,8 @@ impl Ctx {
             return Ok(Vec::new());
         }
         let reader = lock(&self.reader);
-        let fx = match config.fx.fixed_eur_per_usd {
-            Some(rate) => FxPolicy::fixed(rate),
-            None => FxPolicy::from_rates(&load_fx_rates(&reader)?),
-        };
-        let context = QueryContext::new(
-            active.ingest.zone.clone(),
-            WeekStart::Monday,
-            config.display.currency,
-            fx,
-            now,
-        )
-        .with_subscriptions(load_subscriptions(&reader)?);
-        let specs: Vec<BudgetSpec> = config
-            .budgets
-            .iter()
-            .map(|entry| BudgetSpec {
-                budget: entry.budget.clone(),
-                scope: query_scope(&entry.scope),
-            })
-            .collect();
+        let context = query_context(config, &reader, now, None)?;
+        let specs = budget_specs(config);
         Ok(budgets(&reader, &context, &specs)?
             .into_iter()
             .filter_map(|view| {
@@ -123,21 +104,5 @@ impl Ctx {
                 })
             })
             .collect())
-    }
-}
-
-fn query_scope(scope: &tokenmtr_config::BudgetScope) -> tokenmtr_query::BudgetScope {
-    tokenmtr_query::BudgetScope {
-        agents: scope.agents.clone(),
-        profiles: scope.profiles.clone(),
-        projects: scope.projects.clone(),
-        clients: scope.clients.as_ref().map(|clients| {
-            clients
-                .iter()
-                .filter_map(|client| {
-                    tokenmtr_query::ClientName::try_from(client.as_str().to_owned()).ok()
-                })
-                .collect()
-        }),
     }
 }

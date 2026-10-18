@@ -5,8 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use camino::Utf8PathBuf;
-use clap::Args;
+use camino::Utf8Path;
 use tokenmtr_config::LogLevel;
 use tokenmtr_daemon::{Daemon, Settings};
 use tokenmtr_platform::{Paths, Platform, PlatformKind, ThreadPriority, set_thread_priority};
@@ -20,27 +19,16 @@ const WORKER_THREADS: usize = 2;
 /// How long the runtime waits for blocking threads after the daemon stopped.
 const RUNTIME_GRACE: Duration = Duration::from_secs(1);
 
-/// Arguments of `tokenmtr run`.
-#[derive(Debug, Args)]
-pub struct RunArgs {
-    /// Config file; defaults to the platform config location.
-    #[arg(long)]
-    config: Option<Utf8PathBuf>,
-}
-
 #[cfg(target_os = "macos")]
 fn secrets() -> Arc<dyn tokenmtr_platform::SecretStore + Send + Sync> {
     Arc::new(tokenmtr_platform::KeychainSecrets)
 }
 
 /// Runs the daemon until SIGTERM or SIGINT.
-pub fn run(args: &RunArgs) -> anyhow::Result<()> {
+pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
     let platform = PlatformKind::detect().context("cannot resolve the platform directories")?;
     let paths = platform.paths().clone();
-    let config_path = args
-        .config
-        .clone()
-        .unwrap_or_else(|| paths.config_file().to_owned());
+    let config_path = config.map_or_else(|| paths.config_file().to_owned(), Utf8Path::to_owned);
     let _log_guard = init_tracing(&paths, &config_path)?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -79,7 +67,7 @@ async fn wait_for_signal() -> anyhow::Result<()> {
 
 /// Logs to a daily rolling file in the platform log directory (and to stderr on a terminal).
 /// `RUST_LOG` wins over the configured level. The returned guard flushes the file on drop.
-fn init_tracing(paths: &Paths, config_path: &camino::Utf8Path) -> anyhow::Result<WorkerGuard> {
+fn init_tracing(paths: &Paths, config_path: &Utf8Path) -> anyhow::Result<WorkerGuard> {
     // The daemon reports an invalid config itself; here only the level matters.
     let level = tokenmtr_config::load(config_path)
         .map(|config| config.daemon.log_level)

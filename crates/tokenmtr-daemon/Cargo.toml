@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 tokenmtr-agents.workspace = true
+tokenmtr-app.workspace = true
 tokenmtr-config.workspace = true
 tokenmtr-control.workspace = true
 tokenmtr-core.workspace = true

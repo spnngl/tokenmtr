@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokenmtr.dev/schema/status/1.json",
+  "title": "tokenmtr status --json (status_schema = 1)",
+  "description": "Daemon and sink health plus a recap of every followed agent. Fields may be added within status_schema 1; none are renamed, retyped or removed. Money fields are integer micros of `currency`; timestamps are RFC 3339 UTC; dates are YYYY-MM-DD.",
+  "type": "object",
+  "required": ["status_schema", "generated_at", "system", "agents"],
+  "properties": {
+    "status_schema": { "const": 1 },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "system": { "$ref": "#/$defs/system" },
+    "agents": { "type": "array", "items": { "$ref": "#/$defs/recap" } }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "micros": { "type": "integer" },
+    "currency": { "enum": ["USD", "EUR"] },
+    "system": {
+      "type": "object",
+      "required": ["level", "daemon", "sinks"],
+      "properties": {
+        "level": { "enum": ["ok", "warning", "error"] },
+        "daemon": {
+          "type": "object",
+          "required": ["state", "last_heartbeat", "age_secs"],
+          "properties": {
+            "state": { "enum": ["running", "stale", "never_started"] },
+            "last_heartbeat": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+            "age_secs": { "type": ["integer", "null"] }
+          }
+        },
+        "sinks": { "type": "array", "items": { "$ref": "#/$defs/sink" } }
+      }
+    },
+    "sink": {
+      "type": "object",
+      "required": ["sink", "state", "lag_rows", "lag_secs", "last_success_at", "recent_runs"],
+      "properties": {
+        "sink": { "type": "string" },
+        "state": { "enum": ["healthy", "lagging", "failing", "disabled"] },
+        "since": { "$ref": "#/$defs/timestamp" },
+        "last_error": { "type": "string" },
+        "lag_rows": { "type": "integer", "minimum": 0 },
+        "lag_secs": { "type": ["integer", "null"] },
+        "last_success_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+        "recent_runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["dataset", "started_at", "finished_at", "rows", "error"],
+            "properties": {
+              "dataset": { "type": "string" },
+              "started_at": { "$ref": "#/$defs/timestamp" },
+              "finished_at": { "$ref": "#/$defs/timestamp" },
+              "rows": { "type": "integer", "minimum": 0 },
+              "error": { "type": ["string", "null"] }
+            }
+          }
+        }
+      },
+      "if": { "properties": { "state": { "const": "failing" } } },
+      "then": { "required": ["since", "last_error"] }
+    },
+    "recap": {
+      "type": "object",
+      "required": [
+        "agent", "period", "range", "currency", "currency_fallback", "totals",
+        "projected_paid_micros", "quota", "budgets", "sparkline", "live", "top_model",
+        "last_activity"
+      ],
+      "properties": {
+        "agent": { "type": ["string", "null"] },
+        "period": { "enum": ["today", "week", "month"] },
+        "range": {
+          "type": "object",
+          "required": ["start", "end"],
+          "properties": {
+            "start": { "$ref": "#/$defs/date" },
+            "end": { "$ref": "#/$defs/date", "description": "Exclusive." }
+          }
+        },
+        "currency": { "$ref": "#/$defs/currency" },
+        "currency_fallback": { "type": "boolean" },
+        "totals": { "$ref": "#/$defs/totals" },
+        "projected_paid_micros": { "$ref": "#/$defs/micros" },
+        "quota": { "type": "array", "items": { "$ref": "#/$defs/meter" } },
+        "budgets": { "type": "array", "items": { "$ref": "#/$defs/budget" } },
+        "sparkline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["date", "api_value_micros"],
+            "properties": {
+              "date": { "$ref": "#/$defs/date" },
+              "api_value_micros": { "$ref": "#/$defs/micros" }
+            }
+          }
+        },
+        "live": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["tokens_per_minute", "api_value_per_hour_usd_micros", "active_sessions"],
+              "properties": {
+                "tokens_per_minute": { "type": "integer", "minimum": 0 },
+                "api_value_per_hour_usd_micros": { "$ref": "#/$defs/micros" },
+                "active_sessions": { "type": "integer", "minimum": 0 }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "top_model": { "type": ["string", "null"] },
+        "last_activity": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "required": [
+        "currency", "currency_fallback", "events", "input_uncached", "cache_read",
+        "cache_write_5m", "cache_write_1h", "output", "reasoning", "total_tokens",
+        "api_value_micros", "api_value_usd_micros", "paid_micros", "subscription_value_micros",
+        "subscription_fee_micros", "reported_events", "estimated_events", "unpriced_events",
+        "approximate", "cached_input_percent", "cache_savings_micros", "roi", "sessions"
+      ],
+      "properties": {
+        "currency": { "$ref": "#/$defs/currency" },
+        "currency_fallback": { "type": "boolean" },
+        "events": { "type": "integer", "minimum": 0 },
+        "input_uncached": { "type": "integer", "minimum": 0 },
+        "cache_read": { "type": "integer", "minimum": 0 },
+        "cache_write_5m": { "type": "integer", "minimum": 0 },
+        "cache_write_1h": { "type": "integer", "minimum": 0 },
+        "output": { "type": "integer", "minimum": 0 },
+        "reasoning": { "type": "integer", "minimum": 0 },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "api_value_micros": { "$ref": "#/$defs/micros" },
+        "api_value_usd_micros": { "$ref": "#/$defs/micros" },
+        "paid_micros": { "$ref": "#/$defs/micros" },
+        "subscription_value_micros": { "$ref": "#/$defs/micros" },
+        "subscription_fee_micros": { "$ref": "#/$defs/micros" },
+        "reported_events": { "type": "integer", "minimum": 0 },
+        "estimated_events": { "type": "integer", "minimum": 0 },
+        "unpriced_events": { "type": "integer", "minimum": 0 },
+        "approximate": { "type": "boolean" },
+        "cached_input_percent": { "type": "number" },
+        "cache_savings_micros": { "type": ["integer", "null"] },
+        "roi": { "type": ["number", "null"] },
+        "sessions": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "meter": {
+      "type": "object",
+      "required": ["agent", "profile", "fetched_at", "age_secs", "status", "account", "windows"],
+      "properties": {
+        "agent": { "type": "string" },
+        "profile": { "type": "string" },
+        "fetched_at": { "$ref": "#/$defs/timestamp" },
+        "age_secs": { "type": "integer" },
+        "status": { "enum": ["ok", "signed_out", "token_expired", "failed"] },
+        "account": { "type": ["string", "null"] },
+        "windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["window", "used_percent", "resets_at", "resets_in_secs", "eta"],
+            "properties": {
+              "window": { "type": "string" },
+              "used_percent": { "type": "number" },
+              "resets_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+              "resets_in_secs": { "type": ["integer", "null"] },
+              "eta": {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                  "kind": { "enum": ["will_hit", "wont_hit", "not_enough_data"] },
+                  "at": { "$ref": "#/$defs/timestamp" }
+                },
+                "if": { "properties": { "kind": { "const": "will_hit" } } },
+                "then": { "required": ["at"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "id", "period", "measure", "currency", "period_start", "period_end", "limit_micros",
+        "spent_micros", "percent", "projected_micros", "projected_percent"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "period": { "enum": ["day", "week", "month"] },
+        "measure": { "enum": ["paid", "api_value"] },
+        "currency": { "$ref": "#/$defs/currency" },
+        "period_start": { "$ref": "#/$defs/date" },
+        "period_end": { "$ref": "#/$defs/date" },
+        "limit_micros": { "$ref": "#/$defs/micros" },
+        "spent_micros": { "$ref": "#/$defs/micros" },
+        "percent": { "type": "number" },
+        "projected_micros": { "$ref": "#/$defs/micros" },
+        "projected_percent": { "type": "number" }
+      }
+    }
+  }
+}

@@ -3,26 +3,17 @@
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use tokenmtr_agents::AgentSource;
 use tokenmtr_agents::ingest::{IngestSettings, Ingestor};
-use tokenmtr_config::{Config, ConfigError, ConfigFormat, Env, TomlCodec, load_str, load_with};
-use tokenmtr_platform::{Paths, ThreadPriority};
+use tokenmtr_app::{load_config, store_path};
+use tokenmtr_config::Config;
+use tokenmtr_platform::ThreadPriority;
 use tokenmtr_store::StoreRead;
 
 use crate::changes::std_duration;
 use crate::ctx::{Active, Ctx, Job, WatchPlan, lock};
 use crate::error::DaemonError;
-
-/// Reads the config at `path`; a file that does not exist means the defaults (D21).
-pub(crate) fn load_config(path: &Utf8Path, env: &dyn Env) -> Result<Config, ConfigError> {
-    match load_with(path, env) {
-        Err(ConfigError::Read { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
-            load_str("", ConfigFormat::Toml(TomlCodec), env)
-        }
-        other => other,
-    }
-}
 
 /// What the watcher should watch for `config`; empty when `daemon.watch` is off.
 pub(crate) fn watch_plan(
@@ -200,13 +191,4 @@ impl Ctx {
         let age = Duration::try_from(age).unwrap_or(Duration::ZERO);
         self.settings.timing.pricing_interval.saturating_sub(age)
     }
-}
-
-/// The store file: `store.path`, else `usage.db` in the data directory (D21).
-pub(crate) fn store_path(paths: &Paths, config: &Config) -> Utf8PathBuf {
-    config
-        .store
-        .path
-        .clone()
-        .unwrap_or_else(|| paths.data_dir().join("usage.db"))
 }
