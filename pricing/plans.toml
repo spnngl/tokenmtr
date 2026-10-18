@@ -1,0 +1,27 @@
+# Plan catalog: Anthropic list prices (USD) and quota ratios relative to Pro.
+#
+# These are DEFAULTS, not authority: the fee actually charged is whatever the user configures
+# on the `[[subscription]]` entry in config.toml (taxes, regional pricing, discounts).
+# Team, Enterprise and custom plans have no list price; their fee is required in config.
+#
+# monthly_fee_usd / yearly_fee_usd are decimal strings (no floats).
+# quota_multiplier scales the five-hour and seven-day quota windows (Pro = 1).
+
+[[plan]]
+id = "pro"
+display_name = "Claude Pro"
+monthly_fee_usd = "20.00"
+yearly_fee_usd = "200.00"
+quota_multiplier = 1
+
+[[plan]]
+id = "max_5x"
+display_name = "Claude Max 5x"
+monthly_fee_usd = "100.00"
+quota_multiplier = 5
+
+[[plan]]
+id = "max_20x"
+display_name = "Claude Max 20x"
+monthly_fee_usd = "200.00"
+quota_multiplier = 20
