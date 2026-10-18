@@ -1,0 +1,131 @@
+schema_version = 1
+
+[machine]
+# name = "work-mbp"            # display label; default: host name
+
+[display]
+timezone = "system"            # or IANA name, e.g. "Europe/Paris"
+currency = "USD"               # USD | EUR
+
+[quota]
+enabled = true
+interval = "5m"
+
+[fx]
+enabled = true                 # ECB fetch
+# fixed_eur_per_usd = 0.92     # overrides ECB
+
+[menubar]
+agents = ["claude", "pi"]      # one recap tab each; default: all enabled agents
+title = "paid_today"           # paid_today | api_today | tightest_quota | none
+shortcut = "Alt+CommandOrControl+U"  # "" disables
+live_window = "10m"            # Live block window (D58)
+
+[alerts]
+quota_thresholds = [80, 95]    # percent
+quota_reset = true
+budget_thresholds = [80, 100]  # percent
+sink_failing_after = "30m"
+daemon_stale_after = "15m"
+
+[advisor]
+headroom = 80                  # percent
+
+[backup]
+enabled = true
+interval = "1d"
+keep = 14
+# dir = "~/Library/Application Support/dev.tokenmtr.app/backups"
+
+[import]
+claude_stats_cache = true
+
+[[projects]]                   # first match wins; otherwise git resolution (D31)
+match = "~/work/acme-*/**"
+name = "acme"
+client = "Acme Corp"
+
+[[budgets]]
+id = "monthly"
+period = "month"               # day | week | month
+amount = 300.0
+currency = "EUR"
+measure = "paid"               # paid | api_value
+# agents = ["claude"]; profiles = ["work"]; projects = ["acme"]; clients = ["Acme Corp"]
+
+[pricing]
+auto_update = true             # daily LiteLLM refresh
+
+[[pricing.overrides]]          # beats LiteLLM; USD per million tokens
+model = "my-private-model"
+input_per_m = 3.0
+output_per_m = 15.0
+# cache_read_per_m, cache_write_5m_per_m, cache_write_1h_per_m: optional
+
+[[subscriptions]]
+id = "claude-max"
+provider = "anthropic"
+plan = "max_20x"               # pro | max_5x | max_20x | team | enterprise | custom
+agents = ["claude", "pi"]
+# profiles = ["default"]       # optional narrowing (D28)
+# fee = 200.0                  # default from pricing/plans.toml
+fee_currency = "USD"           # USD | EUR
+period = "monthly"             # monthly | yearly
+start = "2025-06-01"
+# end = "2026-06-01"
+
+[daemon]
+scan_interval = "5m"
+watch = true
+log_level = "info"
+
+[store]
+# path = "~/Library/Application Support/dev.tokenmtr.app/usage.db"  # platform default
+
+[privacy]
+redact_paths = false
+
+[agents.claude]
+enabled = true
+
+[[agents.claude.profiles]]
+id = "default"
+# roots = ["~/.claude/projects"]   # default: platform + env discovery
+
+# [[agents.claude.profiles]]
+# id = "work"
+# config_dir = "~/.claude-work"    # roots, credentials and stats cache come from here
+
+[agents.pi]
+enabled = true
+
+[[agents.pi.profiles]]
+id = "default"
+# roots = ["~/.pi/agent/sessions"]
+
+[[sinks]]
+id = "local-csv"
+kind = "csv"
+# dir = "~/Library/Application Support/dev.tokenmtr.app/exports"  # default (D21, D50)
+mode = "append"                # append | snapshot
+partition = "month"            # month | day | all
+datasets = ["usage_events", "tool_calls", "quota_snapshots", "fx_rates", "subscriptions"]
+interval = "5m"
+
+[[sinks]]
+id = "local-sqlite"
+kind = "sqlite"
+# path = "~/Library/Application Support/dev.tokenmtr.app/exports/export.db"  # default
+interval = "5m"
+
+[[sinks]]
+id = "shared-jsonl"
+kind = "jsonl"
+dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant access first (D50)
+mode = "append"
+redact = { cwd = "hash", git_branch = "drop" }   # D40
+
+# [[sinks]]                    # later (Phase 13)
+# id = "warehouse"
+# kind = "postgres"
+# url_env = "TOKENMTR_PG_URL"   # secrets never live in the file

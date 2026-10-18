@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-main","timestamp":"2026-03-02T09:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"branch_summary","id":"e0000008","parentId":"e0000007","timestamp":"2026-03-02T09:05:01.000Z","fromId":"e0000005","summary":"SECRET summary of the abandoned branch","usage":{"input":400,"output":90,"cacheRead":0,"cacheWrite":0,"totalTokens":490,"cost":{"input":0.0004,"output":0.0009,"cacheRead":0,"cacheWrite":0,"total":0.0013}}}

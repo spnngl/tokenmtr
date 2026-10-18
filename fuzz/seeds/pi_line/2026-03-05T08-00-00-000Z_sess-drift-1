@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-drift","timestamp":"2026-03-05T08:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"message","id":"g0000002","parentId":"g0000001","timestamp":"2026-03-05T08:00:09.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Renamed."}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","responseId":"msg_drift_2","usage":{"promptTokens":123456,"completionTokens":654321,"cachedTokens":777777,"tier":"SECRET"},"stopReason":"stop","timestamp":1772697609000}}

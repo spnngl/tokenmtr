@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-main","timestamp":"2026-03-02T09:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"message","id":"e0000001","parentId":null,"timestamp":"2026-03-02T09:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"SECRET prompt: list the files"}],"timestamp":1772442001000}}

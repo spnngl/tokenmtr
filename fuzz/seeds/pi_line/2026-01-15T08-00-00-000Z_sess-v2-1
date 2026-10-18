@@ -1,0 +1,2 @@
+{"type":"session","version":2,"id":"sess-v2","timestamp":"2026-01-15T08:00:00.000Z","cwd":"/home/demo/legacy"}
+{"type":"message","id":"b0000002","parentId":"b0000001","timestamp":"2026-01-15T08:00:04.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Old answer."}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":90,"output":35,"cacheRead":0,"cacheWrite":0,"totalTokens":125,"cost":{"input":0.0003,"output":0.0005,"cacheRead":0,"cacheWrite":0,"total":0.0008}},"stopReason":"stop","timestamp":1768464004000}}

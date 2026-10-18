@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+	<gesmes:subject>Reference rates</gesmes:subject>
+	<gesmes:Sender>
+		<gesmes:name>European Central Bank</gesmes:name>
+	</gesmes:Sender>
+	<Cube>
+		<Cube time='2026-05-15'><Cube currency='USD' rate='1.1620'/><Cube currency='JPY' rate='183.12'/></Cube>
+		<Cube time='2026-05-14'><Cube currency='USD' rate='1.1600'/><Cube currency='JPY' rate='182.90'/></Cube>
+		<Cube time='2026-05-13'><Cube currency='USD' rate='1.1575'/><Cube currency='JPY' rate='182.40'/></Cube>
+		<Cube time='2026-05-12'><Cube currency='USD' rate='1.1550'/><Cube currency='JPY' rate='182.01'/></Cube>
+		<Cube time='2026-05-11'><Cube currency='JPY' rate='181.77'/><Cube currency='USD' rate='1.1534'/></Cube>
+		<Cube time='2026-05-08'><Cube currency='USD' rate='1.1500'/><Cube currency='JPY' rate='181.20'/></Cube>
+		<Cube time='2026-05-07'><Cube currency='USD' rate='1.1488'/><Cube currency='JPY' rate='181.05'/></Cube>
+		<Cube time='2026-05-06'><Cube currency='USD' rate='1.1470'/><Cube currency='JPY' rate='180.66'/></Cube>
+		<Cube time='2026-05-05'><Cube currency='USD' rate='1.1455'/><Cube currency='JPY' rate='180.31'/></Cube>
+		<Cube time='2026-05-04'><Cube currency='USD' rate='1.1440'/><Cube currency='JPY' rate='180.02'/></Cube>
+	</Cube>
+</gesmes:Envelope>

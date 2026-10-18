@@ -8,13 +8,15 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
-# Targets are added next to the parser they exercise (D54): claude_line, pi_line, stats_cache,
-# litellm_catalog, quota_response, ecb_xml, config.
+# One target per parser of outside data (D54). Each file in `fuzz_targets/` is a one-line shim over
+# the matching function in `src/lib.rs`, which `cargo test --lib` also drives on stable with the
+# `seeds/` corpora (`just fuzz-smoke`).
 
 [dependencies]
 libfuzzer-sys = "0.4"
 jiff = "0.2"
 tokenmtr-agents = { path = "../crates/tokenmtr-agents" }
+tokenmtr-config = { path = "../crates/tokenmtr-config" }
 tokenmtr-core = { path = "../crates/tokenmtr-core" }
 tokenmtr-remote = { path = "../crates/tokenmtr-remote" }
 
@@ -28,6 +30,20 @@ bench = false
 [[bin]]
 name = "pi_line"
 path = "fuzz_targets/pi_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stats_cache"
+path = "fuzz_targets/stats_cache.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "litellm_catalog"
+path = "fuzz_targets/litellm_catalog.rs"
 test = false
 doc = false
 bench = false
@@ -47,8 +63,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "litellm_catalog"
-path = "fuzz_targets/litellm_catalog.rs"
+name = "config"
+path = "fuzz_targets/config.rs"
 test = false
 doc = false
 bench = false

@@ -4,9 +4,29 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "fuzz/**"
+      - "fixtures/**"
+      - "crates/**"
 
 jobs:
+  # Stable: seeds plus truncated and bit-flipped variants through every target (D54).
+  smoke:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Replay the seed corpora
+        working-directory: fuzz
+        run: cargo test --lib
+
+  # Nightly: real libFuzzer, scheduled and manual runs only.
   fuzz:
+    if: github.event_name != 'pull_request'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -15,10 +35,16 @@ jobs:
         with:
           workspaces: fuzz
       - run: cargo install cargo-fuzz --locked
-      - name: Run every target for five minutes
+      - name: Run every target for 60 seconds from its seed corpus
         working-directory: fuzz
         run: |
-          shopt -s nullglob
-          for target in $(cargo fuzz list); do
-            cargo fuzz run "$target" -- -max_total_time=300
+          # +nightly: rust-toolchain.toml would otherwise pin stable.
+          for target in $(cargo +nightly fuzz list); do
+            cargo +nightly fuzz run "$target" -- -max_total_time=60 "$PWD/seeds/$target"
           done
+      - name: Keep the crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts

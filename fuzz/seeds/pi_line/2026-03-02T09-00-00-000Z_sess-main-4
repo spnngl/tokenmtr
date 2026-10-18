@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-main","timestamp":"2026-03-02T09:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"usage","id":"e0000005","parentId":"e0000004","timestamp":"2026-03-02T09:00:11.000Z","kind":"title","provider":"anthropic","model":"claude-haiku-4-5","usage":{"input":30,"output":8,"cacheRead":0,"cacheWrite":0,"totalTokens":38,"cost":{"input":0.00003,"output":0.00004,"cacheRead":0,"cacheWrite":0,"total":0.00007}}}

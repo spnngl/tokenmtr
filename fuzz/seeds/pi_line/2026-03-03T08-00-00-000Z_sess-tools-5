@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-tools","timestamp":"2026-03-03T08:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"message","id":"c0000006","parentId":"c0000005","timestamp":"2026-03-03T08:00:09.000Z","message":{"role":"toolResult","toolCallId":"call_orphan","toolName":"read","content":[],"isError":true,"timestamp":1772524809000}}

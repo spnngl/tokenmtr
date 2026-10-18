@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-main","timestamp":"2026-03-02T09:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"message","id":"e0000003","parentId":"e0000002","timestamp":"2026-03-02T09:00:06.000Z","message":{"role":"toolResult","toolCallId":"call_main_1","toolName":"read","content":[{"type":"text","text":"SECRET file body"}],"isError":false,"usage":{"input":50,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":70,"cost":{"input":0.0001,"output":0.0001,"cacheRead":0,"cacheWrite":0,"total":0.0002}},"timestamp":1772442006000}}

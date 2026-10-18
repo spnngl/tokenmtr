@@ -1,7 +1,7 @@
+//! D54: arbitrary bytes into the `litellm_catalog` parser must never panic.
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    let _ = tokenmtr_remote::parse_catalog(data);
-});
+fuzz_target!(|data: &[u8]| tokenmtr_fuzz::litellm_catalog(data));

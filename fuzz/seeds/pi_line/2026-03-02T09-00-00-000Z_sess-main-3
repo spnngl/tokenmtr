@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-main","timestamp":"2026-03-02T09:00:00.000Z","cwd":"/home/demo/app"}
+{"type":"message","id":"e0000004","parentId":"e0000003","timestamp":"2026-03-02T09:00:10.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"api":"openai-responses","provider":"openai","model":"gpt-5","usage":{"input":200,"output":200,"cacheRead":1000,"cacheWrite":0,"reasoning":64,"totalTokens":1400,"cost":{"input":0.0003,"output":0.002,"cacheRead":0.0001,"cacheWrite":0,"total":0.0024}},"stopReason":"stop","timestamp":1772442010000}}

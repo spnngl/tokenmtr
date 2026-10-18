@@ -1,0 +1,2 @@
+{"type":"session","id":"sess-v1","timestamp":"2025-11-01T08:00:00.000Z","cwd":"/home/demo/ancient"}
+{"type":"message","timestamp":"2025-11-01T08:00:01.000Z","message":{"role":"user","content":"SECRET ancient prompt","timestamp":1761984001000}}
