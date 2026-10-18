@@ -1,10 +1,9 @@
 /**
  * Golden responses of the read commands, parsed through the real Tauri data source.
  *
- * Each `__fixtures__/<command>.json` is hand-written from the Rust serde types (snake_case keys,
- * enum strings, `null` for absent options, every field present), not from the Zod schemas, so a
- * schema that drifts from Rust fails here. The integrator should add a Rust test that serializes
- * the same values and asserts byte-equal JSON against these files, so drift fails on both sides.
+ * Each `__fixtures__/<command>.json` is serialized from the real Rust view types by
+ * `apps/desktop/src-tauri/src/goldens.rs` (regenerate with `just goldens`), so a Zod schema that
+ * drifts from Rust fails here, and a Rust shape change fails the Rust golden test.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
