@@ -1,0 +1,98 @@
+//! What the process hands the daemon: where things are, and how fast it runs.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use camino::Utf8PathBuf;
+use tokenmtr_agents::ingest::watch::Debounce;
+use tokenmtr_config::{Env, ProcessEnv};
+use tokenmtr_platform::{ControlTransport, Paths, SecretStore};
+use tokenmtr_remote::Endpoints;
+
+/// Delays of the daemon's own machinery. The defaults are the production values; tests shorten
+/// them. Config values (scan interval, sink intervals, ...) are not here: they come from the
+/// config file.
+#[derive(Debug, Clone, Copy)]
+pub struct Timing {
+    /// How often the heartbeat is written into the store.
+    pub heartbeat: Duration,
+    /// Debounce of file events (D16).
+    pub watch: Debounce,
+    /// `StoreChanged` is pushed to subscribers at most this often (D47).
+    pub event_coalesce: Duration,
+    /// A config file event triggers a reload this long after the first event.
+    pub reload_debounce: Duration,
+    /// Smallest slack of a periodic job (D47: 10% of its period, at least this).
+    pub min_slack: Duration,
+    /// Longest wait between two attempts of a failing sink.
+    pub export_retry_cap: Duration,
+    /// How often the price list is refreshed (D11).
+    pub pricing_interval: Duration,
+    /// How often ECB rates are refreshed (D27).
+    pub fx_interval: Duration,
+    /// How long to wait before retrying a failed FX or price list download.
+    pub network_retry: Duration,
+    /// When the first backup runs if none exists yet.
+    pub first_backup_delay: Duration,
+    /// How long shutdown waits for running jobs before giving up on them.
+    pub shutdown_grace: Duration,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self {
+            heartbeat: Duration::from_secs(60),
+            watch: Debounce::default(),
+            event_coalesce: Duration::from_secs(1),
+            reload_debounce: Duration::from_millis(500),
+            min_slack: Duration::from_secs(1),
+            export_retry_cap: Duration::from_secs(300),
+            pricing_interval: Duration::from_hours(24),
+            fx_interval: Duration::from_hours(24),
+            network_retry: Duration::from_hours(1),
+            first_backup_delay: Duration::from_secs(60),
+            shutdown_grace: Duration::from_millis(1500),
+        }
+    }
+}
+
+/// Everything [`Daemon::start`](crate::Daemon::start) needs from its environment.
+pub struct Settings {
+    /// Platform directories.
+    pub paths: Paths,
+    /// The config file; a missing file means the defaults (D21).
+    pub config_path: Utf8PathBuf,
+    /// Where the control socket lives.
+    pub transport: ControlTransport,
+    /// Where OAuth credentials come from (D26).
+    pub secrets: Arc<dyn SecretStore + Send + Sync>,
+    /// The environment agents read their directories from.
+    pub env: Arc<dyn Env + Send + Sync>,
+    /// Hosts of the network clients; `None` is production, resolved only when a network task
+    /// first runs, so a daemon with every network task off builds no client at all.
+    pub endpoints: Option<Endpoints>,
+    /// Delays of the daemon's own machinery.
+    pub timing: Timing,
+}
+
+impl Settings {
+    /// Production settings over `paths`: the process environment, production hosts, default
+    /// timing.
+    #[must_use]
+    pub fn new(
+        paths: Paths,
+        config_path: Utf8PathBuf,
+        transport: ControlTransport,
+        secrets: Arc<dyn SecretStore + Send + Sync>,
+    ) -> Self {
+        Self {
+            paths,
+            config_path,
+            transport,
+            secrets,
+            env: Arc::new(ProcessEnv),
+            endpoints: None,
+            timing: Timing::default(),
+        }
+    }
+}

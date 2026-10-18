@@ -20,6 +20,7 @@ tokenmtr-export = { path = "crates/tokenmtr-export" }
 tokenmtr-report = { path = "crates/tokenmtr-report" }
 tokenmtr-remote = { path = "crates/tokenmtr-remote" }
 tokenmtr-control = { path = "crates/tokenmtr-control" }
+tokenmtr-daemon = { path = "crates/tokenmtr-daemon" }
 tokenmtr-platform = { path = "crates/tokenmtr-platform" }
 
 anyhow = "1.0"
