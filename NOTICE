@@ -1,0 +1,12 @@
+TokenMtr
+Copyright 2026 TokenMtr contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party data bundled with this product:
+
+- pricing/litellm.json is a snapshot of model_prices_and_context_window.json from
+  BerriAI/litellm (https://github.com/BerriAI/litellm), licensed under the MIT license
+  (see pricing/LICENSE-litellm). The snapshot commit is recorded in pricing/litellm.lock.
+
+Exchange rates are published by the European Central Bank (https://www.ecb.europa.eu).

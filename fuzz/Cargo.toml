@@ -1,0 +1,17 @@
+[package]
+name = "tokenmtr-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Targets are added next to the parser they exercise (D54): claude_line, pi_line, stats_cache,
+# litellm_catalog, quota_response, ecb_xml, config.
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[workspace]

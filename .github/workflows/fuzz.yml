@@ -1,0 +1,24 @@
+name: fuzz
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - name: Run every target for five minutes
+        working-directory: fuzz
+        run: |
+          shopt -s nullglob
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time=300
+          done
