@@ -104,6 +104,9 @@ fn revisions(store: &impl StoreRead) -> Vec<(u64, String)> {
         .collect()
 }
 
+mod api;
+mod perf;
+
 #[test]
 fn open_seeds_identity_and_reopens_with_the_same_one() {
     let Fixture {

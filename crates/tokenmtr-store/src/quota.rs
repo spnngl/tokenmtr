@@ -6,7 +6,7 @@
 use std::sync::LazyLock;
 
 use jiff::Timestamp;
-use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
+use rusqlite::{Connection, Row, named_params, params};
 use serde::{Deserialize, Serialize};
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
@@ -16,7 +16,7 @@ use tokenmtr_core::{
 use crate::codec::{RowExt, enum_text, to_limit, to_us};
 use crate::error::{CodecError, StoreError};
 use crate::types::{Dataset, Revision, UpsertStats, Versioned};
-use crate::versioned::{self, Merge};
+use crate::versioned::{self, Merge, UpsertSql};
 
 /// How a poll ended; the `status` column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -156,9 +156,9 @@ const VALUES: [(&str, Merge); 4] = [
     ("status", Merge::Replace),
 ];
 
-static UPSERT: LazyLock<String> = LazyLock::new(|| {
+static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
     let key = ["agent", "profile", "window_id", "fetched_at_us"];
-    versioned::upsert_sql("quota_snapshot", &key, &key, &VALUES)
+    UpsertSql::new("quota_snapshot", &key, &key, &VALUES)
 });
 
 const AFTER: &str = "SELECT revision, agent, profile, window_id, fetched_at_us, account, \
@@ -197,7 +197,7 @@ fn status_of(row: &Flat<'_>) -> QuotaStatus {
 
 /// Inserts or updates polls by `(agent, profile, window, fetched_at)`.
 pub(crate) fn upsert(
-    conn: &mut Connection,
+    conn: &Connection,
     now: Timestamp,
     polls: &[QuotaPoll],
 ) -> Result<UpsertStats, StoreError> {
@@ -216,25 +216,20 @@ pub(crate) fn upsert(
         &UPSERT,
         now,
         &rows,
-        |statement, row, revision, now_us| {
+        |upsert, row, revision, now_us| {
             let (poll, window) = **row;
-            Ok(statement
-                .query_row(
-                    named_params! {
-                        ":agent": poll.agent.as_str(),
-                        ":profile": poll.profile.as_str(),
-                        ":window_id": window_id(row),
-                        ":fetched_at_us": to_us(poll.fetched_at),
-                        ":revision": revision,
-                        ":updated_at_us": now_us,
-                        ":account": poll.account,
-                        ":used_percent": window.map(|w| w.state.utilization.percent()),
-                        ":resets_at_us": window.and_then(|w| w.state.resets_at).map(to_us),
-                        ":status": enum_text(&status_of(row))?,
-                    },
-                    |r| r.get::<_, i64>(0),
-                )
-                .optional()?)
+            upsert.bind(named_params! {
+                ":agent": poll.agent.as_str(),
+                ":profile": poll.profile.as_str(),
+                ":window_id": window_id(row),
+                ":fetched_at_us": to_us(poll.fetched_at),
+                ":revision": revision,
+                ":updated_at_us": now_us,
+                ":account": poll.account,
+                ":used_percent": window.map(|w| w.state.utilization.percent()),
+                ":resets_at_us": window.and_then(|w| w.state.resets_at).map(to_us),
+                ":status": enum_text(&status_of(row))?,
+            })
         },
     )
 }

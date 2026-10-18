@@ -1,7 +1,7 @@
 //! `SQLite` store of `TokenMtr`: schema, migrations, the single writer and read-only connections.
 //!
 //! The write side lives here; `tokenmtr-query` builds the screens on [`StoreReader::connection`]
-//! and the schema in `migrations/0001_init.sql` (every column is commented there).
+//! and the schema in `migrations/` (every column of `0001_init.sql` is commented there).
 //!
 //! # Connections
 //!
@@ -36,8 +36,10 @@
 //!
 //! Each exported dataset ([`Dataset`]) has one counter in `dataset_revision`. An upsert gives a
 //! row the next revision only when a value column differs from the stored row; rewriting identical
-//! data changes nothing and costs no revision. Revisions are gap-free and unique per dataset, so
-//! an exporter reads `revision > cursor ORDER BY revision LIMIT n` (D17) through
+//! data changes nothing and costs no revision. Revisions are unique per dataset and gap-free,
+//! except after [`Store::delete_daily_aggregates_covered_by_transcripts`], the only delete: it
+//! leaves gaps and is not propagated to sinks (D17 has no delete channel), so
+//! use it only when that is acceptable. An exporter reads `revision > cursor ORDER BY revision LIMIT n` (D17) through
 //! [`StoreRead::usage_events_after`] and its siblings, then moves its cursor with
 //! [`Store::set_sink_cursor`]. `updated_at_us` records when the revision was assigned, which is
 //! what sink lag is measured from (D41).
@@ -50,7 +52,9 @@
 //!   writer and reader.
 //! - one module per bookkeeping table (`checkpoint`, `signal`, `project`, `alert`, `sink`, `runs`,
 //!   `issue`, `pricing`, `account`, `meta`).
+//! - `ingest`: [`Store::commit_ingest`], the atomic write of one ingest flush.
 //! - `backup`: online backup and [`restore`].
+//! - `temp`: [`TempStore`], a writer plus readers on a temporary file, for tests.
 //! - `codec`, `types`, `error`, `migrations`: shared plumbing.
 
 mod account;
@@ -62,6 +66,7 @@ mod db;
 mod error;
 mod events;
 mod fx;
+mod ingest;
 mod issue;
 mod meta;
 mod migrations;
@@ -72,6 +77,7 @@ mod runs;
 mod signal;
 mod sink;
 mod subscriptions;
+mod temp;
 mod tool_calls;
 mod types;
 mod versioned;
@@ -85,7 +91,8 @@ pub use checkpoint::{Checkpoint, StoredCheckpoint};
 pub use db::{Store, StoreRead, StoreReader};
 pub use error::{CodecError, StoreError};
 pub use fx::{FxRateRow, FxSource};
-pub use issue::{IssueKind, ParseIssue};
+pub use ingest::{IngestWrite, IngestWriteReport, IssueUpdate, ToolResultFlag};
+pub use issue::{IssueKind, OpenParseIssue, ParseIssue};
 pub use migrations::SCHEMA_VERSION;
 pub use pricing::StoredPricingSnapshot;
 pub use project::{ProjectResolution, ProjectSource};
@@ -93,5 +100,8 @@ pub use quota::{QuotaOutcome, QuotaPoll, QuotaReading, QuotaSample, QuotaStatus}
 pub use runs::{BackupRun, IngestRun};
 pub use signal::SessionSignal;
 pub use sink::SinkRun;
+pub use temp::TempStore;
 pub use tool_calls::ProfiledToolCall;
-pub use types::{Dataset, Pending, RedactionKey, Revision, UpsertStats, Versioned};
+pub use types::{
+    Dataset, Page, PageCursor, Pending, RedactionKey, Revision, UpsertStats, Versioned,
+};

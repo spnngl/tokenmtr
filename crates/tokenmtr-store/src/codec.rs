@@ -21,6 +21,11 @@ pub(crate) fn to_limit(limit: usize) -> Result<i64, StoreError> {
     i64::try_from(limit).map_err(|_| StoreError::OutOfRange { column: "limit" })
 }
 
+/// A row count as the `u64` of public results.
+pub(crate) fn to_count(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
+}
+
 /// `INTEGER` back to the `u64` that was stored.
 pub(crate) fn to_u64(value: i64, column: &'static str) -> Result<u64, CodecError> {
     u64::try_from(value).map_err(|_| CodecError::Value {

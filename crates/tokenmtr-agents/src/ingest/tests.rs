@@ -340,30 +340,30 @@ fn bytes_changed_before_the_checkpoint_force_a_full_parse() {
 }
 
 #[test]
-fn a_crash_between_the_rows_and_the_checkpoint_creates_no_duplicates() {
+fn a_crash_before_the_commit_stores_nothing_and_the_rescan_stores_each_row_once() {
     let mut machine = Machine::new();
     session_file(&machine, "s1", 0..6, "/work/app");
-    machine.ingestor.crash_before_checkpoints = true;
+    machine.ingestor.crash_before_commit = true;
     let crashed = machine.ingestor.scan(
         &mut machine.store,
         &ScanRequest::incremental(ScanPriority::UserInitiated),
     );
     assert!(matches!(crashed, Err(IngestError::Crash)));
-    let head = machine.head();
-    let rows = machine.snapshot();
-    assert_eq!(rows.len(), 6, "the rows are stored");
+    assert!(
+        machine.snapshot().is_empty(),
+        "no row without its checkpoint"
+    );
     let checkpoints = machine.store.load_checkpoints(AgentId::CLAUDE).unwrap();
     assert_eq!(
         checkpoints[0].checkpoint.offset, 0,
         "the checkpoint did not advance"
     );
 
-    machine.ingestor.crash_before_checkpoints = false;
+    machine.ingestor.crash_before_commit = false;
     let report = machine.scan();
     assert_eq!(claude_agent(&report).files[0].from, 0);
-    assert_eq!(claude_agent(&report).events.changed(), 0);
-    assert_eq!(machine.head(), head);
-    assert_eq!(machine.snapshot(), rows);
+    assert_eq!(claude_agent(&report).events.inserted, 6);
+    assert_eq!(machine.snapshot().len(), 6);
     let after = machine.store.load_checkpoints(AgentId::CLAUDE).unwrap();
     assert!(after[0].checkpoint.offset > 0);
 }

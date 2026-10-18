@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use jiff::Timestamp;
 use jiff::civil::Date;
-use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
+use rusqlite::{Connection, Row, named_params, params};
 use tokenmtr_core::{
     AgentId, Currency, Money, Plan, ProfileId, ProviderId, Subscription, SubscriptionId,
     SubscriptionSpec,
@@ -16,7 +16,7 @@ use tokenmtr_core::{
 use crate::codec::{RowExt, enum_text, to_limit};
 use crate::error::{CodecError, StoreError};
 use crate::types::{Dataset, Revision, UpsertStats, Versioned};
-use crate::versioned::{self, Merge};
+use crate::versioned::{self, Merge, UpsertSql};
 
 const VALUES: [(&str, Merge); 9] = [
     ("provider", Merge::Replace),
@@ -30,8 +30,8 @@ const VALUES: [(&str, Merge); 9] = [
     ("end_date", Merge::Replace),
 ];
 
-static UPSERT: LazyLock<String> = LazyLock::new(|| {
-    versioned::upsert_sql(
+static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
+    UpsertSql::new(
         "subscription",
         &["subscription_id"],
         &["subscription_id"],
@@ -45,7 +45,7 @@ const AFTER: &str = "SELECT revision, subscription_id, provider, plan, agents, p
 
 /// Inserts or updates subscriptions by id.
 pub(crate) fn upsert(
-    conn: &mut Connection,
+    conn: &Connection,
     now: Timestamp,
     subscriptions: &[Subscription],
 ) -> Result<UpsertStats, StoreError> {
@@ -56,27 +56,22 @@ pub(crate) fn upsert(
         &UPSERT,
         now,
         &rows,
-        |statement, sub, revision, now_us| {
+        |upsert, sub, revision, now_us| {
             let profiles = sub.profiles().map(serde_json::to_string).transpose()?;
-            Ok(statement
-                .query_row(
-                    named_params! {
-                        ":subscription_id": sub.id().as_str(),
-                        ":revision": revision,
-                        ":updated_at_us": now_us,
-                        ":provider": sub.provider().as_str(),
-                        ":plan": enum_text(&sub.plan())?,
-                        ":agents": serde_json::to_string(sub.agents())?,
-                        ":profiles": profiles,
-                        ":fee_micros": sub.fee().micros(),
-                        ":fee_currency": enum_text(&sub.fee().currency())?,
-                        ":period": enum_text(&sub.period())?,
-                        ":start_date": sub.start().to_string(),
-                        ":end_date": sub.end().map(|d| d.to_string()),
-                    },
-                    |r| r.get::<_, i64>(0),
-                )
-                .optional()?)
+            upsert.bind(named_params! {
+                ":subscription_id": sub.id().as_str(),
+                ":revision": revision,
+                ":updated_at_us": now_us,
+                ":provider": sub.provider().as_str(),
+                ":plan": enum_text(&sub.plan())?,
+                ":agents": serde_json::to_string(sub.agents())?,
+                ":profiles": profiles,
+                ":fee_micros": sub.fee().micros(),
+                ":fee_currency": enum_text(&sub.fee().currency())?,
+                ":period": enum_text(&sub.period())?,
+                ":start_date": sub.start().to_string(),
+                ":end_date": sub.end().map(|d| d.to_string()),
+            })
         },
     )
 }

@@ -10,15 +10,11 @@ use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use tokenmtr_core::{AgentId, ProjectKey};
 use tokenmtr_store::{
-    Dataset, IssueKind, ParseIssue, ProjectResolution, ProjectSource, Revision, Store,
-    StoreRead as _,
+    IssueKind, ParseIssue, ProjectResolution, ProjectSource, Store, StoreRead as _,
 };
 
 use super::error::IngestError;
 use crate::project::{CwdProblem, ProjectResolver};
-
-/// Events read per page while rewriting projects.
-const PAGE: usize = 5000;
 
 /// A cwd's project and client, as stored on events.
 pub type Assignment = (ProjectKey, Option<String>);
@@ -85,7 +81,8 @@ impl ProjectCache {
             .filter(|(cwd, stored)| all || is_stale(resolver, cwd, stored))
             .map(|(cwd, _)| cwd.clone())
             .collect();
-        let mut moved: HashMap<Utf8PathBuf, Assignment> = HashMap::new();
+        let mut changed: Vec<ProjectResolution> = Vec::new();
+        let mut moved = 0_u64;
         for cwd in candidates {
             let Some(found) = resolver.resolve(&cwd, now) else {
                 continue;
@@ -97,24 +94,15 @@ impl ProjectCache {
                 continue;
             }
             if old.project != found.resolution.project || old.client != found.resolution.client {
-                moved.insert(
-                    cwd.clone(),
-                    (
-                        found.resolution.project.clone(),
-                        found.resolution.client.clone(),
-                    ),
-                );
+                moved += 1;
             }
-            store.save_project(&found.resolution)?;
+            changed.push(found.resolution.clone());
             self.map.insert(cwd, found.resolution);
         }
-        let cwds = u64::try_from(moved.len()).unwrap_or(u64::MAX);
-        let events = if moved.is_empty() {
-            0
-        } else {
-            rewrite_events(store, &moved)?
-        };
-        Ok((cwds, events))
+        // One transaction saves the answers and repoints the events of the cwds whose project or
+        // client moved; events that already agree keep their revision.
+        let events = store.reassign_projects(&changed)?;
+        Ok((moved, events))
     }
 }
 
@@ -139,49 +127,6 @@ fn is_stale(resolver: &ProjectResolver, cwd: &Utf8Path, stored: &ProjectResoluti
 
 fn same_answer(a: &ProjectResolution, b: &ProjectResolution) -> bool {
     a.project == b.project && a.name == b.name && a.client == b.client && a.source == b.source
-}
-
-/// Rewrites project and client of every event whose cwd is in `moved`, up to the revision the
-/// table had when the loop started. Re-upserting the full stored row leaves cost and pricing
-/// version untouched.
-fn rewrite_events(
-    store: &mut Store,
-    moved: &HashMap<Utf8PathBuf, Assignment>,
-) -> Result<u64, IngestError> {
-    let head = store.head_revision(Dataset::UsageEvents)?;
-    let mut after = Revision::ZERO;
-    let mut rewritten = 0;
-    loop {
-        let page = store.usage_events_after(after, PAGE)?;
-        let Some(last) = page.last() else {
-            return Ok(rewritten);
-        };
-        after = last.revision;
-        let mut past_head = false;
-        let mut rows = Vec::new();
-        for versioned in page {
-            if versioned.revision > head {
-                past_head = true;
-                break;
-            }
-            let mut event = versioned.row;
-            let Some((project, client)) = event.cwd.as_ref().and_then(|cwd| moved.get(cwd)) else {
-                continue;
-            };
-            if event.project.as_ref() == Some(project) && event.client == *client {
-                continue;
-            }
-            event.project = Some(project.clone());
-            event.client.clone_from(client);
-            rows.push(event);
-        }
-        if !rows.is_empty() {
-            rewritten += store.upsert_events(&rows)?.updated;
-        }
-        if past_head {
-            return Ok(rewritten);
-        }
-    }
 }
 
 fn cwd_issue(agent: AgentId, cwd: &Utf8Path, problem: CwdProblem, at: Timestamp) -> ParseIssue {

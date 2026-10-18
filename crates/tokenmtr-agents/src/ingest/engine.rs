@@ -9,12 +9,12 @@ use std::time::{Duration, Instant};
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use rayon::prelude::*;
-use rusqlite::Connection;
 use tokenmtr_core::{AgentId, MachineId, UsageEvent};
 use tokenmtr_platform::{ThreadPriority, set_thread_priority};
 use tokenmtr_store::{
-    Checkpoint, IngestRun, IssueKind, ParseIssue as StoredIssue, ProfiledToolCall, SessionSignal,
-    Store, StoreRead as _, StoreReader, StoredCheckpoint,
+    Checkpoint, IngestRun, IngestWrite, IssueKind, IssueUpdate, ParseIssue as StoredIssue,
+    ProfiledToolCall, SessionSignal, Store, StoreRead as _, StoreReader, StoredCheckpoint,
+    ToolResultFlag,
 };
 
 use super::error::IngestError;
@@ -23,8 +23,7 @@ use super::pricing::Pricer;
 use super::projects::ProjectCache;
 use super::report::{AgentScan, AggregateScan, FileScan, ScanReport};
 use super::settings::IngestSettings;
-use super::stored;
-use crate::batch::{BatchParts, ParseBatch, ParsedToolResult};
+use crate::batch::{BatchParts, ParseBatch};
 use crate::project::ProjectResolver;
 use crate::source::{ByteOffset, SourceFile};
 use crate::{AgentKind, AgentSource, DriftReason, ParseIssue, ParseOutcome, discover};
@@ -116,7 +115,7 @@ pub struct Ingestor {
     pub(super) reader: StoreReader,
     clock: fn() -> Timestamp,
     #[cfg(test)]
-    pub(crate) crash_before_checkpoints: bool,
+    pub(crate) crash_before_commit: bool,
 }
 
 impl Ingestor {
@@ -130,7 +129,7 @@ impl Ingestor {
             reader,
             clock: Timestamp::now,
             #[cfg(test)]
-            crash_before_checkpoints: false,
+            crash_before_commit: false,
         }
     }
 
@@ -202,7 +201,7 @@ impl Ingestor {
         let machine = store.machine_id();
         let mut run = Run {
             store,
-            conn: self.reader.connection(),
+            reader: &self.reader,
             pricer: &self.pricer,
             resolver: &self.resolver,
             cache,
@@ -211,7 +210,7 @@ impl Ingestor {
             tasks: &tasks,
             states,
             #[cfg(test)]
-            crash_before_checkpoints: self.crash_before_checkpoints,
+            crash_before_commit: self.crash_before_commit,
         };
         self.parse_all(&mut run, request.priority)?;
         for slot in 0..run.states.len() {
@@ -403,7 +402,6 @@ impl Ingestor {
         now: Timestamp,
     ) -> Result<AggregateScan, IngestError> {
         let agent = source.id();
-        let conn = self.reader.connection();
         let machine = store.machine_id();
         let mut summary = AggregateScan::default();
         for profile in source.profiles() {
@@ -429,7 +427,9 @@ impl Ingestor {
                     store.close_parse_issue(agent, kind, path.as_str(), now)?;
                 }
             }
-            let cutoff = stored::earliest_transcript_event(conn, agent, &profile.id)?
+            let cutoff = self
+                .reader
+                .earliest_transcript_event(agent, &profile.id)?
                 .map(|at| at.to_zoned(self.settings.zone.clone()).date());
             let mut rows: Vec<UsageEvent> = Vec::new();
             for mut event in found.events {
@@ -439,7 +439,7 @@ impl Ingestor {
                     summary.covered_by_transcripts += 1;
                     continue;
                 }
-                let estimate = self.pricer.price(conn, &mut event)?;
+                let estimate = self.pricer.price(&self.reader, &mut event)?;
                 rows.push(event.into_usage_event(&machine, estimate));
             }
             for chunk in rows.chunks(CHUNK) {
@@ -636,19 +636,13 @@ fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
     format!("parser panicked: {text}")
 }
 
-/// A change to the issue table, applied when the file's rows commit.
-enum IssueOp {
-    Record(StoredIssue),
-    Close { kind: IssueKind, subject: String },
-}
-
 #[derive(Default)]
 struct Pending {
     events: Vec<UsageEvent>,
     calls: Vec<ProfiledToolCall>,
     signals: Vec<SessionSignal>,
-    orphans: Vec<ParsedToolResult>,
-    issues: Vec<IssueOp>,
+    orphans: Vec<ToolResultFlag>,
+    issues: Vec<IssueUpdate>,
     checkpoints: Vec<Checkpoint>,
 }
 
@@ -689,7 +683,7 @@ impl AgentState {
 /// The single writer of one scan.
 struct Run<'a> {
     store: &'a mut Store,
-    conn: &'a Connection,
+    reader: &'a StoreReader,
     pricer: &'a Pricer,
     resolver: &'a ProjectResolver,
     cache: ProjectCache,
@@ -698,7 +692,7 @@ struct Run<'a> {
     tasks: &'a [Task],
     states: Vec<AgentState>,
     #[cfg(test)]
-    crash_before_checkpoints: bool,
+    crash_before_commit: bool,
 }
 
 impl Run<'_> {
@@ -726,7 +720,7 @@ impl Run<'_> {
             events: 0,
             error: Some(message.to_owned()),
         });
-        state.pending.issues.push(IssueOp::Record(StoredIssue {
+        state.pending.issues.push(IssueUpdate::Record(StoredIssue {
             agent: state.agent,
             kind: IssueKind::ParseError,
             subject: task.file.path.as_str().to_owned(),
@@ -755,7 +749,7 @@ impl Run<'_> {
                 None => None,
             };
             parsed.source_file = task.file.id;
-            let estimate = self.pricer.price(self.conn, &mut parsed)?;
+            let estimate = self.pricer.price(self.reader, &mut parsed)?;
             let mut event = parsed.into_usage_event(&self.machine, estimate);
             if let Some((project, client)) = assignment {
                 event.project = Some(project);
@@ -784,14 +778,25 @@ impl Run<'_> {
                 kind: signal.kind,
                 at: signal.at,
             }));
-        pending.orphans.extend(parts.orphan_tool_results);
+        pending
+            .orphans
+            .extend(
+                parts
+                    .orphan_tool_results
+                    .into_iter()
+                    .map(|result| ToolResultFlag {
+                        agent: result.agent,
+                        tool_use_id: result.tool_use_id,
+                        is_error: result.is_error,
+                    }),
+            );
 
         let subject = task.file.path.as_str();
         let mut recorded = Vec::new();
         for issue in &outcome.issues {
             let stored = to_stored(agent, subject, issue, self.now);
             recorded.push(stored.kind);
-            pending.issues.push(IssueOp::Record(stored));
+            pending.issues.push(IssueUpdate::Record(stored));
         }
         // A parse that read the file from the start and found no problem of a kind settles the
         // earlier issue of that kind; an appended parse says nothing about earlier lines.
@@ -800,9 +805,11 @@ impl Run<'_> {
             settles.extend([IssueKind::FormatDrift, IssueKind::UnknownVersion]);
         }
         for kind in settles.into_iter().filter(|kind| !recorded.contains(kind)) {
-            pending.issues.push(IssueOp::Close {
+            pending.issues.push(IssueUpdate::Close {
+                agent,
                 kind,
                 subject: subject.to_owned(),
+                at: self.now,
             });
         }
 
@@ -833,52 +840,29 @@ impl Run<'_> {
         Ok(())
     }
 
-    /// Writes everything pending for `slot`: events (5000 per transaction), tool calls, signals,
-    /// tool results of earlier scans, issue changes, and last the checkpoints, so a checkpoint
-    /// never runs ahead of its rows.
+    /// Writes everything pending for `slot` in one transaction: events (at most `CHUNK`),
+    /// tool calls, signals, tool results of earlier scans, issue changes and the checkpoints. A
+    /// checkpoint therefore never runs ahead of its rows, and a crash stores nothing.
     fn flush(&mut self, slot: usize) -> Result<(), IngestError> {
         let pending = std::mem::take(&mut self.states[slot].pending);
-        let agent = self.states[slot].agent;
-        let scan = &mut self.states[slot].scan;
-        for chunk in pending.events.chunks(CHUNK) {
-            scan.events.add(&self.store.upsert_events(chunk)?);
-        }
-        if !pending.calls.is_empty() {
-            scan.tool_calls
-                .add(&self.store.upsert_tool_calls(&pending.calls)?);
-        }
-        scan.signals_new += self.store.record_signals(&pending.signals)?;
-        let mut updates = Vec::new();
-        for result in &pending.orphans {
-            match stored::tool_call(self.conn, result.agent, &result.tool_use_id)? {
-                None => scan.orphan_results_unmatched += 1,
-                Some(mut call) if call.call.is_error != Some(result.is_error) => {
-                    call.call.is_error = Some(result.is_error);
-                    updates.push(call);
-                    scan.orphan_results_applied += 1;
-                }
-                Some(_) => {}
-            }
-        }
-        if !updates.is_empty() {
-            self.store.upsert_tool_calls(&updates)?;
-        }
-        for op in &pending.issues {
-            match op {
-                IssueOp::Record(issue) => self.store.record_parse_issue(issue)?,
-                IssueOp::Close { kind, subject } => {
-                    self.store
-                        .close_parse_issue(agent, *kind, subject, self.now)?;
-                }
-            }
-        }
         #[cfg(test)]
-        if self.crash_before_checkpoints {
+        if self.crash_before_commit {
             return Err(IngestError::Crash);
         }
-        for checkpoint in &pending.checkpoints {
-            self.store.save_checkpoint(checkpoint)?;
-        }
+        let written = self.store.commit_ingest(&IngestWrite {
+            events: &pending.events,
+            tool_calls: &pending.calls,
+            signals: &pending.signals,
+            tool_results: &pending.orphans,
+            issues: &pending.issues,
+            checkpoints: &pending.checkpoints,
+        })?;
+        let scan = &mut self.states[slot].scan;
+        scan.events.add(&written.events);
+        scan.tool_calls.add(&written.tool_calls);
+        scan.signals_new += written.signals_new;
+        scan.orphan_results_applied += written.tool_results_applied;
+        scan.orphan_results_unmatched += written.tool_results_unmatched;
         Ok(())
     }
 }

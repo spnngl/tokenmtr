@@ -4,14 +4,14 @@ use std::sync::LazyLock;
 
 use jiff::Timestamp;
 use jiff::civil::Date;
-use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
+use rusqlite::{Connection, Row, named_params, params};
 use serde::{Deserialize, Serialize};
 use tokenmtr_core::{EurPerUsd, FxRate};
 
 use crate::codec::{RowExt, enum_text, to_limit};
 use crate::error::StoreError;
 use crate::types::{Dataset, Revision, UpsertStats, Versioned};
-use crate::versioned::{self, Merge};
+use crate::versioned::{self, Merge, UpsertSql};
 
 /// Where a rate came from; the `source` column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -35,15 +35,15 @@ const VALUES: [(&str, Merge); 2] = [
     ("source", Merge::Replace),
 ];
 
-static UPSERT: LazyLock<String> =
-    LazyLock::new(|| versioned::upsert_sql("fx_rate", &["date"], &["date"], &VALUES));
+static UPSERT: LazyLock<UpsertSql> =
+    LazyLock::new(|| UpsertSql::new("fx_rate", &["date"], &["date"], &VALUES));
 
 const AFTER: &str = "SELECT revision, date, eur_per_usd_scaled, source \
     FROM fx_rate WHERE revision > ?1 ORDER BY revision LIMIT ?2";
 
 /// Inserts or updates rates by date.
 pub(crate) fn upsert(
-    conn: &mut Connection,
+    conn: &Connection,
     now: Timestamp,
     source: FxSource,
     rates: &[FxRate],
@@ -56,19 +56,14 @@ pub(crate) fn upsert(
         &UPSERT,
         now,
         &rows,
-        |statement, rate, revision, now_us| {
-            Ok(statement
-                .query_row(
-                    named_params! {
-                        ":date": rate.date.to_string(),
-                        ":revision": revision,
-                        ":updated_at_us": now_us,
-                        ":eur_per_usd_scaled": rate.eur_per_usd.scaled(),
-                        ":source": source,
-                    },
-                    |r| r.get::<_, i64>(0),
-                )
-                .optional()?)
+        |upsert, rate, revision, now_us| {
+            upsert.bind(named_params! {
+                ":date": rate.date.to_string(),
+                ":revision": revision,
+                ":updated_at_us": now_us,
+                ":eur_per_usd_scaled": rate.eur_per_usd.scaled(),
+                ":source": source,
+            })
         },
     )
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use jiff::Timestamp;
-use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
+use rusqlite::{Connection, OptionalExtension as _, Row, named_params, params};
 use tokenmtr_core::{
     AgentId, DedupKey, EventId, IdError, MachineId, ProfileId, SessionId, ToolCall,
 };
@@ -12,7 +12,7 @@ use tokenmtr_core::{
 use crate::codec::{RowExt, to_limit, to_us};
 use crate::error::StoreError;
 use crate::types::{Dataset, Revision, UpsertStats, Versioned};
-use crate::versioned::{self, Merge};
+use crate::versioned::{self, Merge, UpsertSql};
 
 /// A [`ToolCall`] with the profile of the agent that made it, which `ToolCall` lacks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,8 +47,8 @@ const VALUES: [(&str, Merge); 7] = [
     ("is_error", Merge::KeepStored),
 ];
 
-static UPSERT: LazyLock<String> = LazyLock::new(|| {
-    versioned::upsert_sql(
+static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
+    UpsertSql::new(
         "tool_call",
         &["agent", "tool_use_id"],
         &["agent", "tool_use_id"],
@@ -59,6 +59,21 @@ static UPSERT: LazyLock<String> = LazyLock::new(|| {
 const AFTER: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
     tool_name, mcp_server, is_error \
     FROM tool_call WHERE revision > ?1 ORDER BY revision LIMIT ?2";
+
+const BY_KEY: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
+    tool_name, mcp_server, is_error \
+    FROM tool_call WHERE agent = ?1 AND tool_use_id = ?2";
+
+/// What [`apply_result`] did to the stored call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResultOutcome {
+    /// The flag changed; the call got a new revision.
+    Applied,
+    /// The call already had this flag.
+    Unchanged,
+    /// No call with this id is stored.
+    Unmatched,
+}
 
 /// Folds repeated tool-use ids of one batch into the row the sequential upserts would end with.
 fn merge_duplicates(calls: &[ProfiledToolCall]) -> Vec<ProfiledToolCall> {
@@ -82,7 +97,7 @@ fn merge_duplicates(calls: &[ProfiledToolCall]) -> Vec<ProfiledToolCall> {
 
 /// Inserts or updates tool calls by `(agent, tool_use_id)`.
 pub(crate) fn upsert(
-    conn: &mut Connection,
+    conn: &Connection,
     now: Timestamp,
     calls: &[ProfiledToolCall],
 ) -> Result<UpsertStats, StoreError> {
@@ -93,11 +108,9 @@ pub(crate) fn upsert(
         &UPSERT,
         now,
         &rows,
-        |statement, row, revision, now_us| {
+        |upsert, row, revision, now_us| {
             let call = &row.call;
-            Ok(statement
-                .query_row(
-                    named_params! {
+            upsert.bind(named_params! {
                         ":agent": call.agent.as_str(),
                         ":tool_use_id": call.tool_use_id,
                         ":revision": revision,
@@ -109,12 +122,61 @@ pub(crate) fn upsert(
                         ":tool_name": call.tool_name,
                         ":mcp_server": call.mcp_server,
                         ":is_error": call.is_error,
-                    },
-                    |r| r.get::<_, i64>(0),
-                )
-                .optional()?)
+            })
         },
     )
+}
+
+/// Sets the error flag of a stored call from its tool result, bumping the revision only when the
+/// flag changes.
+pub(crate) fn apply_result(
+    conn: &Connection,
+    now: Timestamp,
+    agent: AgentId,
+    tool_use_id: &str,
+    is_error: bool,
+) -> Result<ResultOutcome, StoreError> {
+    let revision = versioned::head(conn, Dataset::ToolCalls)?.next();
+    let changed = conn
+        .prepare_cached(
+            "UPDATE tool_call SET is_error = ?1, revision = ?2, updated_at_us = ?3 \
+             WHERE agent = ?4 AND tool_use_id = ?5 AND is_error IS NOT ?1",
+        )?
+        .execute(params![
+            is_error,
+            revision,
+            to_us(now),
+            agent.as_str(),
+            tool_use_id
+        ])?;
+    if changed > 0 {
+        conn.execute(
+            "UPDATE dataset_revision SET revision = ?1 WHERE dataset = ?2",
+            params![revision, Dataset::ToolCalls.as_str()],
+        )?;
+        return Ok(ResultOutcome::Applied);
+    }
+    let stored = conn
+        .prepare_cached("SELECT 1 FROM tool_call WHERE agent = ?1 AND tool_use_id = ?2")?
+        .query_row(params![agent.as_str(), tool_use_id], |_| Ok(()))
+        .optional()?;
+    Ok(if stored.is_some() {
+        ResultOutcome::Unchanged
+    } else {
+        ResultOutcome::Unmatched
+    })
+}
+
+/// The tool call stored under `(agent, tool_use_id)`.
+pub(crate) fn by_key(
+    conn: &Connection,
+    agent: AgentId,
+    tool_use_id: &str,
+) -> Result<Option<Versioned<ProfiledToolCall>>, StoreError> {
+    conn.prepare_cached(BY_KEY)?
+        .query_and_then(params![agent.as_str(), tool_use_id], decode)?
+        .next()
+        .transpose()
 }
 
 /// Tool calls with a revision above `after`, oldest revision first.

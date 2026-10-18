@@ -178,3 +178,17 @@ impl fmt::Debug for RedactionKey {
         f.write_str("RedactionKey(..)")
     }
 }
+
+/// Where the next page of a keyset-paged read resumes. Opaque: only the read that returned it
+/// can make sense of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageCursor(pub(crate) i64);
+
+/// One page of a keyset-paged read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Page<T> {
+    /// The rows of this page.
+    pub items: Vec<T>,
+    /// Where to resume; `None` when this page reached the end.
+    pub next: Option<PageCursor>,
+}

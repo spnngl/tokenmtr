@@ -45,7 +45,7 @@
 //!
 //! # JSON shapes
 //!
-//! All result types derive `Serialize` with snake_case fields. Timestamps are
+//! All result types derive `Serialize` with `snake_case` fields. Timestamps are
 //! RFC 3339 strings, dates are `YYYY-MM-DD`. Usage-bearing rows flatten
 //! [`Usage`]: `events`, token counts (`input_uncached`, `cache_read`,
 //! `cache_write_5m`, `cache_write_1h`, `output`, `reasoning`, `total_tokens`),

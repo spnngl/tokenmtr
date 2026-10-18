@@ -25,16 +25,16 @@ mod pricing;
 mod projects;
 mod report;
 mod settings;
-mod stored;
 pub mod watch;
 
 #[cfg(test)]
 mod tests;
 
-pub use doctor::{AgentReport, DoctorReport, LastRun, ProfileReport, Retention, RootReport};
+pub use doctor::{
+    AgentReport, DoctorReport, LastRun, OpenIssue, ProfileReport, Retention, RootReport,
+};
 pub use engine::{Ingestor, ScanMode, ScanPriority, ScanRequest};
 pub use error::IngestError;
 pub use fingerprint::ParseReason;
 pub use report::{AgentScan, AggregateScan, FileScan, ScanReport, Upserts};
 pub use settings::IngestSettings;
-pub use stored::OpenIssue;

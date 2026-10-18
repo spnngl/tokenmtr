@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 
 use camino::Utf8PathBuf;
 use jiff::Timestamp;
-use rusqlite::{Connection, named_params};
+use rusqlite::{Connection, named_params, params};
 use tokenmtr_core::AgentId;
 
-use crate::codec::{to_i64, to_us};
+use crate::codec::{RowExt, to_i64, to_limit, to_us};
+use crate::error::CodecError;
 use crate::error::StoreError;
 
 /// One backup attempt (D37).
@@ -84,4 +85,35 @@ pub(crate) fn record_ingest(conn: &Connection, run: &IngestRun) -> Result<(), St
         ":skipped": serde_json::to_string(&run.skipped)?,
     })?;
     Ok(())
+}
+
+/// The newest ingest passes, newest first; of one agent when given.
+pub(crate) fn ingest_runs(
+    conn: &Connection,
+    agent: Option<AgentId>,
+    limit: usize,
+) -> Result<Vec<IngestRun>, StoreError> {
+    conn.prepare_cached(
+        "SELECT agent, started_at_us, finished_at_us, files_parsed, bytes_parsed, lines_read, \
+         events_found, events_changed, skipped FROM ingest_run \
+         WHERE ?1 IS NULL OR agent = ?1 ORDER BY id DESC LIMIT ?2",
+    )?
+    .query_and_then(
+        params![agent.map(AgentId::as_str), to_limit(limit)?],
+        |row| {
+            let skipped: String = row.get("skipped")?;
+            Ok(IngestRun {
+                agent: row.id::<AgentId>("agent")?,
+                started: row.ts("started_at_us")?,
+                finished: row.ts("finished_at_us")?,
+                files_parsed: row.count("files_parsed")?,
+                bytes_parsed: row.count("bytes_parsed")?,
+                lines_read: row.count("lines_read")?,
+                events_found: row.count("events_found")?,
+                events_changed: row.count("events_changed")?,
+                skipped: serde_json::from_str(&skipped).map_err(CodecError::from)?,
+            })
+        },
+    )?
+    .collect()
 }

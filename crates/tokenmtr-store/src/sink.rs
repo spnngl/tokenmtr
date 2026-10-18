@@ -4,8 +4,9 @@ use jiff::Timestamp;
 use rusqlite::{Connection, OptionalExtension, named_params, params};
 use tokenmtr_core::SinkId;
 
-use crate::codec::{to_i64, to_us};
-use crate::error::StoreError;
+use crate::codec::{RowExt, to_i64, to_limit, to_us};
+use crate::error::{CodecError, StoreError};
+
 use crate::types::{Dataset, Revision};
 
 /// One export batch attempt of one sink.
@@ -68,4 +69,31 @@ pub(crate) fn set_cursor(
     conn.prepare_cached(SET_CURSOR)?
         .execute(params![sink.as_str(), dataset.as_str(), revision])?;
     Ok(())
+}
+
+/// The newest runs of `sink`, newest first.
+pub(crate) fn runs(
+    conn: &Connection,
+    sink: &SinkId,
+    limit: usize,
+) -> Result<Vec<SinkRun>, StoreError> {
+    conn.prepare_cached(
+        "SELECT dataset, started_at_us, finished_at_us, row_count, error FROM sink_run \
+         WHERE sink = ?1 ORDER BY started_at_us DESC, id DESC LIMIT ?2",
+    )?
+    .query_and_then(params![sink.as_str(), to_limit(limit)?], |row| {
+        let dataset: String = row.get("dataset")?;
+        Ok(SinkRun {
+            sink: sink.clone(),
+            dataset: Dataset::from_name(&dataset).ok_or_else(|| CodecError::Value {
+                column: "dataset",
+                value: dataset,
+            })?,
+            started: row.ts("started_at_us")?,
+            finished: row.ts("finished_at_us")?,
+            rows: row.count("row_count")?,
+            error: row.get("error")?,
+        })
+    })?
+    .collect()
 }

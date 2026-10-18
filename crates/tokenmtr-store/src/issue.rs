@@ -7,7 +7,7 @@ use rusqlite::{Connection, named_params};
 use serde::{Deserialize, Serialize};
 use tokenmtr_core::AgentId;
 
-use crate::codec::{enum_text, to_i64, to_us};
+use crate::codec::{RowExt, enum_text, to_i64, to_us};
 use crate::error::StoreError;
 
 /// What went wrong.
@@ -26,6 +26,20 @@ pub enum IssueKind {
     ParseError,
 }
 
+impl IssueKind {
+    /// The name stored in the database and serialized: snake case.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FormatDrift => "format_drift",
+            Self::UnknownVersion => "unknown_version",
+            Self::ProtectedFolder => "protected_folder",
+            Self::MissingCwd => "missing_cwd",
+            Self::ParseError => "parse_error",
+        }
+    }
+}
+
 /// Something the ingestor noticed, to be counted under `(agent, kind, subject)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseIssue {
@@ -41,6 +55,25 @@ pub struct ParseIssue {
     pub sample: Option<String>,
     /// When it was seen.
     pub at: Timestamp,
+}
+
+/// An unresolved issue with its running totals.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenParseIssue {
+    /// The agent whose logs were read.
+    pub agent: AgentId,
+    /// What went wrong.
+    pub kind: IssueKind,
+    /// What it is about: a file, a field, a version.
+    pub subject: String,
+    /// How many times it happened since it opened.
+    pub occurrences: u64,
+    /// The first example, key names only (D42).
+    pub sample: Option<String>,
+    /// When it was first seen.
+    pub first_seen: Timestamp,
+    /// When it was last seen.
+    pub last_seen: Timestamp,
 }
 
 /// A repeat of an open issue adds to its count and keeps the first sample; a repeat of a resolved
@@ -69,6 +102,26 @@ pub(crate) fn record(conn: &Connection, issue: &ParseIssue) -> Result<(), StoreE
         ":at": to_us(issue.at),
     })?;
     Ok(())
+}
+
+/// Every unresolved issue, oldest first.
+pub(crate) fn open(conn: &Connection) -> Result<Vec<OpenParseIssue>, StoreError> {
+    conn.prepare_cached(
+        "SELECT agent, kind, subject, occurrences, sample, first_seen_us, last_seen_us \
+         FROM parse_issue WHERE resolved_at_us IS NULL ORDER BY first_seen_us, id",
+    )?
+    .query_and_then([], |row| {
+        Ok(OpenParseIssue {
+            agent: row.id::<AgentId>("agent")?,
+            kind: row.enumeration("kind")?,
+            subject: row.get("subject")?,
+            occurrences: row.count("occurrences")?,
+            sample: row.get("sample")?,
+            first_seen: row.ts("first_seen_us")?,
+            last_seen: row.ts("last_seen_us")?,
+        })
+    })?
+    .collect()
 }
 
 /// Marks an open issue resolved; `false` when there was none.

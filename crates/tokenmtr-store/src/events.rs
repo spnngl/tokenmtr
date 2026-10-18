@@ -2,17 +2,18 @@
 
 use std::sync::LazyLock;
 
+use camino::Utf8Path;
 use jiff::Timestamp;
-use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
+use rusqlite::{Connection, Row, named_params, params};
 use tokenmtr_core::{
-    AgentId, DedupKey, Estimate, EventCost, EventId, ModelId, PricingVersion, ProfileId,
+    AgentId, DedupKey, Estimate, EventCost, EventId, EventKind, ModelId, PricingVersion, ProfileId,
     ProjectKey, ProviderId, SessionId, SourceFileId, TokenCounts, UsageEvent, UsdMicros,
 };
 
-use crate::codec::{RowExt, enum_text, to_i64, to_limit, to_us};
+use crate::codec::{RowExt, enum_text, from_us, to_count, to_i64, to_limit, to_us};
 use crate::error::{CodecError, StoreError};
 use crate::types::{Revision, UpsertStats, Versioned};
-use crate::versioned::{self, Merge};
+use crate::versioned::{self, Merge, UpsertSql};
 
 /// Columns the upsert compares and overwrites. The identity (`event_id`, `agent`, `dedup_key`)
 /// never changes once inserted.
@@ -44,8 +45,8 @@ const VALUES: [(&str, Merge); 25] = [
     ("service_tier", Merge::Replace),
 ];
 
-static UPSERT: LazyLock<String> = LazyLock::new(|| {
-    versioned::upsert_sql(
+static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
+    UpsertSql::new(
         "usage_event",
         &["agent", "dedup_key"],
         &["event_id", "agent", "dedup_key"],
@@ -53,16 +54,28 @@ static UPSERT: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
-const AFTER: &str = "SELECT revision, event_id, agent, dedup_key, profile, at_us, session, \
-    parent_session, subagent, is_sidechain, cwd, git_branch, project, client, source_file_id, \
-    approximate, provider, model, kind, input_uncached, cache_read, cache_write_5m, \
-    cache_write_1h, output, reasoning, cost_reported_usd_micros, cost_estimated_usd_micros, \
-    pricing_version, service_tier \
-    FROM usage_event WHERE revision > ?1 ORDER BY revision LIMIT ?2";
+/// The columns [`decode`] reads.
+macro_rules! select {
+    ($tail:literal) => {
+        concat!(
+            "SELECT id, revision, event_id, agent, dedup_key, profile, at_us, session, \
+             parent_session, subagent, is_sidechain, cwd, git_branch, project, client, \
+             source_file_id, approximate, provider, model, kind, input_uncached, cache_read, \
+             cache_write_5m, cache_write_1h, output, reasoning, cost_reported_usd_micros, \
+             cost_estimated_usd_micros, pricing_version, service_tier FROM usage_event ",
+            $tail
+        )
+    };
+}
+
+const AFTER: &str = select!("WHERE revision > ?1 ORDER BY revision LIMIT ?2");
+const BY_KEY: &str = select!("WHERE agent = ?1 AND dedup_key = ?2");
+const BY_ID: &str = select!("WHERE event_id = ?1");
+const BY_CWD: &str = select!("WHERE cwd = ?1 AND id > ?2 ORDER BY id LIMIT ?3");
 
 /// Inserts or updates events by `(agent, dedup_key)`, last write wins (D12).
 pub(crate) fn upsert(
-    conn: &mut Connection,
+    conn: &Connection,
     now: Timestamp,
     events: &[UsageEvent],
 ) -> Result<UpsertStats, StoreError> {
@@ -73,12 +86,10 @@ pub(crate) fn upsert(
         &UPSERT,
         now,
         &rows,
-        |statement, event, revision, now_us| {
+        |upsert, event, revision, now_us| {
             let t = &event.tokens;
             let cost = &event.cost;
-            Ok(statement
-                .query_row(
-                    named_params! {
+            upsert.bind(named_params! {
                         ":event_id": event.id.as_bytes(),
                         ":agent": event.agent.as_str(),
                         ":dedup_key": event.dedup_key.as_str(),
@@ -109,12 +120,91 @@ pub(crate) fn upsert(
                         ":cost_estimated_usd_micros": cost.estimated().map(|e| e.usd.get()),
                         ":pricing_version": cost.estimated().map(|e| e.pricing_version.as_str()),
                         ":service_tier": event.service_tier,
-                    },
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?)
+            })
         },
     )
+}
+
+/// The event stored under `(agent, dedup_key)`.
+pub(crate) fn by_key(
+    conn: &Connection,
+    agent: AgentId,
+    dedup_key: &DedupKey,
+) -> Result<Option<Versioned<UsageEvent>>, StoreError> {
+    conn.prepare_cached(BY_KEY)?
+        .query_and_then(params![agent.as_str(), dedup_key.as_str()], decode)?
+        .next()
+        .transpose()
+}
+
+/// The event with this id.
+pub(crate) fn by_id(
+    conn: &Connection,
+    id: &EventId,
+) -> Result<Option<Versioned<UsageEvent>>, StoreError> {
+    conn.prepare_cached(BY_ID)?
+        .query_and_then(params![id.as_bytes()], decode)?
+        .next()
+        .transpose()
+}
+
+/// Events of one working directory in insertion order, after the row `after` (exclusive).
+/// Returns each event with the row id to resume from.
+pub(crate) fn by_cwd(
+    conn: &Connection,
+    cwd: &Utf8Path,
+    after: i64,
+    limit: usize,
+) -> Result<Vec<(i64, Versioned<UsageEvent>)>, StoreError> {
+    let limit = to_limit(limit)?;
+    conn.prepare_cached(BY_CWD)?
+        .query_and_then(params![cwd.as_str(), after, limit], |row| {
+            Ok((row.get::<_, i64>("id")?, decode(row)?))
+        })?
+        .collect()
+}
+
+/// When the first event of `(agent, profile)` that is not a stats-cache aggregate happened (D38).
+pub(crate) fn earliest_transcript(
+    conn: &Connection,
+    agent: AgentId,
+    profile: &ProfileId,
+) -> Result<Option<Timestamp>, StoreError> {
+    let at: Option<i64> = conn
+        .prepare_cached(
+            "SELECT MIN(at_us) FROM usage_event \
+             WHERE agent = ?1 AND profile = ?2 AND kind != ?3",
+        )?
+        .query_row(
+            params![
+                agent.as_str(),
+                profile.as_str(),
+                enum_text(&EventKind::DailyAggregate)?
+            ],
+            |row| row.get(0),
+        )?;
+    Ok(at.map(from_us).transpose()?)
+}
+
+/// Deletes the stats-cache aggregates of `(agent, profile)` at or after `from`; returns how many.
+pub(crate) fn delete_aggregates_from(
+    conn: &Connection,
+    agent: AgentId,
+    profile: &ProfileId,
+    from: Timestamp,
+) -> Result<u64, StoreError> {
+    let deleted = conn
+        .prepare_cached(
+            "DELETE FROM usage_event \
+             WHERE agent = ?1 AND profile = ?2 AND kind = ?3 AND at_us >= ?4",
+        )?
+        .execute(params![
+            agent.as_str(),
+            profile.as_str(),
+            enum_text(&EventKind::DailyAggregate)?,
+            to_us(from)
+        ])?;
+    Ok(to_count(deleted))
 }
 
 /// Events with a revision above `after`, oldest revision first.

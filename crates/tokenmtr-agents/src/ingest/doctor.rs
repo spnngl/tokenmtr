@@ -6,12 +6,11 @@ use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use serde::Serialize;
 use tokenmtr_core::{AgentId, ProfileId};
-use tokenmtr_store::StoreRead;
+use tokenmtr_store::{OpenParseIssue, StoreRead};
 
 use super::engine::Ingestor;
 use super::error::IngestError;
 use super::fingerprint::FileStat;
-use super::stored::{self, OpenIssue};
 use crate::{AgentKind, AgentSource as _, claude, discover};
 
 /// Days Claude keeps transcripts when `settings.json` does not say (D53).
@@ -67,6 +66,33 @@ pub struct LastRun {
     pub failed_usage_percent: Option<f64>,
 }
 
+/// One open parse issue, as the doctor lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OpenIssue {
+    /// Agent the issue belongs to.
+    pub agent: String,
+    /// Issue kind as stored (`format_drift`, `protected_folder`, ...).
+    pub kind: String,
+    /// File or directory the issue is about.
+    pub subject: String,
+    /// How often it was seen.
+    pub occurrences: u64,
+    /// Key skeleton or reason text; never line content.
+    pub sample: Option<String>,
+}
+
+impl From<OpenParseIssue> for OpenIssue {
+    fn from(issue: OpenParseIssue) -> Self {
+        Self {
+            agent: issue.agent.as_str().to_owned(),
+            kind: issue.kind.as_str().to_owned(),
+            subject: issue.subject,
+            occurrences: issue.occurrences,
+            sample: issue.sample,
+        }
+    }
+}
+
 /// One agent.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AgentReport {
@@ -105,23 +131,24 @@ impl Ingestor {
         store: &impl StoreRead,
         sink_dirs: &[Utf8PathBuf],
     ) -> Result<DoctorReport, IngestError> {
-        let conn = self.reader.connection();
         let now = Timestamp::now();
         let mut agents = Vec::new();
         for source in &self.settings.sources {
             let agent = source.id();
             let checkpoints = store.load_checkpoints(agent)?;
-            let last_run = stored::last_ingest_skipped(conn, agent)?.map(|(finished, json)| {
-                let skipped: BTreeMap<String, u64> =
-                    serde_json::from_str(&json).unwrap_or_default();
-                let total = skipped.get("usage_lines").copied().unwrap_or(0);
-                let failed = skipped.get("usage_lines_failed").copied().unwrap_or(0);
-                LastRun {
-                    finished,
-                    failed_usage_percent: (total > 0).then(|| percent(failed, total)),
-                    skipped,
-                }
-            });
+            let last_run = store
+                .ingest_runs(Some(agent), 1)?
+                .into_iter()
+                .next()
+                .map(|run| {
+                    let total = run.skipped.get("usage_lines").copied().unwrap_or(0);
+                    let failed = run.skipped.get("usage_lines_failed").copied().unwrap_or(0);
+                    LastRun {
+                        finished: run.finished,
+                        failed_usage_percent: (total > 0).then(|| percent(failed, total)),
+                        skipped: run.skipped,
+                    }
+                });
             agents.push(AgentReport {
                 agent,
                 profiles: Self::profile_reports(source, now),
@@ -138,8 +165,12 @@ impl Ingestor {
             .collect();
         Ok(DoctorReport {
             agents,
-            open_issues: stored::open_issues(conn)?,
-            unresolved_cwds: stored::unresolved_cwds(conn)?,
+            open_issues: store
+                .open_parse_issues()?
+                .into_iter()
+                .map(OpenIssue::from)
+                .collect(),
+            unresolved_cwds: store.unresolved_cwds()?,
             protected_cwds,
             protected_sinks: sink_dirs
                 .iter()

@@ -8,13 +8,13 @@
 //!   only events that were unpriced; re-estimating the rest is an explicit `reprice` (D11).
 
 use jiff::Timestamp;
-use rusqlite::Connection;
 use tokenmtr_core::pricing::EMBEDDED_LITELLM;
-use tokenmtr_core::{Estimate, Override, ParsedEvent, PricingCatalog, PricingVersion, estimate};
-use tokenmtr_store::{Store, StoreRead as _};
+use tokenmtr_core::{
+    Estimate, Override, ParsedEvent, PricingCatalog, PricingVersion, UsageEvent, estimate,
+};
+use tokenmtr_store::{Store, StoreRead};
 
 use super::error::IngestError;
-use super::stored::{self, StoredPricing};
 
 /// The active snapshot, parsed once per version.
 struct Active {
@@ -58,7 +58,7 @@ impl Pricer {
     /// event is already stored with the same inputs, else a fresh one. `None` means unpriced.
     pub fn price(
         &self,
-        conn: &Connection,
+        store: &impl StoreRead,
         event: &mut ParsedEvent,
     ) -> Result<Option<Estimate>, IngestError> {
         let zero_reported = event.reported_cost.is_some_and(|cost| cost.get() == 0)
@@ -66,9 +66,11 @@ impl Pricer {
         if zero_reported {
             event.reported_cost = None;
         }
-        let kept = stored::event_pricing(conn, event.agent, &event.dedup_key)?
+        let kept = store
+            .usage_event_by_key(event.agent, &event.dedup_key)?
+            .map(|stored| stored.row)
             .filter(|stored| same_inputs(stored, event))
-            .and_then(|stored| stored.estimate);
+            .and_then(|stored| stored.cost.estimated().cloned());
         let estimate = match kept {
             Some(kept) => Some(kept),
             None => self
@@ -83,13 +85,52 @@ impl Pricer {
     }
 }
 
-fn same_inputs(stored: &StoredPricing, event: &ParsedEvent) -> bool {
+fn same_inputs(stored: &UsageEvent, event: &ParsedEvent) -> bool {
     stored.tokens == event.tokens
-        && stored.model == event.model.as_str()
-        && stored.provider.as_deref()
-            == event
-                .provider
-                .as_ref()
-                .map(tokenmtr_core::ProviderId::as_str)
+        && stored.model == event.model
+        && stored.provider == event.provider
         && stored.service_tier == event.service_tier
+}
+
+#[cfg(test)]
+mod tests {
+    use tokenmtr_core::UsdMicros;
+    use tokenmtr_store::TempStore;
+
+    use super::*;
+    use crate::testkit::parsed_event;
+
+    #[test]
+    fn a_stored_estimate_is_kept_only_while_the_inputs_are_unchanged() {
+        let mut temp = TempStore::new().unwrap();
+        let mut pricer = Pricer::new(Vec::new());
+        pricer
+            .refresh(temp.store_mut(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        let mut event = parsed_event("k", "2026-03-01T00:00:00Z", 1000, 500);
+        let reader = temp.reader().unwrap();
+        let fresh = pricer.price(&reader, &mut event).unwrap().unwrap();
+        assert_ne!(
+            fresh.usd,
+            UsdMicros::new(7),
+            "the fixture must differ from the stub"
+        );
+
+        // Store the event with a stub estimate from an older snapshot.
+        let machine = temp.store().machine_id();
+        let stub = Estimate {
+            usd: UsdMicros::new(7),
+            pricing_version: PricingVersion::of_body(b"old"),
+        };
+        let stored = event.clone().into_usage_event(&machine, Some(stub.clone()));
+        temp.store_mut().upsert_events(&[stored]).unwrap();
+
+        assert_eq!(pricer.price(&reader, &mut event).unwrap(), Some(stub));
+        event.tokens.output += 1;
+        let repriced = pricer.price(&reader, &mut event).unwrap().unwrap();
+        assert!(
+            repriced.usd > UsdMicros::new(7),
+            "changed inputs are re-estimated"
+        );
+    }
 }

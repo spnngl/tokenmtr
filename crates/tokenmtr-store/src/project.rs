@@ -2,11 +2,13 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
-use rusqlite::{Connection, Row, named_params};
+use rusqlite::{Connection, Row, named_params, params};
 use tokenmtr_core::ProjectKey;
 
 use crate::codec::{RowExt, to_us};
 use crate::error::{CodecError, StoreError};
+use crate::types::Dataset;
+use crate::versioned;
 
 /// How a project was resolved, best evidence first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +93,70 @@ pub(crate) fn save(conn: &Connection, resolution: &ProjectResolution) -> Result<
         ":rule_id": rule,
     })?;
     Ok(())
+}
+
+/// Saves `resolutions` and points the events of each directory at its project and client.
+///
+/// Only events whose `(project, client)` differ are rewritten; each gets its own revision (D17)
+/// and the dataset counter moves once. Returns how many events changed.
+pub(crate) fn reassign(
+    conn: &Connection,
+    now: Timestamp,
+    resolutions: &[ProjectResolution],
+) -> Result<u64, StoreError> {
+    let mut revision = versioned::head(conn, Dataset::UsageEvents)?;
+    let mut changed = 0_u64;
+    let mut stale = conn.prepare_cached(
+        "SELECT id FROM usage_event \
+         WHERE cwd = ?1 AND (project, client) IS NOT (?2, ?3) ORDER BY id",
+    )?;
+    let mut rewrite = conn.prepare_cached(
+        "UPDATE usage_event SET project = ?1, client = ?2, revision = ?3, updated_at_us = ?4 \
+         WHERE id = ?5",
+    )?;
+    for resolution in resolutions {
+        save(conn, resolution)?;
+        let ids = stale
+            .query_map(
+                params![
+                    resolution.cwd.as_str(),
+                    resolution.project.as_str(),
+                    resolution.client
+                ],
+                |row| row.get::<_, i64>(0),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        for id in ids {
+            revision = revision.next();
+            rewrite.execute(params![
+                resolution.project.as_str(),
+                resolution.client,
+                revision,
+                to_us(now),
+                id
+            ])?;
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        conn.execute(
+            "UPDATE dataset_revision SET revision = ?1 WHERE dataset = ?2",
+            params![revision, Dataset::UsageEvents.as_str()],
+        )?;
+    }
+    Ok(changed)
+}
+
+/// Distinct working directories of stored events that have no resolution yet, ordered.
+pub(crate) fn unresolved(conn: &Connection) -> Result<Vec<Utf8PathBuf>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT DISTINCT cwd FROM usage_event \
+         WHERE cwd IS NOT NULL AND cwd NOT IN (SELECT cwd FROM project_map) ORDER BY cwd",
+    )?;
+    let cwds = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(cwds.into_iter().map(Utf8PathBuf::from).collect())
 }
 
 /// The resolution of one directory.

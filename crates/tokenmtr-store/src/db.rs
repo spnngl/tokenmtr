@@ -7,12 +7,12 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use tokenmtr_core::{
-    AgentId, Alert, FxRate, MachineId, PricingVersion, SinkId, SourceFileId, Subscription,
-    UsageEvent,
+    AgentId, Alert, DedupKey, EventId, FxRate, MachineId, PricingVersion, ProfileId, SinkId,
+    SourceFileId, Subscription, UsageEvent,
 };
 
 use crate::account::{self, AccountRecord};
@@ -22,7 +22,8 @@ use crate::checkpoint::{self, Checkpoint, StoredCheckpoint};
 use crate::error::StoreError;
 use crate::events;
 use crate::fx::{self, FxRateRow, FxSource};
-use crate::issue::{self, IssueKind, ParseIssue};
+use crate::ingest::{self, IngestWrite, IngestWriteReport};
+use crate::issue::{self, IssueKind, OpenParseIssue, ParseIssue};
 use crate::meta::{self, Identity};
 use crate::migrations::{SCHEMA_VERSION, migrations};
 use crate::pricing::{self, StoredPricingSnapshot};
@@ -32,8 +33,10 @@ use crate::runs::{self, BackupRun, IngestRun};
 use crate::signal::{self, SessionSignal};
 use crate::sink::{self, SinkRun};
 use crate::subscriptions;
-use crate::tool_calls::{self, ProfiledToolCall};
-use crate::types::{Dataset, Pending, RedactionKey, Revision, UpsertStats, Versioned};
+use crate::tool_calls::{self, ProfiledToolCall, ResultOutcome};
+use crate::types::{
+    Dataset, Page, PageCursor, Pending, RedactionKey, Revision, UpsertStats, Versioned,
+};
 use crate::versioned;
 
 /// How long a statement waits for another connection's lock (D6).
@@ -200,6 +203,110 @@ pub trait StoreRead: sealed::Sealed {
         fx::after(self.connection(), after, limit)
     }
 
+    /// The event stored under `(agent, dedup_key)`.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn usage_event_by_key(
+        &self,
+        agent: AgentId,
+        dedup_key: &DedupKey,
+    ) -> Result<Option<Versioned<UsageEvent>>, StoreError> {
+        events::by_key(self.connection(), agent, dedup_key)
+    }
+
+    /// The event with this id.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn usage_event(&self, id: &EventId) -> Result<Option<Versioned<UsageEvent>>, StoreError> {
+        events::by_id(self.connection(), id)
+    }
+
+    /// Up to `limit` events of one working directory in insertion order, resuming at `after`.
+    /// Revisions may change between pages (see [`Store::reassign_projects`]); the order does not.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn usage_events_by_cwd(
+        &self,
+        cwd: &Utf8Path,
+        after: Option<PageCursor>,
+        limit: usize,
+    ) -> Result<Page<Versioned<UsageEvent>>, StoreError> {
+        let rows = events::by_cwd(self.connection(), cwd, after.map_or(0, |c| c.0), limit)?;
+        let next = if rows.len() == limit {
+            rows.last().map(|(id, _)| PageCursor(*id))
+        } else {
+            None
+        };
+        Ok(Page {
+            items: rows.into_iter().map(|(_, event)| event).collect(),
+            next,
+        })
+    }
+
+    /// The tool call stored under `(agent, tool_use_id)`.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn tool_call(
+        &self,
+        agent: AgentId,
+        tool_use_id: &str,
+    ) -> Result<Option<Versioned<ProfiledToolCall>>, StoreError> {
+        tool_calls::by_key(self.connection(), agent, tool_use_id)
+    }
+
+    /// When the first event of `(agent, profile)` that is not a stats-cache aggregate happened
+    /// (D38); `None` when there is none.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt value.
+    fn earliest_transcript_event(
+        &self,
+        agent: AgentId,
+        profile: &ProfileId,
+    ) -> Result<Option<Timestamp>, StoreError> {
+        events::earliest_transcript(self.connection(), agent, profile)
+    }
+
+    /// Every unresolved parse issue, oldest first (D42).
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn open_parse_issues(&self) -> Result<Vec<OpenParseIssue>, StoreError> {
+        issue::open(self.connection())
+    }
+
+    /// The newest ingest passes, newest first; of one agent when `agent` is given.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn ingest_runs(
+        &self,
+        agent: Option<AgentId>,
+        limit: usize,
+    ) -> Result<Vec<IngestRun>, StoreError> {
+        runs::ingest_runs(self.connection(), agent, limit)
+    }
+
+    /// The newest export attempts of `sink`, newest first (D41).
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn sink_runs(&self, sink: &SinkId, limit: usize) -> Result<Vec<SinkRun>, StoreError> {
+        sink::runs(self.connection(), sink, limit)
+    }
+
+    /// The working directories of stored events that have no resolution yet, ordered.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    fn unresolved_cwds(&self) -> Result<Vec<Utf8PathBuf>, StoreError> {
+        project::unresolved(self.connection())
+    }
+
     /// Every checkpoint of one agent, ordered by path.
     ///
     /// # Errors
@@ -318,7 +425,7 @@ impl Store {
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back) or values outside `SQLite`'s integers.
     pub fn upsert_events(&mut self, events: &[UsageEvent]) -> Result<UpsertStats, StoreError> {
-        events::upsert(&mut self.conn, (self.clock)(), events)
+        self.in_transaction(|conn, now| events::upsert(conn, now, events))
     }
 
     /// Inserts or updates tool calls by `(agent, tool_use_id)`. The event link and the error flag
@@ -330,7 +437,7 @@ impl Store {
         &mut self,
         calls: &[ProfiledToolCall],
     ) -> Result<UpsertStats, StoreError> {
-        tool_calls::upsert(&mut self.conn, (self.clock)(), calls)
+        self.in_transaction(|conn, now| tool_calls::upsert(conn, now, calls))
     }
 
     /// Mirrors subscriptions by id (D28). Subscriptions missing from `subscriptions` are kept.
@@ -341,7 +448,7 @@ impl Store {
         &mut self,
         subscriptions: &[Subscription],
     ) -> Result<UpsertStats, StoreError> {
-        subscriptions::upsert(&mut self.conn, (self.clock)(), subscriptions)
+        self.in_transaction(|conn, now| subscriptions::upsert(conn, now, subscriptions))
     }
 
     /// Stores quota polls, one row per reported window (D26).
@@ -352,7 +459,7 @@ impl Store {
         &mut self,
         polls: &[QuotaPoll],
     ) -> Result<UpsertStats, StoreError> {
-        quota::upsert(&mut self.conn, (self.clock)(), polls)
+        self.in_transaction(|conn, now| quota::upsert(conn, now, polls))
     }
 
     /// Stores FX rates by date (D27).
@@ -364,7 +471,7 @@ impl Store {
         source: FxSource,
         rates: &[FxRate],
     ) -> Result<UpsertStats, StoreError> {
-        fx::upsert(&mut self.conn, (self.clock)(), source, rates)
+        self.in_transaction(|conn, now| fx::upsert(conn, now, source, rates))
     }
 
     /// Stores session signals not seen before; returns how many were new.
@@ -372,7 +479,79 @@ impl Store {
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back).
     pub fn record_signals(&mut self, signals: &[SessionSignal]) -> Result<u64, StoreError> {
-        signal::record(&mut self.conn, signals)
+        self.in_transaction(|conn, _| signal::record(conn, signals))
+    }
+
+    /// Sets the error flag of a stored tool call from its tool result (D32). The call gets a new
+    /// revision only when the flag changes. Returns whether it did; `false` also when no such
+    /// call is stored.
+    ///
+    /// # Errors
+    /// `SQLite` failures (the transaction is rolled back).
+    pub fn apply_tool_result(
+        &mut self,
+        agent: AgentId,
+        tool_use_id: &str,
+        is_error: bool,
+    ) -> Result<bool, StoreError> {
+        let outcome = self.in_transaction(|conn, now| {
+            tool_calls::apply_result(conn, now, agent, tool_use_id, is_error)
+        })?;
+        Ok(outcome == ResultOutcome::Applied)
+    }
+
+    /// Writes one ingest flush in a single transaction: events, tool calls, signals, tool-result
+    /// flags, parse-issue changes and file checkpoints (D15, D48). Either all of it is stored or,
+    /// after an error or a crash, none of it, so a checkpoint never runs ahead of its rows.
+    ///
+    /// # Errors
+    /// `SQLite` failures or values outside `SQLite`'s integers (the transaction is rolled back).
+    pub fn commit_ingest(
+        &mut self,
+        write: &IngestWrite<'_>,
+    ) -> Result<IngestWriteReport, StoreError> {
+        self.in_transaction(|conn, now| ingest::apply(conn, now, write))
+    }
+
+    /// Saves `resolutions` (D31) and points the events of each working directory at its project
+    /// and client, in one transaction. Only events whose project or client differ are rewritten;
+    /// each gets a new revision, so sinks learn of exactly those. Returns how many changed.
+    ///
+    /// # Errors
+    /// `SQLite` failures (the transaction is rolled back).
+    pub fn reassign_projects(
+        &mut self,
+        resolutions: &[ProjectResolution],
+    ) -> Result<u64, StoreError> {
+        self.in_transaction(|conn, now| project::reassign(conn, now, resolutions))
+    }
+
+    /// Deletes the stats-cache daily aggregates (D38) of `(agent, profile)` that transcript events
+    /// now cover: those on or after the local day (in `zone`, D8) of the profile's earliest
+    /// transcript event. Returns how many were deleted; none when the profile has no transcript
+    /// events yet.
+    ///
+    /// **Deletes are not propagated.** Sinks pull `revision > cursor` and upsert by key (D17), so
+    /// they never learn that a row is gone: a sink that already exported an aggregate keeps it.
+    /// The dataset counter does not advance, so revisions can have gaps afterwards. The days the
+    /// aggregates covered are in the sink as transcript events, which downstream queries must
+    /// prefer by `kind`.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a day outside the supported range (the transaction is rolled back).
+    pub fn delete_daily_aggregates_covered_by_transcripts(
+        &mut self,
+        agent: AgentId,
+        profile: &ProfileId,
+        zone: &jiff::tz::TimeZone,
+    ) -> Result<u64, StoreError> {
+        self.in_transaction(|conn, _| {
+            let Some(first) = events::earliest_transcript(conn, agent, profile)? else {
+                return Ok(0);
+            };
+            let from = first.to_zoned(zone.clone()).start_of_day()?.timestamp();
+            events::delete_aggregates_from(conn, agent, profile, from)
+        })
     }
 
     /// Stores a fired alert; `false` when its dedup key was already stored (D36).
@@ -487,6 +666,21 @@ impl Store {
     /// `SQLite` failures.
     pub fn save_account(&mut self, account: &AccountRecord) -> Result<(), StoreError> {
         account::save(&self.conn, account)
+    }
+
+    /// Runs `body` in one immediate write transaction with the clock read once, and commits when
+    /// it returns `Ok`.
+    fn in_transaction<T>(
+        &mut self,
+        body: impl FnOnce(&Connection, Timestamp) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
+        let now = (self.clock)();
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let value = body(&tx, now)?;
+        tx.commit()?;
+        Ok(value)
     }
 
     /// The connection, for tests that need raw SQL.

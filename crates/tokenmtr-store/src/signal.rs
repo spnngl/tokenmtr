@@ -1,10 +1,10 @@
 //! The `session_signal` table: API errors and compactions per session (D32).
 
 use jiff::Timestamp;
-use rusqlite::{Connection, TransactionBehavior, named_params};
+use rusqlite::{Connection, named_params};
 use tokenmtr_core::{AgentId, SessionId, SignalKind};
 
-use crate::codec::{enum_text, to_us};
+use crate::codec::{enum_text, to_count, to_us};
 use crate::error::StoreError;
 
 /// One signal seen in a session.
@@ -24,23 +24,19 @@ const INSERT: &str = "INSERT OR IGNORE INTO session_signal (agent, session, kind
     VALUES (:agent, :session, :kind, :at_us)";
 
 /// Stores signals not seen before and returns how many were new.
-pub(crate) fn record(conn: &mut Connection, signals: &[SessionSignal]) -> Result<u64, StoreError> {
-    if signals.is_empty() {
-        return Ok(0);
-    }
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+pub(crate) fn record(conn: &Connection, signals: &[SessionSignal]) -> Result<u64, StoreError> {
     let mut inserted = 0;
-    {
-        let mut statement = tx.prepare_cached(INSERT)?;
-        for signal in signals {
-            inserted += statement.execute(named_params! {
-                ":agent": signal.agent.as_str(),
-                ":session": signal.session.as_str(),
-                ":kind": enum_text(&signal.kind)?,
-                ":at_us": to_us(signal.at),
-            })? as u64;
-        }
+    if signals.is_empty() {
+        return Ok(inserted);
     }
-    tx.commit()?;
+    let mut statement = conn.prepare_cached(INSERT)?;
+    for signal in signals {
+        inserted += to_count(statement.execute(named_params! {
+            ":agent": signal.agent.as_str(),
+            ":session": signal.session.as_str(),
+            ":kind": enum_text(&signal.kind)?,
+            ":at_us": to_us(signal.at),
+        })?);
+    }
     Ok(inserted)
 }
