@@ -1,0 +1,67 @@
+---
+source: crates/tokenmtr-agents/tests/claude.rs
+expression: value
+---
+{
+  "events": [
+    {
+      "agent": "claude",
+      "approximate": false,
+      "at": "2026-03-08T14:00:00Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "msg_m1|req_m1",
+      "git_branch": "main",
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-sonnet-4-5",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": null,
+      "service_tier": "standard",
+      "session": "sess-mcp",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 4000,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 8,
+        "output": 22,
+        "reasoning": 0
+      }
+    }
+  ],
+  "issues": [],
+  "new_offset": 1215,
+  "orphan_tool_results": [],
+  "signals": [],
+  "tool_calls": [
+    {
+      "call": {
+        "agent": "claude",
+        "at": "2026-03-08T14:00:00Z",
+        "event": null,
+        "is_error": false,
+        "mcp_server": "github",
+        "session": "sess-mcp",
+        "tool_name": "list_issues",
+        "tool_use_id": "toolu_m1"
+      },
+      "event_key": "msg_m1|req_m1"
+    },
+    {
+      "call": {
+        "agent": "claude",
+        "at": "2026-03-08T14:00:00Z",
+        "event": null,
+        "is_error": true,
+        "mcp_server": "tracker",
+        "session": "sess-mcp",
+        "tool_name": "save__issue",
+        "tool_use_id": "toolu_m2"
+      },
+      "event_key": "msg_m1|req_m1"
+    }
+  ]
+}

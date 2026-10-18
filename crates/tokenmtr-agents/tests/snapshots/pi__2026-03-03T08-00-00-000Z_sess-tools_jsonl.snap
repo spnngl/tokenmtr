@@ -1,0 +1,99 @@
+---
+source: crates/tokenmtr-agents/tests/pi.rs
+expression: value
+---
+{
+  "events": [
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-03T08:00:05Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "msg_tools_1",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-sonnet-4-5",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": 1000,
+      "service_tier": null,
+      "session": "sess-tools",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 0,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 100,
+        "output": 50,
+        "reasoning": 0
+      }
+    }
+  ],
+  "issues": [],
+  "new_offset": 2475,
+  "orphan_tool_results": [
+    {
+      "agent": "pi",
+      "is_error": true,
+      "tool_use_id": "call_orphan"
+    }
+  ],
+  "signals": [],
+  "tool_calls": [
+    {
+      "call": {
+        "agent": "pi",
+        "at": "2026-03-03T08:00:05Z",
+        "event": null,
+        "is_error": false,
+        "mcp_server": null,
+        "session": "sess-tools",
+        "tool_name": "read",
+        "tool_use_id": "call_t1"
+      },
+      "event_key": "msg_tools_1"
+    },
+    {
+      "call": {
+        "agent": "pi",
+        "at": "2026-03-03T08:00:05Z",
+        "event": null,
+        "is_error": true,
+        "mcp_server": null,
+        "session": "sess-tools",
+        "tool_name": "bash",
+        "tool_use_id": "call_t2"
+      },
+      "event_key": "msg_tools_1"
+    },
+    {
+      "call": {
+        "agent": "pi",
+        "at": "2026-03-03T08:00:05Z",
+        "event": null,
+        "is_error": false,
+        "mcp_server": "demo-server",
+        "session": "sess-tools",
+        "tool_name": "lookup",
+        "tool_use_id": "call_t3"
+      },
+      "event_key": "msg_tools_1"
+    },
+    {
+      "call": {
+        "agent": "pi",
+        "at": "2026-03-03T08:00:20Z",
+        "event": null,
+        "is_error": null,
+        "mcp_server": null,
+        "session": "sess-tools",
+        "tool_name": "edit",
+        "tool_use_id": "call_t4"
+      },
+      "event_key": null
+    }
+  ]
+}

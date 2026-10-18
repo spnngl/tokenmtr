@@ -13,5 +13,44 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+jiff = "0.2"
+tokenmtr-agents = { path = "../crates/tokenmtr-agents" }
+tokenmtr-core = { path = "../crates/tokenmtr-core" }
+tokenmtr-remote = { path = "../crates/tokenmtr-remote" }
+
+[[bin]]
+name = "claude_line"
+path = "fuzz_targets/claude_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pi_line"
+path = "fuzz_targets/pi_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "quota_response"
+path = "fuzz_targets/quota_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ecb_xml"
+path = "fuzz_targets/ecb_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "litellm_catalog"
+path = "fuzz_targets/litellm_catalog.rs"
+test = false
+doc = false
+bench = false
 
 [workspace]

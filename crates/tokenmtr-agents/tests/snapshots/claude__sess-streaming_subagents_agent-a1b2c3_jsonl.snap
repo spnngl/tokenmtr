@@ -1,0 +1,40 @@
+---
+source: crates/tokenmtr-agents/tests/claude.rs
+expression: value
+---
+{
+  "events": [
+    {
+      "agent": "claude",
+      "approximate": false,
+      "at": "2026-03-02T09:00:07Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "msg_sub1|req_sub1",
+      "git_branch": "main",
+      "is_sidechain": true,
+      "kind": "message",
+      "model": "claude-sonnet-4-5",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": null,
+      "service_tier": "standard",
+      "session": "sess-streaming",
+      "source_file": null,
+      "subagent": "agent-a1b2c3",
+      "tokens": {
+        "cache_read": 500,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 3,
+        "output": 21,
+        "reasoning": 0
+      }
+    }
+  ],
+  "issues": [],
+  "new_offset": 1314,
+  "orphan_tool_results": [],
+  "signals": [],
+  "tool_calls": []
+}

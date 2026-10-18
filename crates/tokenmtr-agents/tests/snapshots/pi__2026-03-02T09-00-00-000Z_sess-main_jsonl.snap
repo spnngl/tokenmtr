@@ -1,0 +1,223 @@
+---
+source: crates/tokenmtr-agents/tests/pi.rs
+expression: value
+---
+{
+  "events": [
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:00:05Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "msg_main_1",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-sonnet-4-5-20250929",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": 1500,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 300,
+        "cache_write_1h": 30,
+        "cache_write_5m": 50,
+        "input_uncached": 120,
+        "output": 45,
+        "reasoning": 10
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:00:06Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "e0000003|2026-03-02T09:00:06.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "tool_result",
+      "model": "unattributed",
+      "parent_session": null,
+      "profile": "default",
+      "provider": null,
+      "reported_cost": 200,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 0,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 50,
+        "output": 20,
+        "reasoning": 0
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:00:10Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "e0000004|2026-03-02T09:00:10.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "gpt-5",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "openai",
+      "reported_cost": 2400,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 1000,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 200,
+        "output": 200,
+        "reasoning": 64
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:00:11Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "e0000005|2026-03-02T09:00:11.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "auxiliary",
+      "model": "claude-haiku-4-5",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": 70,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 0,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 30,
+        "output": 8,
+        "reasoning": 0
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:05:01Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "e0000008|2026-03-02T09:05:01.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "branch_summary",
+      "model": "unattributed",
+      "parent_session": null,
+      "profile": "default",
+      "provider": null,
+      "reported_cost": 1300,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 0,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 400,
+        "output": 90,
+        "reasoning": 0
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:05:08Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "msg_main_2",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-sonnet-4-5",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": 1400,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 500,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 150,
+        "output": 60,
+        "reasoning": 0
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-03-02T09:10:00Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "e000000a|2026-03-02T09:10:00.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "compaction",
+      "model": "unattributed",
+      "parent_session": null,
+      "profile": "default",
+      "provider": null,
+      "reported_cost": 2400,
+      "service_tier": null,
+      "session": "sess-main",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 0,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 900,
+        "output": 150,
+        "reasoning": 0
+      }
+    }
+  ],
+  "issues": [],
+  "new_offset": 4186,
+  "orphan_tool_results": [],
+  "signals": [
+    {
+      "agent": "pi",
+      "at": "2026-03-02T09:10:00Z",
+      "kind": "compaction",
+      "session": "sess-main"
+    }
+  ],
+  "tool_calls": [
+    {
+      "call": {
+        "agent": "pi",
+        "at": "2026-03-02T09:00:05Z",
+        "event": null,
+        "is_error": false,
+        "mcp_server": null,
+        "session": "sess-main",
+        "tool_name": "read",
+        "tool_use_id": "call_main_1"
+      },
+      "event_key": "msg_main_1"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+---
+source: crates/tokenmtr-agents/tests/pi.rs
+expression: value
+---
+{
+  "events": [
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-01-15T08:00:04Z",
+      "cwd": "/home/demo/legacy",
+      "dedup_key": "b0000002|2026-01-15T08:00:04.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-sonnet-4",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": 800,
+      "service_tier": null,
+      "session": "sess-v2",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 0,
+        "cache_write_1h": 0,
+        "cache_write_5m": 0,
+        "input_uncached": 90,
+        "output": 35,
+        "reasoning": 0
+      }
+    },
+    {
+      "agent": "pi",
+      "approximate": false,
+      "at": "2026-01-15T08:01:03Z",
+      "cwd": "/home/demo/legacy",
+      "dedup_key": "b0000004|2026-01-15T08:01:03.000Z",
+      "git_branch": null,
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-sonnet-4",
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": null,
+      "service_tier": null,
+      "session": "sess-v2",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 60,
+        "cache_write_1h": 0,
+        "cache_write_5m": 15,
+        "input_uncached": 110,
+        "output": 25,
+        "reasoning": 0
+      }
+    }
+  ],
+  "issues": [],
+  "new_offset": 1305,
+  "orphan_tool_results": [],
+  "signals": [],
+  "tool_calls": []
+}
