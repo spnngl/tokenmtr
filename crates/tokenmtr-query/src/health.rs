@@ -6,9 +6,12 @@ use rusqlite::params_from_iter;
 use rusqlite::types::Value;
 use serde::Serialize;
 use tokenmtr_core::{AgentId, AlertKind, SinkId};
-use tokenmtr_store::{Dataset, StoreRead, StoreReader};
+pub use tokenmtr_export::SinkState;
+use tokenmtr_export::{HEALTH_RUNS, HealthInput, sink_status, total_pending};
+use tokenmtr_store::{Dataset, IssueKind, SinkRun, StoreRead, StoreReader};
 
 use crate::context::QueryContext;
+use crate::engine::{closed, to_count};
 use crate::error::QueryError;
 use crate::range::DateRange;
 
@@ -18,10 +21,6 @@ fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
 
 fn opt_ts(us: Option<i64>) -> Result<Option<Timestamp>, QueryError> {
     us.map(micros_ts).transpose()
-}
-
-fn unsigned(v: i64) -> u64 {
-    u64::try_from(v).unwrap_or(0)
 }
 
 /// A configured sink, as far as health is concerned (the caller maps its config to this).
@@ -37,42 +36,11 @@ pub struct SinkSpec {
     pub enabled: bool,
 }
 
-/// The health of one sink (D41).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum SinkState {
-    /// Caught up.
-    Healthy,
-    /// Rows wait for longer than twice the sink interval.
-    Lagging,
-    /// The latest runs failed.
-    Failing {
-        /// Start of the first failed run of the current streak.
-        since: Timestamp,
-        /// The latest error.
-        last_error: String,
-    },
-    /// Switched off.
-    Disabled,
-}
-
-impl SinkState {
-    /// Severity for "worst of" aggregation: higher is worse.
-    #[must_use]
-    pub const fn severity(&self) -> u8 {
-        match self {
-            Self::Disabled | Self::Healthy => 0,
-            Self::Lagging => 1,
-            Self::Failing { .. } => 2,
-        }
-    }
-}
-
 /// One export batch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SinkRunView {
     /// Dataset exported.
-    pub dataset: String,
+    pub dataset: Dataset,
     /// Start.
     pub started_at: Timestamp,
     /// End.
@@ -83,12 +51,24 @@ pub struct SinkRunView {
     pub error: Option<String>,
 }
 
+impl From<&SinkRun> for SinkRunView {
+    fn from(run: &SinkRun) -> Self {
+        Self {
+            dataset: run.dataset,
+            started_at: run.started,
+            finished_at: run.finished,
+            rows: run.rows,
+            error: run.error.clone(),
+        }
+    }
+}
+
 /// Health of one sink.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SinkHealth {
     /// Sink id.
-    pub sink: String,
-    /// State.
+    pub sink: SinkId,
+    /// State, computed by [`tokenmtr_export::sink_status`] like the daemon does.
     #[serde(flatten)]
     pub state: SinkState,
     /// Rows not yet exported, over all its datasets.
@@ -97,15 +77,18 @@ pub struct SinkHealth {
     pub lag_secs: Option<i64>,
     /// End of the latest successful run.
     pub last_success_at: Option<Timestamp>,
-    /// The latest runs, newest first (at most 10).
+    /// The latest runs, newest first (at most [`RECENT_RUNS`]).
     pub recent_runs: Vec<SinkRunView>,
 }
+
+/// Runs listed in [`SinkHealth::recent_runs`].
+pub const RECENT_RUNS: usize = 10;
 
 /// Health of every spec.
 ///
 /// # Errors
 ///
-/// Store, SQL or decode failures.
+/// Store failures.
 pub fn sink_health(
     reader: &StoreReader,
     ctx: &QueryContext,
@@ -122,66 +105,30 @@ fn one_sink(
     ctx: &QueryContext,
     spec: &SinkSpec,
 ) -> Result<SinkHealth, QueryError> {
-    let mut statement = reader.connection().prepare_cached(
-        "SELECT dataset, started_at_us, finished_at_us, row_count, error FROM sink_run \
-         WHERE sink = ? ORDER BY started_at_us DESC, id DESC LIMIT 50",
-    )?;
-    let mut rows = statement.query([spec.id.as_str()])?;
-    let mut runs = Vec::new();
-    while let Some(row) = rows.next()? {
-        let rows_exported: i64 = row.get(3)?;
-        runs.push(SinkRunView {
-            dataset: row.get(0)?,
-            started_at: micros_ts(row.get(1)?)?,
-            finished_at: micros_ts(row.get(2)?)?,
-            rows: unsigned(rows_exported),
-            error: row.get(4)?,
-        });
-    }
-    let last_success_at = runs
+    let runs = reader.sink_runs(&spec.id, HEALTH_RUNS)?;
+    let pending = spec
+        .datasets
         .iter()
-        .find(|r| r.error.is_none())
-        .map(|r| r.finished_at);
-    let failing = runs
-        .iter()
-        .take_while(|r| r.error.is_some())
-        .last()
-        .map(|oldest| {
-            (
-                oldest.started_at,
-                runs.first()
-                    .and_then(|r| r.error.clone())
-                    .unwrap_or_default(),
-            )
-        });
-    let (mut lag_rows, mut oldest) = (0_u64, None::<Timestamp>);
-    for dataset in &spec.datasets {
-        let pending = reader.pending(*dataset, reader.sink_cursor(&spec.id, *dataset)?)?;
-        lag_rows += pending.rows;
-        oldest = match (oldest, pending.oldest) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
-    }
-    let lag_secs = oldest.map(|o| (ctx.now().as_second() - o.as_second()).max(0));
-    let lagging = lag_secs.is_some_and(|s| s > spec.interval.as_secs().saturating_mul(2));
-    let state = if !spec.enabled {
-        SinkState::Disabled
-    } else if let Some((since, last_error)) = failing {
-        SinkState::Failing { since, last_error }
-    } else if lagging {
-        SinkState::Lagging
-    } else {
-        SinkState::Healthy
-    };
-    runs.truncate(10);
+        .map(|dataset| reader.pending(*dataset, reader.sink_cursor(&spec.id, *dataset)?))
+        .collect::<Result<Vec<_>, _>>()?;
+    let status = sink_status(&HealthInput {
+        enabled: spec.enabled,
+        interval: spec.interval,
+        now: ctx.now(),
+        runs: &runs,
+        pending: total_pending(pending),
+    });
     Ok(SinkHealth {
-        sink: spec.id.as_str().to_owned(),
-        state,
-        lag_rows,
-        lag_secs,
-        last_success_at,
-        recent_runs: runs,
+        sink: spec.id.clone(),
+        state: status.state,
+        lag_rows: status.lag.rows,
+        lag_secs: status.lag.age.map(|age| age.as_secs()),
+        last_success_at: runs.iter().find(|r| r.error.is_none()).map(|r| r.finished),
+        recent_runs: runs
+            .iter()
+            .take(RECENT_RUNS)
+            .map(SinkRunView::from)
+            .collect(),
     })
 }
 
@@ -280,11 +227,11 @@ pub fn ingest_status(reader: &StoreReader) -> Result<Vec<IngestStatus>, QueryErr
                 .parse()
                 .map_err(|_| QueryError::decode("agent", &agent))?,
             last_run_at: micros_ts(row.get(1)?)?,
-            files_parsed: unsigned(files),
-            lines_read: unsigned(lines),
-            events_found: unsigned(found),
-            events_changed: unsigned(changed),
-            open_issues: unsigned(open),
+            files_parsed: to_count(files)?,
+            lines_read: to_count(lines)?,
+            events_found: to_count(found)?,
+            events_changed: to_count(changed)?,
+            open_issues: to_count(open)?,
         });
     }
     Ok(out)
@@ -294,9 +241,9 @@ pub fn ingest_status(reader: &StoreReader) -> Result<Vec<IngestStatus>, QueryErr
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ParseIssueView {
     /// Agent.
-    pub agent: String,
-    /// Issue kind (`format_drift`, `unknown_version`, `protected_folder`, `missing_cwd`, `parse_error`).
-    pub kind: String,
+    pub agent: AgentId,
+    /// What went wrong.
+    pub kind: IssueKind,
     /// What it is about (file, version, …).
     pub subject: String,
     /// How often it was seen.
@@ -330,11 +277,14 @@ pub fn parse_issues(
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let occurrences: i64 = row.get(3)?;
+        let agent: String = row.get(0)?;
         out.push(ParseIssueView {
-            agent: row.get(0)?,
-            kind: row.get(1)?,
+            agent: agent
+                .parse()
+                .map_err(|_| QueryError::decode("agent", &agent))?,
+            kind: closed("issue kind", &row.get::<_, String>(1)?)?,
             subject: row.get(2)?,
-            occurrences: unsigned(occurrences),
+            occurrences: to_count(occurrences)?,
             sample: row.get(4)?,
             first_seen: micros_ts(row.get(5)?)?,
             last_seen: micros_ts(row.get(6)?)?,
@@ -420,7 +370,7 @@ pub fn backup_runs(reader: &StoreReader, limit: u32) -> Result<Vec<BackupView>, 
             started_at: micros_ts(row.get(0)?)?,
             finished_at: micros_ts(row.get(1)?)?,
             path: row.get(2)?,
-            size_bytes: size.map(unsigned),
+            size_bytes: size.map(to_count).transpose()?,
             error: row.get(4)?,
         });
     }

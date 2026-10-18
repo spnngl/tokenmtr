@@ -10,7 +10,8 @@ use tokenmtr_export::{
 use tokenmtr_store::{Dataset, RedactionKey, Revision, Versioned};
 
 use crate::fixtures::{
-    TestResult, fx_rate_row, machine, quota_sample, subscription, tool_call, usage,
+    TestResult, configured, fx_rate_row, live, machine, quota_sample, subscription, tool_call,
+    usage,
 };
 
 fn versioned<T>(row: T) -> Versioned<T> {
@@ -27,16 +28,16 @@ fn sample_rows(dataset: Dataset) -> TestResult<Vec<ExportRow>> {
         Dataset::UsageEvents => vec![
             project::usage_event(
                 &machine,
-                &versioned(usage(
+                &versioned(live(usage(
                     &machine,
                     "s1",
                     "2026-05-01T10:00:00Z",
                     Some("/work/acme"),
-                )?),
+                )?)),
             ),
             project::usage_event(
                 &machine,
-                &versioned(usage(&machine, "s2", "2026-05-01T10:00:01.5Z", None)?),
+                &versioned(live(usage(&machine, "s2", "2026-05-01T10:00:01.5Z", None)?)),
             ),
         ],
         Dataset::ToolCalls => vec![project::tool_call(
@@ -44,7 +45,10 @@ fn sample_rows(dataset: Dataset) -> TestResult<Vec<ExportRow>> {
             &versioned(tool_call("s1", "2026-05-01T10:00:00Z")?),
         )?],
         Dataset::Subscriptions => {
-            vec![project::subscription(&machine, &versioned(subscription()?))]
+            vec![project::subscription(
+                &machine,
+                &versioned(configured(subscription()?)),
+            )]
         }
         Dataset::QuotaSnapshots => vec![project::quota_snapshot(
             &machine,
@@ -137,6 +141,30 @@ fn csv_round_trips_through_decode() -> TestResult {
     let decoded = encoder.decode(Utf8Path::new("x.csv"), &bytes)?;
     assert_eq!(decoded.rows.len(), 2);
     assert_eq!(decoded.valid_len, bytes.len() - "torn,no-newline".len());
+    Ok(())
+}
+
+#[test]
+fn a_csv_write_torn_inside_a_quoted_newline_is_cut() -> TestResult {
+    let encoder = RowEncoder::new(FileFormat::Csv, Dataset::UsageEvents);
+    let machine = machine()?;
+    let multiline = |session| -> TestResult<Vec<u8>> {
+        let event = usage(&machine, session, "2026-05-01T10:00:00Z", Some("/a\nb"))?;
+        Ok(encoder.encode(&project::usage_event(&machine, &versioned(live(event))))?)
+    };
+    let mut bytes = encoder.header()?;
+    bytes.extend(multiline("s1")?);
+    let whole = bytes.len();
+    let second = multiline("s2")?;
+    let cut = second
+        .iter()
+        .position(|b| *b == b'\n')
+        .ok_or("no newline")?;
+    // The file now ends with a newline, but inside the quoted `cwd` of the second record.
+    bytes.extend(&second[..=cut]);
+    let decoded = encoder.decode(Utf8Path::new("x.csv"), &bytes)?;
+    assert_eq!(decoded.rows.len(), 1);
+    assert_eq!(decoded.valid_len, whole);
     Ok(())
 }
 
@@ -241,7 +269,7 @@ fn session_redaction_covers_parent_session_and_tool_calls() -> TestResult {
     event.parent_session = Some(tokenmtr_core::SessionId::try_from("parent")?);
     let mut batch = ExportBatch {
         dataset: Dataset::UsageEvents,
-        rows: vec![project::usage_event(&machine, &versioned(event))],
+        rows: vec![project::usage_event(&machine, &versioned(live(event)))],
     };
     Redactor::new(&key, &rules).apply(&mut batch);
     assert_eq!(

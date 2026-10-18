@@ -5,16 +5,17 @@ use std::sync::Arc;
 use tokenmtr_agents::ingest::{ScanPriority, ScanReport, ScanRequest};
 use tokenmtr_config::Config;
 use tokenmtr_control::{
-    AgentScanSummary, BackupSummary, DaemonStatus, ErrorKind, ExportSummary, Handler, IssueList,
-    IssueSummary, QuotaSummary, Request, Response, ScanSummary, SinkExportSummary, SinkSummary,
-    Task,
+    AgentScanSummary, BackupSummary, DaemonStatus, ErrorKind, ExportSummary, Handler, IssueKind,
+    IssueList, IssueSummary, QuotaSummary, Request, Response, ScanSummary, SinkExportSummary,
+    SinkSummary, Task,
 };
 use tokenmtr_core::SinkId;
 use tokenmtr_platform::ThreadPriority;
-use tokenmtr_store::{SCHEMA_VERSION, StoreRead};
+use tokenmtr_store::{IssueKind as StoreIssueKind, SCHEMA_VERSION, StoreRead};
 
 use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
+use crate::reload::ReloadCause;
 
 /// The optional tasks `config` switches on, ascending.
 pub(crate) fn enabled_tasks(config: &Config) -> Vec<Task> {
@@ -82,7 +83,7 @@ impl ControlHandler {
                 profiles: ctx.poll_quota().await?,
             })),
             Request::Reload => {
-                ctx.reload().await?;
+                ctx.reload(ReloadCause::Requested).await?;
                 Ok(Response::Reloaded)
             }
             Request::Issues => self.issues().await,
@@ -152,7 +153,7 @@ impl ControlHandler {
                 .into_iter()
                 .map(|issue| IssueSummary {
                     agent: issue.agent,
-                    kind: issue.kind.as_str().to_owned(),
+                    kind: issue_kind(issue.kind),
                     subject: issue.subject,
                     occurrences: issue.occurrences,
                     last_seen: issue.last_seen,
@@ -160,6 +161,17 @@ impl ControlHandler {
                 .collect(),
             config_error: lock(&self.0.run).config_error.clone(),
         }))
+    }
+}
+
+/// The wire copy of a store issue kind.
+const fn issue_kind(kind: StoreIssueKind) -> IssueKind {
+    match kind {
+        StoreIssueKind::FormatDrift => IssueKind::FormatDrift,
+        StoreIssueKind::UnknownVersion => IssueKind::UnknownVersion,
+        StoreIssueKind::ProtectedFolder => IssueKind::ProtectedFolder,
+        StoreIssueKind::MissingCwd => IssueKind::MissingCwd,
+        StoreIssueKind::ParseError => IssueKind::ParseError,
     }
 }
 

@@ -36,6 +36,9 @@ pub enum DaemonError {
     /// Another daemon owns the control socket.
     #[error("another daemon is already running (control socket {0})")]
     AlreadyRunning(Utf8PathBuf),
+    /// Another process (an erase, a restore, a direct scan) holds the daemon lock.
+    #[error("another tokenmtr process holds the daemon lock {0}")]
+    Locked(Utf8PathBuf),
     /// The control socket cannot be created.
     #[error("control socket: {0}")]
     Control(ControlError),
@@ -75,6 +78,7 @@ impl From<ControlError> for DaemonError {
     fn from(error: ControlError) -> Self {
         match error {
             ControlError::AlreadyRunning(path) => Self::AlreadyRunning(path),
+            ControlError::Locked(path) => Self::Locked(path),
             other @ ControlError::Io(_) => Self::Control(other),
         }
     }

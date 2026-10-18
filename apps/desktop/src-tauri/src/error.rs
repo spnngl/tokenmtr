@@ -5,6 +5,9 @@
 use serde::Serialize;
 use tokenmtr_app::AppError;
 use tokenmtr_control::ClientError;
+use tokenmtr_platform::ServiceError;
+
+use crate::daemon::SidecarError;
 
 /// Class of a [`CommandError`]; the UI branches on it (for example offline vs. incompatible).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -28,13 +31,16 @@ pub enum ErrorKind {
     Io,
     /// launchd refused an operation.
     Service,
+    /// The app runs from a disk image or a translocated copy: it must be moved to Applications
+    /// before the background service can point at it.
+    AppNotInstalled,
     /// Anything else, including a panicked worker.
     Internal,
 }
 
 impl ErrorKind {
     /// Every kind with its wire name, for the generated `bindings.ts`.
-    pub const ALL: [(Self, &'static str); 10] = [
+    pub const ALL: [(Self, &'static str); 11] = [
         (Self::InvalidRequest, "invalid_request"),
         (Self::DaemonOffline, "daemon_offline"),
         (Self::DaemonIncompatible, "daemon_incompatible"),
@@ -44,6 +50,7 @@ impl ErrorKind {
         (Self::Config, "config"),
         (Self::Io, "io"),
         (Self::Service, "service"),
+        (Self::AppNotInstalled, "app_not_installed"),
         (Self::Internal, "internal"),
     ];
 }
@@ -92,16 +99,27 @@ impl From<AppError> for CommandError {
             | AppError::InvalidRequest(_) => ErrorKind::InvalidRequest,
             AppError::Io { .. } => ErrorKind::Io,
             AppError::DaemonRunning { .. } => ErrorKind::DaemonRunning,
-            AppError::Service(_) => ErrorKind::Service,
+            AppError::Service(service) => service_kind(service),
         };
         Self::new(kind, error.to_string())
+    }
+}
+
+const fn service_kind(error: &ServiceError) -> ErrorKind {
+    match error {
+        ServiceError::TransientBinary(_) => ErrorKind::AppNotInstalled,
+        _ => ErrorKind::Service,
     }
 }
 
 impl From<ClientError> for CommandError {
     fn from(error: ClientError) -> Self {
         let kind = match &error {
-            ClientError::Connect(_) | ClientError::Closed => ErrorKind::DaemonOffline,
+            // A daemon that does not answer in time is treated like a missing one: restarting
+            // it is the remedy for both.
+            ClientError::Connect(_) | ClientError::Closed | ClientError::Timeout(_) => {
+                ErrorKind::DaemonOffline
+            }
             ClientError::Incompatible { .. } => ErrorKind::DaemonIncompatible,
             ClientError::Remote { .. } => ErrorKind::Remote,
             ClientError::Frame(_) | ClientError::Json(_) | ClientError::Unexpected(_) => {
@@ -124,9 +142,20 @@ impl From<tokenmtr_query::FilterError> for CommandError {
     }
 }
 
-impl From<tokenmtr_platform::ServiceError> for CommandError {
-    fn from(error: tokenmtr_platform::ServiceError) -> Self {
-        Self::new(ErrorKind::Service, error.to_string())
+impl From<ServiceError> for CommandError {
+    fn from(error: ServiceError) -> Self {
+        Self::new(service_kind(&error), error.to_string())
+    }
+}
+
+impl From<SidecarError> for CommandError {
+    fn from(error: SidecarError) -> Self {
+        let kind = match &error {
+            SidecarError::Service(service) => service_kind(service),
+            SidecarError::Missing(_) => ErrorKind::Service,
+            SidecarError::Executable(_) | SidecarError::NotUtf8(_) => ErrorKind::Internal,
+        };
+        Self::new(kind, error.to_string())
     }
 }
 
@@ -182,5 +211,8 @@ mod tests {
         assert_eq!(error.kind, ErrorKind::InvalidRequest);
         let error: CommandError = ClientError::Closed.into();
         assert_eq!(error.kind, ErrorKind::DaemonOffline);
+        let error: CommandError =
+            ServiceError::TransientBinary("/Volumes/T/tokenmtr".into()).into();
+        assert_eq!(error.kind, ErrorKind::AppNotInstalled);
     }
 }

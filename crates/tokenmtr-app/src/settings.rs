@@ -7,7 +7,6 @@ use tokenmtr_config::{
     Config, ConfigDocument, ConfigError, ConfigFormat, Env, RawProject, TimeZoneSetting, TomlCodec,
 };
 use tokenmtr_core::SubscriptionSpec;
-use tokenmtr_export::store_dataset;
 use tokenmtr_platform::Paths;
 use tokenmtr_platform::fs::replace_atomically;
 use tokenmtr_query::{
@@ -35,20 +34,26 @@ pub fn load_config(path: &Utf8Path, env: &dyn Env) -> Result<Config, ConfigError
 /// The store file: `store.path`, else `usage.db` in the data directory (D21).
 #[must_use]
 pub fn store_path(paths: &Paths, config: &Config) -> Utf8PathBuf {
+    store_path_in(paths, Some(config))
+}
+
+/// As [`store_path`]; without a config, the default location.
+pub(crate) fn store_path_in(paths: &Paths, config: Option<&Config>) -> Utf8PathBuf {
     config
-        .store
-        .path
-        .clone()
+        .and_then(|config| config.store.path.clone())
         .unwrap_or_else(|| paths.data_dir().join("usage.db"))
 }
 
 /// Where backups go: `backup.dir`, else `backups` in the data directory (D37).
 #[must_use]
 pub fn backup_dir(paths: &Paths, config: &Config) -> Utf8PathBuf {
+    backup_dir_in(paths, Some(config))
+}
+
+/// As [`backup_dir`]; without a config, the default location.
+pub(crate) fn backup_dir_in(paths: &Paths, config: Option<&Config>) -> Utf8PathBuf {
     config
-        .backup
-        .dir
-        .clone()
+        .and_then(|config| config.backup.dir.clone())
         .unwrap_or_else(|| paths.data_dir().join("backups"))
 }
 
@@ -98,7 +103,7 @@ pub fn sink_specs(config: &Config) -> Vec<SinkSpec> {
         .map(|sink| SinkSpec {
             id: sink.id.clone(),
             interval: sink.interval,
-            datasets: sink.datasets.iter().copied().map(store_dataset).collect(),
+            datasets: sink.datasets.clone(),
             enabled: true,
         })
         .collect()

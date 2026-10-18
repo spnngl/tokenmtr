@@ -6,7 +6,8 @@ use jiff::civil::Date;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AgentId, BudgetId, SinkId};
+use crate::forecast::RESET_TOLERANCE;
+use crate::ids::{AgentId, BudgetId, ProfileId, SinkId};
 use crate::quota::{Utilization, WindowId};
 
 /// What an alert is about.
@@ -72,15 +73,20 @@ impl Default for AlertConfig {
     }
 }
 
-/// Latest known state of one quota window.
+/// Latest known state of one quota window of one profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuotaWindowStatus {
+    /// The agent whose quota this is.
+    pub agent: AgentId,
+    /// The profile whose quota this is (D30); each profile has its own windows.
+    pub profile: ProfileId,
     /// The window.
     pub window: WindowId,
     /// Current utilization.
     pub utilization: Utilization,
-    /// When the current window instance resets, as reported. It identifies the instance, so pass
-    /// it unmodified; without it thresholds cannot be deduplicated per window.
+    /// When the current window instance resets, as reported. It identifies the instance; the
+    /// rules snap it to [`RESET_TOLERANCE`] so jitter between polls keeps the same instance.
+    /// Without it thresholds cannot be deduplicated per window.
     pub resets_at: Option<Timestamp>,
     /// The `resets_at` of the instance seen at the previous poll.
     pub previous_resets_at: Option<Timestamp>,
@@ -161,14 +167,32 @@ pub struct Alert {
     pub at: Timestamp,
 }
 
+/// `resets_at` rounded to the nearest multiple of [`RESET_TOLERANCE`] since the epoch, so the
+/// few seconds of jitter an API adds between polls name the same window instance. Resets fall on
+/// round times, far from the rounding midpoints.
+fn snap(resets_at: Timestamp) -> Timestamp {
+    let width = RESET_TOLERANCE.as_secs();
+    let snapped = resets_at
+        .as_second()
+        .saturating_add(width / 2)
+        .div_euclid(width)
+        .saturating_mul(width);
+    Timestamp::from_second(snapped).unwrap_or(resets_at)
+}
+
 fn instance(resets_at: Option<Timestamp>) -> String {
-    resets_at.map_or_else(|| "-".to_owned(), |t| t.to_string())
+    resets_at.map_or_else(|| "-".to_owned(), |t| snap(t).to_string())
+}
+
+/// Whether `resets_at` names another window instance than `previous`.
+fn is_new_instance(resets_at: Option<Timestamp>, previous: Timestamp) -> bool {
+    resets_at.is_none_or(|t| t.duration_since(previous).abs() > RESET_TOLERANCE)
 }
 
 /// The alerts that should fire now (D36), skipping dedup keys in `already_fired`.
 ///
-/// Each quota threshold fires once per window instance and again after the window resets (the
-/// instance, identified by `resets_at`, changes); budgets likewise per period; a sink alert once
+/// Each quota threshold fires once per agent, profile and window instance and again after the
+/// window resets (the instance, identified by the snapped `resets_at`, changes); budgets likewise per period; a sink alert once
 /// per failure streak; drift once per issue; backup failure once per failure time. When one
 /// evaluation crosses several thresholds, each fires. Output order is deterministic: quota,
 /// budgets, sinks, drift, backup.
@@ -198,7 +222,9 @@ pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert>
                         percent,
                     },
                     format!(
-                        "quota_threshold|{}|{percent}|{}",
+                        "quota_threshold|{}|{}|{}|{percent}|{}",
+                        q.agent.as_str(),
+                        q.profile,
                         q.window,
                         instance(q.resets_at)
                     ),
@@ -208,13 +234,19 @@ pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert>
         if let Some(previous) = q.previous_resets_at
             && config.quota_reset
             && previous <= now
-            && q.resets_at != Some(previous)
+            && is_new_instance(q.resets_at, previous)
         {
             fire(
                 AlertKind::QuotaReset {
                     window: q.window.clone(),
                 },
-                format!("quota_reset|{}|{previous}", q.window),
+                format!(
+                    "quota_reset|{}|{}|{}|{}",
+                    q.agent.as_str(),
+                    q.profile,
+                    q.window,
+                    instance(Some(previous))
+                ),
             );
         }
     }
@@ -279,6 +311,8 @@ mod tests {
         previous: Option<&str>,
     ) -> Result<QuotaWindowStatus, Box<dyn std::error::Error>> {
         Ok(QuotaWindowStatus {
+            agent: AgentId::CLAUDE,
+            profile: ProfileId::default_profile(),
             window: WindowId::five_hour(),
             utilization: Utilization::new(percent)?,
             resets_at: Some(resets_at.parse()?),
@@ -380,6 +414,34 @@ mod tests {
             &AlertConfig::default(),
         );
         assert_eq!(percents(&a), vec![80, 95]);
+        Ok(())
+    }
+
+    #[test]
+    fn reset_jitter_keeps_the_window_instance() -> TestResult {
+        let config = AlertConfig::default();
+        let first = evaluate_alerts(
+            &inputs("2026-03-01T12:00:00Z", quota(85.0, RESET_1, None)?, &[])?,
+            &config,
+        );
+        assert_eq!(percents(&first), vec![80]);
+        let jittered = quota(85.0, "2026-03-01T15:00:01.4Z", Some("2026-03-01T14:59:59Z"))?;
+        let a = evaluate_alerts(&inputs("2026-03-01T15:00:30Z", jittered, &first)?, &config);
+        assert_eq!(a, Vec::new());
+        Ok(())
+    }
+
+    #[test]
+    fn each_profile_has_its_own_thresholds() -> TestResult {
+        let config = AlertConfig::default();
+        let first = evaluate_alerts(
+            &inputs("2026-03-01T12:00:00Z", quota(85.0, RESET_1, None)?, &[])?,
+            &config,
+        );
+        let mut work = quota(85.0, RESET_1, None)?;
+        work.profile = ProfileId::try_from("work")?;
+        let a = evaluate_alerts(&inputs("2026-03-01T12:00:00Z", work, &first)?, &config);
+        assert_eq!(percents(&a), vec![80]);
         Ok(())
     }
 

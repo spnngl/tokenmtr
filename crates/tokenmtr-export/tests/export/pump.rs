@@ -52,7 +52,7 @@ fn seed(store: &mut Store) -> TestResult {
         usage(&machine, "c", "2026-05-01T11:00:00Z", None)?,
     ])?;
     store.upsert_tool_calls(&[tool_call("a", "2026-05-01T10:00:00Z")?])?;
-    store.upsert_subscriptions(&[subscription()?])?;
+    store.mirror_subscriptions(&[subscription()?])?;
     store.upsert_quota_snapshots(&[quota_poll("2026-05-01T10:00:00Z")?])?;
     store.upsert_fx_rates(
         FxSource::Ecb,

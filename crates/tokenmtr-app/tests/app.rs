@@ -91,7 +91,7 @@ fn seed_march(fixture: &Fixture) -> TestResult {
         event(&store, "b", "acme", Some("other"), 1_000_000)?,
         event(&store, "c", "beta", Some("anthropic"), 2_000_000)?,
     ])?;
-    store.upsert_subscriptions(&[Subscription::new(SubscriptionSpec {
+    store.mirror_subscriptions(&[Subscription::new(SubscriptionSpec {
         id: SubscriptionId::try_from("claude-pro".to_owned())?,
         provider: ProviderId::try_from("anthropic".to_owned())?,
         plan: Plan::Pro,

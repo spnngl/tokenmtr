@@ -6,7 +6,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use tokenmtr_core::SinkId;
 use tokenmtr_export::{
-    HealthInput, PumpOptions, SinkHealth, SinkRunOutcome, export_pending, sink_status,
+    HEALTH_RUNS, HealthInput, PumpOptions, SinkRunOutcome, SinkState, export_pending, sink_status,
 };
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_store::{Pending, StoreRead};
@@ -15,9 +15,6 @@ use tokio::time::Instant;
 use crate::changes::std_duration;
 use crate::ctx::{Ctx, Job, lock};
 use crate::error::DaemonError;
-
-/// How many past runs decide when a failure streak began.
-const HISTORY: usize = 200;
 
 /// What one sink's run did.
 #[derive(Debug, Clone)]
@@ -49,10 +46,13 @@ impl Ctx {
     }
 
     /// Exports `only` (every sink when `None`), records each outcome and plans retries.
+    ///
+    /// Runs on the `exports` connection, so scans and the heartbeat keep writing while a sink
+    /// is slow.
     pub(crate) fn export_blocking(&self, only: Option<&SinkId>) -> Vec<SinkOutcome> {
         let outcomes: Vec<SinkOutcome> = {
             let mut sinks = lock(&self.sinks);
-            let mut store = lock(&self.store);
+            let mut store = lock(&self.exports);
             sinks
                 .iter_mut()
                 .filter(|sink| only.is_none_or(|id| *id == sink.spec.id))
@@ -131,7 +131,7 @@ impl Ctx {
     /// history does not show one.
     fn failure_start(&self, config: &tokenmtr_config::SinkConfig, now: Timestamp) -> Timestamp {
         let runs = lock(&self.reader)
-            .sink_runs(&config.id, HISTORY)
+            .sink_runs(&config.id, HEALTH_RUNS)
             .unwrap_or_default();
         let status = sink_status(&HealthInput {
             enabled: true,
@@ -143,8 +143,8 @@ impl Ctx {
                 oldest: None,
             },
         });
-        match status.health {
-            SinkHealth::Failing { since, .. } => since,
+        match status.state {
+            SinkState::Failing { since, .. } => since,
             _ => now,
         }
     }

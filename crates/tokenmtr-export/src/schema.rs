@@ -9,9 +9,13 @@
 //! - column 1 is `revision`;
 //! - [`DatasetSchema::partition_column`], when set, is a [`ColumnType::Timestamp`] or
 //!   [`ColumnType::Date`] column that never changes for a given id, so a row never moves between
-//!   partition files.
+//!   partition files;
+//! - every redactable column is nullable: `drop` empties it (D40), which is an empty CSV field,
+//!   JSON `null` and SQL `NULL` alike.
 
 use std::fmt::Write as _;
+
+use std::borrow::Cow;
 
 use jiff::civil::Date;
 use rust_decimal::Decimal;
@@ -20,7 +24,36 @@ use tokenmtr_store::{Dataset, Revision};
 
 /// Version of the export schema; written to the `SQLite` sink's `_schema` table and bumped on any
 /// column change (D19).
-pub const EXPORT_SCHEMA_VERSION: u32 = 1;
+pub const EXPORT_SCHEMA_VERSION: u32 = 2;
+
+/// The fixed number of fractional digits of a [`ColumnType::Decimal`] column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scale {
+    /// Six digits: money (D7).
+    Micros,
+    /// Nine digits: FX rates (D27).
+    Nanos,
+}
+
+impl Scale {
+    /// Fractional digits.
+    #[must_use]
+    pub const fn digits(self) -> u32 {
+        match self {
+            Self::Micros => 6,
+            Self::Nanos => 9,
+        }
+    }
+
+    /// Suffix of the integer column that holds the value in SQL sinks, e.g. `_micros`.
+    #[must_use]
+    pub const fn sql_suffix(self) -> &'static str {
+        match self {
+            Self::Micros => "_micros",
+            Self::Nanos => "_nanos",
+        }
+    }
+}
 
 /// The type of an exported column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +66,9 @@ pub enum ColumnType {
     Boolean,
     /// Floating point number.
     Real,
-    /// Fixed-point decimal with this many fractional digits (`SQLite`: `REAL`).
-    Decimal(u32),
+    /// Fixed-point decimal. Text sinks write the decimal; SQL sinks store the exact integer
+    /// count of `10^-digits` units in a column named with [`Scale::sql_suffix`].
+    Decimal(Scale),
     /// ISO-8601 UTC instant, e.g. `2026-05-01T12:00:00Z`.
     Timestamp,
     /// ISO-8601 civil date, e.g. `2026-05-01`.
@@ -47,8 +81,8 @@ impl ColumnType {
     pub const fn sql(self) -> &'static str {
         match self {
             Self::Text | Self::Timestamp | Self::Date => "TEXT",
-            Self::Integer | Self::Boolean => "INTEGER",
-            Self::Real | Self::Decimal(_) => "REAL",
+            Self::Integer | Self::Boolean | Self::Decimal(_) => "INTEGER",
+            Self::Real => "REAL",
         }
     }
 
@@ -60,7 +94,11 @@ impl ColumnType {
             Self::Integer => "integer".to_owned(),
             Self::Boolean => "boolean".to_owned(),
             Self::Real => "real".to_owned(),
-            Self::Decimal(scale) => format!("decimal({scale})"),
+            Self::Decimal(scale) => format!(
+                "decimal({}); SQL: integer `*{}`",
+                scale.digits(),
+                scale.sql_suffix()
+            ),
             Self::Timestamp => "timestamp (UTC)".to_owned(),
             Self::Date => "date".to_owned(),
         }
@@ -80,6 +118,19 @@ pub struct Column {
     pub redact: Option<RedactColumn>,
     /// One-line meaning, shown in `docs/export-schema.md`.
     pub doc: &'static str,
+}
+
+impl Column {
+    /// The column name in SQL sinks: [`Column::name`], plus the unit suffix for decimals.
+    #[must_use]
+    pub fn sql_name(&self) -> Cow<'static, str> {
+        match self.ty {
+            ColumnType::Decimal(scale) => {
+                Cow::Owned(format!("{}{}", self.name, scale.sql_suffix()))
+            }
+            _ => Cow::Borrowed(self.name),
+        }
+    }
 }
 
 const fn col(name: &'static str, ty: ColumnType, doc: &'static str) -> Column {
@@ -113,10 +164,10 @@ const REVISION: Column = col(
     "Change counter of the row within its dataset; the highest revision of an id is current.",
 );
 
-const USD: ColumnType = ColumnType::Decimal(6);
+const USD: ColumnType = ColumnType::Decimal(Scale::Micros);
 const COUNT: ColumnType = ColumnType::Integer;
 
-static USAGE_EVENTS: [Column; 28] = [
+static USAGE_EVENTS: [Column; 29] = [
     col(
         "event_id",
         ColumnType::Text,
@@ -146,7 +197,11 @@ static USAGE_EVENTS: [Column; 28] = [
         "Provider service tier, when reported.",
     ),
     redactable(
-        col("session_id", ColumnType::Text, "Agent session id."),
+        opt(
+            "session_id",
+            ColumnType::Text,
+            "Agent session id; empty only when dropped.",
+        ),
         RedactColumn::SessionId,
     ),
     redactable(
@@ -227,6 +282,11 @@ static USAGE_EVENTS: [Column; 28] = [
         ColumnType::Text,
         "Pricing snapshot behind `cost_estimated_usd`.",
     ),
+    col(
+        "superseded",
+        ColumnType::Boolean,
+        "True for a `daily_aggregate` on a day transcript events now cover; exclude it from totals.",
+    ),
 ];
 
 static TOOL_CALLS: [Column; 11] = [
@@ -244,7 +304,11 @@ static TOOL_CALLS: [Column; 11] = [
     col("agent", ColumnType::Text, "Agent id."),
     col("profile", ColumnType::Text, "Agent profile name."),
     redactable(
-        col("session_id", ColumnType::Text, "Agent session id."),
+        opt(
+            "session_id",
+            ColumnType::Text,
+            "Agent session id; empty only when dropped.",
+        ),
         RedactColumn::SessionId,
     ),
     opt(
@@ -274,7 +338,7 @@ static TOOL_CALLS: [Column; 11] = [
     ),
 ];
 
-static SUBSCRIPTIONS: [Column; 12] = [
+static SUBSCRIPTIONS: [Column; 13] = [
     col(
         "subscription_id",
         ColumnType::Text,
@@ -314,6 +378,11 @@ static SUBSCRIPTIONS: [Column; 12] = [
         "end",
         ColumnType::Date,
         "First day no longer covered (exclusive); empty while open.",
+    ),
+    opt(
+        "removed_at_utc",
+        ColumnType::Timestamp,
+        "When the subscription left the config; it bills nothing since. Empty while configured.",
     ),
 ];
 
@@ -378,7 +447,11 @@ static FX_RATES: [Column; 4] = [
         "Primary key: publication date of the ECB reference rate; partitions files.",
     ),
     REVISION,
-    col("eur_per_usd", ColumnType::Decimal(9), "EUR for 1 USD."),
+    col(
+        "eur_per_usd",
+        ColumnType::Decimal(Scale::Nanos),
+        "EUR for 1 USD.",
+    ),
     col("source", ColumnType::Text, "Rate source: `ecb`."),
 ];
 
@@ -464,8 +537,13 @@ pub enum Value {
     Boolean(bool),
     /// Floating point.
     Real(f64),
-    /// Fixed-point decimal, written with its scale.
-    Decimal(Decimal),
+    /// Fixed-point decimal: `units` of `10^-scale.digits()`.
+    Decimal {
+        /// The exact integer count of units.
+        units: i64,
+        /// The unit.
+        scale: Scale,
+    },
 }
 
 impl Value {
@@ -478,7 +556,9 @@ impl Value {
             Self::Integer(n) => Some(n.to_string()),
             Self::Boolean(b) => Some(b.to_string()),
             Self::Real(x) => Some(x.to_string()),
-            Self::Decimal(d) => Some(d.to_string()),
+            Self::Decimal { units, scale } => {
+                Some(Decimal::new(*units, scale.digits()).to_string())
+            }
         }
     }
 }
@@ -578,6 +658,13 @@ mod tests {
                     "{dataset} partition column {name} must be a required date or timestamp"
                 );
             }
+            for column in schema.columns {
+                assert!(
+                    column.redact.is_none() || column.nullable,
+                    "{dataset}.{} is redactable, so `drop` can empty it",
+                    column.name
+                );
+            }
             let mut names: Vec<_> = schema.names().collect();
             names.sort_unstable();
             names.dedup();
@@ -585,6 +672,14 @@ mod tests {
                 names.len(),
                 schema.columns.len(),
                 "{dataset} repeats a column"
+            );
+            let mut sql_names: Vec<_> = schema.columns.iter().map(Column::sql_name).collect();
+            sql_names.sort_unstable();
+            sql_names.dedup();
+            assert_eq!(
+                sql_names.len(),
+                schema.columns.len(),
+                "{dataset} repeats a SQL column"
             );
         }
     }

@@ -105,7 +105,7 @@ fn restore_rejects_a_file_that_is_no_backup() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn restore_and_full_scan_refuse_while_the_daemon_runs_and_erase_stops_it() -> TestResult {
+async fn full_scan_refuses_while_the_daemon_runs_and_restore_stops_it() -> TestResult {
     let home = seeded()?;
     let file = backup_now(&home)?;
     let daemon = Daemon::start(Settings::new(
@@ -125,8 +125,6 @@ async fn restore_and_full_scan_refuse_while_the_daemon_runs_and_erase_stops_it()
         let mut command = home.tokenmtr();
         tokio::task::spawn_blocking(move || command.args(args).assert())
     };
-    let restore = run(vec!["restore".into(), file.to_string()]).await?;
-    restore.code(1).stderr(predicate::str::contains("daemon"));
     let full_scan = run(vec!["scan".into(), "--full".into()]).await?;
     full_scan.code(1);
     let backup = run(vec!["backup".into(), "now".into()]).await?;
@@ -138,12 +136,18 @@ async fn restore_and_full_scan_refuse_while_the_daemon_runs_and_erase_stops_it()
     let doctor: Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(doctor["daemon_running"], true);
 
-    // `erase` asks the daemon to stop, then deletes the store.
+    // `restore` asks the daemon to stop, then restores under the daemon lock.
+    let restore = run(vec!["restore".into(), file.to_string()]).await?;
+    restore
+        .success()
+        .stdout(predicate::str::contains("restored"));
+    stopper.await??;
+    assert!(!home.transport().socket_path().exists());
+    assert!(home.store_path().exists());
+
     let erase = run(vec!["erase".into(), "--yes".into()]).await?;
     erase.success().stdout(predicate::str::contains("deleted"));
-    stopper.await??;
     assert!(!home.store_path().exists());
-    assert!(!home.transport().socket_path().exists());
     Ok(())
 }
 
@@ -281,14 +285,14 @@ fn doctor_reports_a_healthy_setup_as_json() -> TestResult {
 }
 
 #[test]
-fn doctor_reports_an_invalid_config_without_failing() -> TestResult {
+fn doctor_reports_an_invalid_config_then_fails() -> TestResult {
     let home = Home::new()?;
     home.write_config("[quota\n")?;
     let output = home
         .tokenmtr()
         .args(["doctor", "--json"])
         .assert()
-        .success()
+        .code(1)
         .get_output()
         .clone();
     let doctor: Value = serde_json::from_slice(&output.stdout)?;

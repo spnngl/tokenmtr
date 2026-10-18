@@ -6,8 +6,8 @@ use std::borrow::Cow;
 use camino::Utf8PathBuf;
 use serde::Deserialize;
 use tokenmtr_core::{
-    AgentId, DedupKey, EventKind, ModelId, ParsedEvent, ProfileId, ProviderId, SessionId,
-    SignalKind, SourceFileId, TokenCounts, ToolCall, split_mcp_tool_name,
+    AgentId, DedupKey, EventKind, ModelId, ParsedEvent, PriceModifiers, ProfileId, ProviderId,
+    SessionId, SignalKind, SourceFileId, TokenCounts, ToolCall, split_mcp_tool_name,
 };
 
 use crate::batch::{ParseBatch, ParsedSignal, ParsedToolCall, ParsedToolResult};
@@ -23,7 +23,6 @@ const SYNTHETIC_MODEL: &str = "<synthetic>";
 #[derive(Debug, Clone)]
 pub struct LineContext {
     profile: ProfileId,
-    provider: ProviderId,
     subagent: Option<String>,
     fallback_session: Option<SessionId>,
     source_file: Option<SourceFileId>,
@@ -50,7 +49,6 @@ impl LineContext {
         };
         Ok(Self {
             profile: file.profile.clone(),
-            provider: ProviderId::try_from("anthropic")?,
             subagent,
             fallback_session: session_name.and_then(|name| SessionId::try_from(name).ok()),
             source_file: file.id,
@@ -196,14 +194,21 @@ fn map_event(
     if usage.input_tokens.is_none() && usage.output_tokens.is_none() {
         return None;
     }
+    let total_write = usage.cache_creation_input_tokens.unwrap_or(0);
     let (five_minute, one_hour) = match &usage.cache_creation {
-        Some(split) if split.ephemeral_5m.is_some() || split.ephemeral_1h.is_some() => (
-            split.ephemeral_5m.unwrap_or(0),
-            split.ephemeral_1h.unwrap_or(0),
-        ),
-        _ => (usage.cache_creation_input_tokens.unwrap_or(0), 0),
+        // As `LiteLLM`: writes the split leaves out are 5-minute writes.
+        Some(split) if split.ephemeral_5m.is_some() || split.ephemeral_1h.is_some() => {
+            let (five, hour) = (
+                split.ephemeral_5m.unwrap_or(0),
+                split.ephemeral_1h.unwrap_or(0),
+            );
+            let rest = total_write.saturating_sub(five.saturating_add(hour));
+            (five.saturating_add(rest), hour)
+        }
+        _ => (total_write, 0),
     };
     let dedup_key = dedup_key(line, message)?;
+    let model = ModelId::try_from(message.model.as_deref()?).ok()?;
     Some(ParsedEvent {
         agent: AgentId::CLAUDE,
         profile: ctx.profile.clone(),
@@ -225,8 +230,8 @@ fn map_event(
             .map(str::to_owned),
         source_file: ctx.source_file,
         approximate: false,
-        provider: Some(ctx.provider.clone()),
-        model: ModelId::try_from(message.model.as_deref()?).ok()?,
+        provider: Some(provider_of(&model)?),
+        model,
         kind: EventKind::Message,
         tokens: TokenCounts {
             input_uncached: usage.input_tokens.unwrap_or(0),
@@ -242,7 +247,48 @@ fn map_event(
             .as_deref()
             .filter(|tier| !tier.is_empty())
             .map(str::to_owned),
+        modifiers: Some(modifiers(usage)),
     })
+}
+
+/// The platform serving `model`, from the id's shape: Bedrock ids carry an `anthropic.` vendor
+/// prefix or a `-v1:0` version, Vertex ids an `@YYYYMMDD` date.
+fn provider_of(model: &ModelId) -> Option<ProviderId> {
+    let id = model.as_str();
+    let versioned = id
+        .rsplit_once("-v")
+        .and_then(|(_, version)| version.split_once(':'))
+        .is_some_and(|(major, minor)| {
+            [major, minor]
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        });
+    let provider = if id.contains("anthropic.") || versioned {
+        "bedrock"
+    } else if id.contains('@') {
+        "vertex_ai"
+    } else {
+        "anthropic"
+    };
+    ProviderId::try_from(provider).ok()
+}
+
+/// Fast mode, the inference region and web searches. A region of `global` or `not_available`
+/// carries no surcharge, as in `LiteLLM`.
+fn modifiers(usage: &Usage<'_>) -> PriceModifiers {
+    PriceModifiers {
+        fast: usage.speed.as_deref() == Some("fast"),
+        inference_geo: usage
+            .inference_geo
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .filter(|geo| !matches!(geo.as_str(), "" | "global" | "not_available")),
+        web_search_requests: usage
+            .server_tool_use
+            .as_ref()
+            .and_then(|tools| tools.web_search_requests)
+            .unwrap_or(0),
+    }
 }
 
 /// `"{message.id}|{requestId}"`, else `uuid` (D12).
@@ -322,6 +368,16 @@ struct Usage<'a> {
     cache_creation: Option<CacheCreation>,
     #[serde(borrow)]
     service_tier: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    speed: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    inference_geo: Option<Cow<'a, str>>,
+    server_tool_use: Option<ServerToolUse>,
+}
+
+#[derive(Deserialize)]
+struct ServerToolUse {
+    web_search_requests: Option<u64>,
 }
 
 #[derive(Deserialize)]

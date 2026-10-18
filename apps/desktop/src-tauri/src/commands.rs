@@ -10,6 +10,7 @@
     reason = "Tauri deserialises command arguments by value and `State` is owned"
 )]
 
+use camino::Utf8PathBuf;
 use jiff::Timestamp;
 use serde_json::Value;
 use tauri::{AppHandle, State, Wry};
@@ -17,17 +18,20 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::DialogExt as _;
 use tauri_plugin_notification::NotificationExt as _;
 use tokenmtr_app::AppContext;
-use tokenmtr_core::{Currency, SubscriptionSpec};
-use tokenmtr_platform::{LaunchdService, ServiceManager as _, ServiceStatus, SystemRunner};
+use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId, SubscriptionSpec};
+use tokenmtr_platform::service::is_transient;
+use tokenmtr_platform::{
+    LaunchdService, ServiceError, ServiceManager as _, ServiceStatus, SystemRunner,
+};
 use tokenmtr_query::{GroupBy, Period};
 
 use crate::backend::shell::{
     self, AppState, FilterOptions, Permission, SessionOrigin, Settings, StateInputs,
 };
 use crate::backend::{actions, blocking, queries};
-use crate::daemon::{Link, probe};
+use crate::daemon::{Link, Sidecar, probe};
 use crate::error::CommandError;
-use crate::request::{QueryRequest, ReportWire, Route};
+use crate::request::{QueryRequest, ReportWire, RevealTarget, Route};
 use crate::state::Shell;
 use crate::windows;
 
@@ -106,11 +110,11 @@ pub async fn settings(app: AppHandle<Wry>, shell: State<'_, Shell>) -> Reply<Set
 #[tauri::command]
 pub async fn session_origin(
     shell: State<'_, Shell>,
-    agent: String,
-    session: String,
+    agent: AgentId,
+    session: SessionId,
 ) -> Reply<SessionOrigin> {
     read(&shell, move |ctx, _| {
-        shell::session_origin(ctx, &agent, &session)
+        shell::session_origin(ctx, agent, &session)
     })
     .await
 }
@@ -173,10 +177,10 @@ pub async fn sessions(
 pub async fn quota_history(
     shell: State<'_, Shell>,
     request: QueryRequest,
-    agent: String,
+    agent: AgentId,
 ) -> Reply<Value> {
     read(&shell, move |app, now| {
-        queries::quota_history(app, now, &request, &agent)
+        queries::quota_history(app, now, &request, agent)
     })
     .await
 }
@@ -185,12 +189,12 @@ pub async fn quota_history(
 #[tauri::command]
 pub async fn session_detail(
     shell: State<'_, Shell>,
-    agent: String,
-    session: String,
+    agent: AgentId,
+    session: SessionId,
     currency: Currency,
 ) -> Reply<Value> {
     read(&shell, move |app, now| {
-        queries::session_detail(app, now, &agent, &session, currency)
+        queries::session_detail(app, now, agent, &session, currency)
     })
     .await
 }
@@ -268,9 +272,9 @@ pub async fn backup_now(shell: State<'_, Shell>) -> Reply<()> {
 
 /// Opens the main window at a page, optionally filtered to an agent.
 #[tauri::command]
-pub fn open_dashboard(app: AppHandle<Wry>, route: Route, agent: Option<String>) -> Reply<()> {
+pub fn open_dashboard(app: AppHandle<Wry>, route: Route, agent: Option<AgentId>) -> Reply<()> {
     windows::show_main(&app, &crate::request::DashboardTarget { route, agent })
-        .map_err(CommandError::invalid)
+        .map_err(CommandError::internal)
 }
 
 /// Installs the background service.
@@ -286,16 +290,11 @@ pub async fn restart_daemon(shell: State<'_, Shell>) -> Reply<()> {
     install_daemon(shell).await
 }
 
-/// Shows a file in Finder.
+/// Shows one of the places the app knows in Finder.
 #[tauri::command]
-pub fn reveal_path(path: String) -> Reply<()> {
-    let path = std::path::PathBuf::from(path);
-    if !path.is_absolute() || !path.exists() {
-        return Err(CommandError::invalid(format!(
-            "{} does not exist",
-            path.display()
-        )));
-    }
+pub async fn reveal_path(shell: State<'_, Shell>, target: RevealTarget) -> Reply<()> {
+    let backend = shell.backend.clone();
+    let path = blocking(move || actions::reveal_path(&backend, &target)).await?;
     tauri_plugin_opener::reveal_item_in_dir(path).map_err(CommandError::internal)
 }
 
@@ -337,16 +336,25 @@ pub async fn add_subscription(
 
 /// Raises a Claude profile's transcript retention to ten years.
 #[tauri::command]
-pub async fn keep_ten_years(shell: State<'_, Shell>, agent: String, profile: String) -> Reply<()> {
+pub async fn keep_ten_years(
+    shell: State<'_, Shell>,
+    agent: AgentId,
+    profile: ProfileId,
+) -> Reply<()> {
     let backend = shell.backend.clone();
-    blocking(move || actions::keep_ten_years(&backend, &agent, &profile)).await
+    blocking(move || actions::keep_ten_years(&backend, agent, &profile)).await
 }
 
-/// Starts (or stops starting) the app at login.
+/// Starts (or stops starting) the app at login. Refused while the app runs from a disk image or
+/// a translocated copy: the login item would point at a path that disappears.
 #[tauri::command]
 pub fn set_launch_at_login(app: AppHandle<Wry>, enabled: bool) -> Reply<()> {
     let autostart = app.autolaunch();
     let result = if enabled {
+        let sidecar = Sidecar::locate()?;
+        if is_transient(sidecar.path()) {
+            return Err(ServiceError::TransientBinary(sidecar.path().to_owned()).into());
+        }
         autostart.enable()
     } else {
         autostart.disable()
@@ -357,8 +365,7 @@ pub fn set_launch_at_login(app: AppHandle<Wry>, enabled: bool) -> Reply<()> {
 /// Deletes the store, backups, logs and the background service; onboarding starts over.
 #[tauri::command]
 pub async fn erase_all_data(shell: State<'_, Shell>) -> Reply<()> {
-    let backend = shell.backend.clone();
-    blocking(move || actions::erase_all_data(&backend)).await?;
+    actions::erase_all_data(&shell.backend).await?;
     shell.store.set_onboarding_complete(false)
 }
 
@@ -415,8 +422,12 @@ pub async fn save_report(
             return Ok(None);
         };
         let path = file.into_path().map_err(CommandError::internal)?;
-        std::fs::write(&path, report.content)?;
-        Ok(Some(path.display().to_string()))
+        let path = Utf8PathBuf::from_path_buf(path)
+            .map_err(|path| CommandError::invalid(format!("{} is not UTF-8", path.display())))?;
+        // Atomic: a failed write never leaves half a report over an existing file.
+        tokenmtr_platform::fs::replace_atomically(&path, report.content.as_bytes())
+            .map_err(|error| CommandError::internal(format!("cannot write {path}: {error}")))?;
+        Ok(Some(path.into_string()))
     })
     .await
 }

@@ -128,7 +128,7 @@ fn a_rule_beats_git_and_needs_no_filesystem() {
         "[[projects]]\nmatch = \"{root}/repo\"\nname = \"ruled\"\nclient = \"acme\"\n\n\
          [[projects]]\nmatch = \"{root}/**\"\nname = \"later\"\n"
     );
-    let resolver = ProjectResolver::new(rules(&toml));
+    let resolver = ProjectResolver::new(rules(&toml), Vec::new());
     let found = resolve(&resolver, &root.join("repo"));
     assert_eq!(found.resolution.project.as_str(), "ruled");
     assert_eq!(found.resolution.client.as_deref(), Some("acme"));
@@ -136,6 +136,33 @@ fn a_rule_beats_git_and_needs_no_filesystem() {
     let missing = resolve(&resolver, &root.join("nowhere"));
     assert_eq!(missing.resolution.project.as_str(), "later");
     assert_eq!(missing.problem, None, "a rule match never touches the disk");
+}
+
+#[test]
+fn a_cwd_under_a_protected_folder_is_never_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8_dir(&dir);
+    init_repo(
+        root.join("Documents/repo").as_std_path(),
+        Some("git@github.com:acme/tool.git"),
+    );
+    let resolver = ProjectResolver::new(Vec::new(), vec![root.join("documents")]);
+    let found = resolve(&resolver, &root.join("Documents/repo"));
+    assert_eq!(found.problem, Some(CwdProblem::Protected));
+    assert_eq!(
+        found.resolution.source,
+        ProjectSource::Cwd,
+        "git was not read"
+    );
+}
+
+#[test]
+fn a_file_as_cwd_is_unreadable_not_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = utf8_dir(&dir).join("file");
+    fs::write(&file, "").unwrap();
+    let resolved = resolve(&ProjectResolver::default(), &file);
+    assert_eq!(resolved.problem, Some(CwdProblem::Unreadable));
 }
 
 #[test]

@@ -14,7 +14,7 @@ mod http;
 pub mod litellm;
 pub mod quota;
 
-pub use account::{AccountInfo, parse_profile_response, plan_from_claude};
+pub use account::{AccountInfo, ProfileParseError, parse_profile_response, plan_from_claude};
 pub use credentials::{
     ClaudeCredentials, CredentialLocation, CredentialSource, CredentialsError,
     DEFAULT_KEYCHAIN_SERVICE, keychain_service_for_config_dir,

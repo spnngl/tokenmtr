@@ -6,11 +6,9 @@ use std::io::{self, Read as _, Seek as _, SeekFrom};
 
 use camino::Utf8Path;
 use jiff::Timestamp;
-use sha2::{Digest as _, Sha256};
 use tokenmtr_store::Checkpoint;
 
-/// How far back from the offset the last-line hash looks. A longer line hashes its tail.
-const HASH_WINDOW: u64 = 64 * 1024;
+use crate::jsonl::{HASH_WINDOW, line_hash};
 
 /// A file's identity and size at one instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +24,7 @@ pub struct FileStat {
 }
 
 impl FileStat {
-    /// Stats `path` without following a final symlink.
+    /// Stats `path`, following a final symlink: the identity is that of the file read.
     pub fn of(path: &Utf8Path) -> io::Result<Self> {
         let meta = fs::metadata(path)?;
         let modified = meta.modified()?;
@@ -41,6 +39,13 @@ impl FileStat {
             mtime,
         })
     }
+}
+
+/// The `(device, inode)` of the file at `path`, following symlinks; `None` when it cannot be
+/// stated or the platform has no inodes.
+pub(crate) fn file_identity(path: &Utf8Path) -> Option<(u64, u64)> {
+    let identity = identity(&fs::metadata(path).ok()?);
+    (identity != (0, 0)).then_some(identity)
 }
 
 #[cfg(unix)]
@@ -115,23 +120,22 @@ pub fn decide(
             reason: ParseReason::Appended,
         });
     }
-    if hash_before(cp.offset)? == cp.last_line_hash {
-        Ok(Plan::Parse {
+    // A missing stored hash cannot vouch for the prefix.
+    match cp.last_line_hash {
+        Some(stored) if hash_before(cp.offset)? == Some(stored) => Ok(Plan::Parse {
             from: cp.offset,
             reason: ParseReason::Appended,
-        })
-    } else {
-        Ok(restart(ParseReason::Rewritten))
+        }),
+        _ => Ok(restart(ParseReason::Rewritten)),
     }
 }
 
-/// SHA-256 of the last complete line that ends at `offset` (without its newline), reading at most
-/// [`HASH_WINDOW`] bytes. `None` at offset 0 or when the file is shorter than `offset`.
+/// [`line_hash`] of the bytes before `offset` in the file as it is now: the last line ending
+/// there, with its newline, reading at most [`HASH_WINDOW`] bytes. `None` at offset 0 or when the
+/// file is shorter than `offset`.
 pub fn last_line_hash(path: &Utf8Path, offset: u64) -> io::Result<Option<[u8; 32]>> {
-    if offset == 0 {
-        return Ok(None);
-    }
-    let start = offset.saturating_sub(HASH_WINDOW);
+    let window = u64::try_from(HASH_WINDOW).unwrap_or(u64::MAX);
+    let start = offset.saturating_sub(window);
     let mut file = File::open(path)?;
     file.seek(SeekFrom::Start(start))?;
     let len = usize::try_from(offset - start).unwrap_or(0);
@@ -139,18 +143,14 @@ pub fn last_line_hash(path: &Utf8Path, offset: u64) -> io::Result<Option<[u8; 32
     if file.read_exact(&mut window).is_err() {
         return Ok(None);
     }
-    let body = window.strip_suffix(b"\n").unwrap_or(&window);
-    let line = body
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(body, |at| &body[at + 1..]);
-    Ok(Some(Sha256::digest(line).into()))
+    Ok(line_hash(&window))
 }
 
 #[cfg(test)]
 mod tests {
     use std::io::Write as _;
 
+    use sha2::{Digest as _, Sha256};
     use tokenmtr_core::{AgentId, ProfileId};
 
     use super::*;
@@ -277,15 +277,20 @@ mod tests {
     }
 
     #[test]
-    fn the_hash_covers_the_last_complete_line_only() {
+    fn the_hash_covers_the_last_complete_line_with_its_newline() {
         let dir = tempfile::tempdir().unwrap();
         let path = utf8_dir(&dir).join("f.jsonl");
         let mut file = File::create(&path).unwrap();
         file.write_all(b"first\nsecond\npartial").unwrap();
-        let expected: [u8; 32] = Sha256::digest(b"second").into();
+        let expected: [u8; 32] = Sha256::digest(b"second\n").into();
         assert_eq!(last_line_hash(&path, 13).unwrap(), Some(expected));
-        let first: [u8; 32] = Sha256::digest(b"first").into();
+        let first: [u8; 32] = Sha256::digest(b"first\n").into();
         assert_eq!(last_line_hash(&path, 6).unwrap(), Some(first));
+        assert_ne!(
+            last_line_hash(&path, 12).unwrap(),
+            Some(expected),
+            "an offset off the line boundary never matches"
+        );
         assert_eq!(last_line_hash(&path, 0).unwrap(), None);
         assert_eq!(last_line_hash(&path, 999).unwrap(), None, "short file");
     }

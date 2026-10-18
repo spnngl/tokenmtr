@@ -5,6 +5,7 @@ use std::fmt;
 use jiff::Timestamp;
 use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
+use tokenmtr_core::{Subscription, UsageEvent};
 
 /// A position in one dataset's change log (D17): the per-dataset counter value a row got when it
 /// was inserted or last changed. `Revision::ZERO` precedes every row.
@@ -57,64 +58,16 @@ impl FromSql for Revision {
     }
 }
 
-/// One exportable dataset (Phase 7). Each has its own revision counter and sink cursors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Dataset {
-    /// `usage_events`.
-    UsageEvents,
-    /// `tool_calls`.
-    ToolCalls,
-    /// `subscriptions`.
-    Subscriptions,
-    /// `quota_snapshots`.
-    QuotaSnapshots,
-    /// `fx_rates`.
-    FxRates,
-}
+pub use tokenmtr_core::Dataset;
 
-impl Dataset {
-    /// Every dataset, in export order.
-    pub const ALL: [Self; 5] = [
-        Self::UsageEvents,
-        Self::ToolCalls,
-        Self::Subscriptions,
-        Self::QuotaSnapshots,
-        Self::FxRates,
-    ];
-
-    /// The dataset's export name; also its key in `dataset_revision` and `sink_cursor`.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::UsageEvents => "usage_events",
-            Self::ToolCalls => "tool_calls",
-            Self::Subscriptions => "subscriptions",
-            Self::QuotaSnapshots => "quota_snapshots",
-            Self::FxRates => "fx_rates",
-        }
-    }
-
-    /// Parses an export name.
-    #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|d| d.as_str() == name)
-    }
-
-    /// The table holding the rows.
-    pub(crate) const fn table(self) -> &'static str {
-        match self {
-            Self::UsageEvents => "usage_event",
-            Self::ToolCalls => "tool_call",
-            Self::Subscriptions => "subscription",
-            Self::QuotaSnapshots => "quota_snapshot",
-            Self::FxRates => "fx_rate",
-        }
-    }
-}
-
-impl fmt::Display for Dataset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+/// The table holding a dataset's rows.
+pub(crate) const fn table(dataset: Dataset) -> &'static str {
+    match dataset {
+        Dataset::UsageEvents => "usage_event",
+        Dataset::ToolCalls => "tool_call",
+        Dataset::Subscriptions => "subscription",
+        Dataset::QuotaSnapshots => "quota_snapshot",
+        Dataset::FxRates => "fx_rate",
     }
 }
 
@@ -125,6 +78,26 @@ pub struct Versioned<T> {
     pub revision: Revision,
     /// The row.
     pub row: T,
+}
+
+/// A stored usage event with the state only the store knows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredEvent {
+    /// The event as ingested.
+    pub event: UsageEvent,
+    /// A stats-cache aggregate (D38) on a day transcript events now cover. Kept (D14) and
+    /// exported with the flag; every query skips it, so the day is not counted twice.
+    pub superseded: bool,
+}
+
+/// A mirrored subscription with the state only the store knows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredSubscription {
+    /// The subscription as last seen in the config.
+    pub subscription: Subscription,
+    /// When it disappeared from the config; `None` while it is configured. A removed
+    /// subscription is kept and exported (D14) but bills nothing.
+    pub removed_at: Option<Timestamp>,
 }
 
 /// What one batched upsert did.
@@ -155,7 +128,7 @@ pub struct Pending {
     pub oldest: Option<Timestamp>,
 }
 
-/// The 32 random bytes that key redaction hashes (D33).
+/// The 32 random bytes that key redaction hashes (D40). They live in `meta`, so\n/// every backup carries them: whoever holds a backup can recompute the hashes in an export..
 #[derive(Clone, PartialEq, Eq)]
 pub struct RedactionKey([u8; 32]);
 

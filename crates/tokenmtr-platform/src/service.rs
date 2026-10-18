@@ -1,7 +1,9 @@
 //! Background service management (D23): the daemon runs as a launchd `LaunchAgent`.
 
+use std::fs::OpenOptions;
 use std::io;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
 
@@ -10,6 +12,20 @@ use crate::paths::Paths;
 
 /// launchd label, also the plist file stem.
 const LABEL: &str = "dev.tokenmtr.daemon";
+/// Absolute so a hostile `PATH` cannot substitute the tool.
+const LAUNCHCTL: &str = "/bin/launchctl";
+/// Absolute so a hostile `PATH` cannot substitute the tool.
+const ID: &str = "/usr/bin/id";
+/// `bootout` returns before launchd has removed the job; how long to wait for it.
+const UNLOAD_TIMEOUT: Duration = Duration::from_secs(10);
+/// Poll period while waiting for the job to disappear.
+const UNLOAD_POLL: Duration = Duration::from_millis(100);
+/// Minimum seconds between two launches; spaces out restarts of a daemon that cannot start.
+const THROTTLE_SECS: u32 = 30;
+/// File names of the daemon's launchd stdout and stderr, inside the logs dir.
+const LAUNCHD_LOGS: [&str; 2] = ["launchd.out.log", "launchd.err.log"];
+/// Size above which [`trim_launchd_logs`] empties a launchd log.
+const LAUNCHD_LOG_LIMIT: u64 = 1024 * 1024;
 
 /// Failure of a [`ServiceManager`] operation.
 #[derive(Debug, thiserror::Error)]
@@ -17,6 +33,10 @@ pub enum ServiceError {
     /// The daemon binary path is relative; launchd would resolve it against `/`.
     #[error("daemon binary path must be absolute: {0}")]
     RelativeBinary(Utf8PathBuf),
+    /// The daemon binary is on a disk image or in a translocated copy that disappears; the
+    /// app must be moved to a stable folder first.
+    #[error("{0} runs from a disk image or a temporary copy: move TokenMtr to Applications")]
+    TransientBinary(Utf8PathBuf),
     /// Filesystem error while reading or writing the plist.
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -33,6 +53,9 @@ pub enum ServiceError {
     /// `id -u` printed something that is not a user id.
     #[error("cannot parse user id from {0:?}")]
     BadUid(String),
+    /// launchd still lists the job after `bootout` and [`UNLOAD_TIMEOUT`].
+    #[error("launchd did not unload {LABEL} within {} s", UNLOAD_TIMEOUT.as_secs())]
+    StillLoaded,
 }
 
 /// State of the installed service.
@@ -66,6 +89,22 @@ pub trait ServiceManager {
     /// # Errors
     /// [`ServiceError`] if the loaded service cannot be stopped or the plist cannot be removed.
     fn uninstall(&self) -> Result<(), ServiceError>;
+
+    /// Unloads the service, keeping it installed, and waits until the service manager no longer
+    /// lists it (the daemon process has exited). Returns whether it was loaded. A service that is
+    /// not installed for these paths is left alone, even when a job with the same label runs
+    /// (another `HOME`, e.g. a test sandbox, must never stop the user's daemon).
+    ///
+    /// # Errors
+    /// [`ServiceError`] if the service cannot be unloaded or is still listed after a timeout.
+    fn stop(&self) -> Result<bool, ServiceError>;
+
+    /// Loads the installed service again after [`ServiceManager::stop`]. A no-op when it is
+    /// already loaded.
+    ///
+    /// # Errors
+    /// [`ServiceError`] if the service manager rejects it, e.g. because it is not installed.
+    fn start(&self) -> Result<(), ServiceError>;
 
     /// Current state.
     ///
@@ -121,6 +160,7 @@ pub struct LaunchdService<R = SystemRunner> {
     runner: R,
     plist_path: Utf8PathBuf,
     logs_dir: Utf8PathBuf,
+    unload_timeout: Duration,
 }
 
 impl<R: CommandRunner> LaunchdService<R> {
@@ -134,6 +174,7 @@ impl<R: CommandRunner> LaunchdService<R> {
                 .join("Library/LaunchAgents")
                 .join(format!("{LABEL}.plist")),
             logs_dir: paths.logs_dir().to_owned(),
+            unload_timeout: UNLOAD_TIMEOUT,
         }
     }
 
@@ -173,7 +214,32 @@ impl<R: CommandRunner> LaunchdService<R> {
     }
 
     fn launchctl(&self, args: &[&str]) -> Result<CommandOutput, ServiceError> {
-        Ok(self.runner.run("launchctl", args)?)
+        Ok(self.runner.run(LAUNCHCTL, args)?)
+    }
+
+    fn loaded(&self, target: &str) -> Result<bool, ServiceError> {
+        Ok(self.launchctl(&["print", target])?.success())
+    }
+
+    /// `bootout` when loaded, then waits until launchd no longer lists the job: `bootstrap`
+    /// right after an asynchronous `bootout` fails with "5: Input/output error".
+    fn unload(&self, target: &str) -> Result<bool, ServiceError> {
+        if !self.loaded(target)? {
+            return Ok(false);
+        }
+        self.launchctl_checked(&["bootout", target])?;
+        let deadline = Instant::now() + self.unload_timeout;
+        while self.loaded(target)? {
+            if Instant::now() >= deadline {
+                return Err(ServiceError::StillLoaded);
+            }
+            std::thread::sleep(UNLOAD_POLL);
+        }
+        Ok(true)
+    }
+
+    fn target(&self) -> Result<String, ServiceError> {
+        Ok(format!("{}/{LABEL}", self.domain()?))
     }
 
     fn launchctl_checked(&self, args: &[&str]) -> Result<CommandOutput, ServiceError> {
@@ -192,7 +258,7 @@ impl<R: CommandRunner> LaunchdService<R> {
     /// `gui/<uid>`, the launchd domain of the logged-in user. The uid comes from `id -u` so this
     /// crate needs no extra `unsafe`.
     fn domain(&self) -> Result<String, ServiceError> {
-        let out = self.runner.run("id", &["-u"])?;
+        let out = self.runner.run(ID, &["-u"])?;
         let uid = out.stdout.trim();
         match (out.success(), uid.parse::<u32>()) {
             (true, Ok(uid)) => Ok(format!("gui/{uid}")),
@@ -201,10 +267,23 @@ impl<R: CommandRunner> LaunchdService<R> {
     }
 }
 
+/// Whether `binary` lives where it will not stay: a mounted disk image (`/Volumes/…`) or the
+/// read-only copy Gatekeeper runs a quarantined app from (`…/AppTranslocation/…`).
+#[must_use]
+pub fn is_transient(binary: &Utf8Path) -> bool {
+    binary.starts_with("/Volumes")
+        || binary
+            .components()
+            .any(|part| part.as_str() == "AppTranslocation")
+}
+
 impl<R: CommandRunner> ServiceManager for LaunchdService<R> {
     fn install(&self, binary: &Utf8Path) -> Result<(), ServiceError> {
         if !binary.is_absolute() {
             return Err(ServiceError::RelativeBinary(binary.to_owned()));
+        }
+        if is_transient(binary) {
+            return Err(ServiceError::TransientBinary(binary.to_owned()));
         }
         if let Some(dir) = self.plist_path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -216,28 +295,38 @@ impl<R: CommandRunner> ServiceManager for LaunchdService<R> {
         )?;
 
         let domain = self.domain()?;
-        let target = format!("{domain}/{LABEL}");
         // `bootstrap` fails on an already loaded service, so reload explicitly.
-        if self.launchctl(&["print", &target])?.success() {
-            self.launchctl_checked(&["bootout", &target])?;
-        }
+        self.unload(&format!("{domain}/{LABEL}"))?;
         self.launchctl_checked(&["bootstrap", &domain, self.plist_path.as_str()])?;
         Ok(())
     }
 
     fn uninstall(&self) -> Result<(), ServiceError> {
-        let target = format!("{}/{LABEL}", self.domain()?);
-        if self.launchctl(&["print", &target])?.success() {
-            self.launchctl_checked(&["bootout", &target])?;
-        }
+        self.unload(&self.target()?)?;
         match std::fs::remove_file(&self.plist_path) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
         }
     }
 
+    fn stop(&self) -> Result<bool, ServiceError> {
+        if !self.plist_path.exists() {
+            return Ok(false);
+        }
+        self.unload(&self.target()?)
+    }
+
+    fn start(&self) -> Result<(), ServiceError> {
+        let domain = self.domain()?;
+        if self.loaded(&format!("{domain}/{LABEL}"))? {
+            return Ok(());
+        }
+        self.launchctl_checked(&["bootstrap", &domain, self.plist_path.as_str()])?;
+        Ok(())
+    }
+
     fn status(&self) -> Result<ServiceStatus, ServiceError> {
-        let target = format!("{}/{LABEL}", self.domain()?);
+        let target = self.target()?;
         let printed = self.launchctl(&["print", &target])?;
         if !printed.success() {
             return Ok(if self.plist_path.exists() {
@@ -261,12 +350,34 @@ fn parse_pid(print_output: &str) -> Option<u32> {
         .find_map(|line| line.trim().strip_prefix("pid = ")?.trim().parse().ok())
 }
 
+/// Empties the daemon's launchd stdout/stderr logs in `logs_dir` once they exceed 1 MiB;
+/// launchd never rotates them. launchd opens them in append mode, so truncating a log the
+/// running daemon writes to is safe. Missing logs are skipped.
+///
+/// # Errors
+/// I/O errors other than "not found".
+pub fn trim_launchd_logs(logs_dir: &Utf8Path) -> io::Result<()> {
+    for name in LAUNCHD_LOGS {
+        let file = match OpenOptions::new().write(true).open(logs_dir.join(name)) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        };
+        if file.metadata()?.len() > LAUNCHD_LOG_LIMIT {
+            file.set_len(0)?;
+        }
+    }
+    Ok(())
+}
+
 /// Renders the `LaunchAgent` plist (D23). Priority is per thread (D47), so `ProcessType` stays
 /// `Standard` and no `LowPriorityIO` is set.
+///
+/// launchd restarts the daemon only after a failed exit: a clean exit (after `Shutdown`, or when
+/// another instance already serves) stays down, so erase and restore can stop it.
 fn render_plist(binary: &Utf8Path, logs_dir: &Utf8Path) -> String {
     let binary = xml_escape(binary.as_str());
-    let out_log = xml_escape(logs_dir.join("launchd.out.log").as_str());
-    let err_log = xml_escape(logs_dir.join("launchd.err.log").as_str());
+    let [out_log, err_log] = LAUNCHD_LOGS.map(|name| xml_escape(logs_dir.join(name).as_str()));
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -282,7 +393,12 @@ fn render_plist(binary: &Utf8Path, logs_dir: &Utf8Path) -> String {
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
-	<true/>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>{THROTTLE_SECS}</integer>
 	<key>ProcessType</key>
 	<string>Standard</string>
 	<key>StandardOutPath</key>
@@ -322,6 +438,8 @@ mod tests {
         calls: Mutex<Vec<String>>,
         pid_line: Option<&'static str>,
         fail_bootstrap: bool,
+        /// `bootout` succeeds but the job never leaves.
+        stuck: bool,
     }
 
     impl FakeRunner {
@@ -348,17 +466,18 @@ mod tests {
             };
             let mut loaded = self.loaded.lock().unwrap();
             Ok(match (program, args.first().copied()) {
-                ("id", _) => ok("501\n"),
-                ("launchctl", Some("print")) if *loaded => {
+                (ID, _) => ok("501\n"),
+                (LAUNCHCTL, Some("print")) if *loaded => {
                     ok(self.pid_line.unwrap_or("state = waiting\n"))
                 }
-                ("launchctl", Some("print")) => fail(113),
-                ("launchctl", Some("bootstrap")) if self.fail_bootstrap => fail(5),
-                ("launchctl", Some("bootstrap")) => {
+                (LAUNCHCTL, Some("print")) => fail(113),
+                (LAUNCHCTL, Some("bootstrap")) if self.fail_bootstrap => fail(5),
+                (LAUNCHCTL, Some("bootstrap")) => {
                     *loaded = true;
                     ok("")
                 }
-                ("launchctl", Some("bootout")) => {
+                (LAUNCHCTL, Some("bootout")) if self.stuck => ok(""),
+                (LAUNCHCTL, Some("bootout")) => {
                     *loaded = false;
                     ok("")
                 }
@@ -396,7 +515,12 @@ mod tests {
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
-	<true/>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
 	<key>ProcessType</key>
 	<string>Standard</string>
 	<key>StandardOutPath</key>
@@ -430,22 +554,96 @@ mod tests {
         assert_eq!(
             runner.calls(),
             [
-                "id -u".to_owned(),
-                "launchctl print gui/501/dev.tokenmtr.daemon".to_owned(),
-                format!("launchctl bootstrap gui/501 {}", service.plist_path()),
+                "/usr/bin/id -u".to_owned(),
+                "/bin/launchctl print gui/501/dev.tokenmtr.daemon".to_owned(),
+                format!("/bin/launchctl bootstrap gui/501 {}", service.plist_path()),
             ]
         );
     }
 
     #[test]
-    fn reinstall_boots_out_first() {
+    fn reinstall_waits_for_the_bootout_before_bootstrapping() {
         let runner = FakeRunner::default();
         let (_dir, service) = setup(&runner);
         service.install(Utf8Path::new(BINARY)).unwrap();
         service.install(Utf8Path::new(BINARY)).unwrap();
         let calls = runner.calls();
-        assert!(calls.contains(&"launchctl bootout gui/501/dev.tokenmtr.daemon".to_owned()));
+        let target = "gui/501/dev.tokenmtr.daemon";
+        assert_eq!(
+            calls[calls.len() - 3..],
+            [
+                format!("/bin/launchctl bootout {target}"),
+                format!("/bin/launchctl print {target}"),
+                format!("/bin/launchctl bootstrap gui/501 {}", service.plist_path()),
+            ]
+        );
         assert!(*runner.loaded.lock().unwrap());
+    }
+
+    #[test]
+    fn stop_leaves_a_job_installed_for_another_home_alone() {
+        let runner = FakeRunner {
+            loaded: Mutex::new(true),
+            ..FakeRunner::default()
+        };
+        let (_dir, service) = setup(&runner);
+        assert!(!service.stop().unwrap());
+        assert_eq!(runner.calls(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn stop_then_start_keeps_the_install() {
+        let runner = FakeRunner::default();
+        let (_dir, service) = setup(&runner);
+        assert!(!service.stop().unwrap());
+
+        service.install(Utf8Path::new(BINARY)).unwrap();
+        assert!(service.stop().unwrap());
+        assert_eq!(service.status().unwrap(), ServiceStatus::Stopped);
+        service.start().unwrap();
+        assert_eq!(service.status().unwrap(), ServiceStatus::Loaded);
+        let bootstraps = runner
+            .calls()
+            .iter()
+            .filter(|c| c.contains("bootstrap"))
+            .count();
+        service.start().unwrap();
+        let again = runner
+            .calls()
+            .iter()
+            .filter(|c| c.contains("bootstrap"))
+            .count();
+        assert_eq!(bootstraps, again, "start on a loaded service is a no-op");
+    }
+
+    #[test]
+    fn a_job_that_never_leaves_times_out() {
+        let runner = FakeRunner {
+            loaded: Mutex::new(true),
+            stuck: true,
+            ..FakeRunner::default()
+        };
+        let (_dir, mut service) = setup(&runner);
+        service.unload_timeout = Duration::from_millis(250);
+        std::fs::create_dir_all(service.plist_path.parent().unwrap()).unwrap();
+        std::fs::write(&service.plist_path, b"").unwrap();
+        assert!(matches!(service.stop(), Err(ServiceError::StillLoaded)));
+    }
+
+    #[test]
+    fn launchd_logs_are_emptied_past_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = Utf8Path::from_path(dir.path()).unwrap();
+        trim_launchd_logs(logs).unwrap(); // missing logs are fine
+        let big = vec![b'x'; usize::try_from(LAUNCHD_LOG_LIMIT).unwrap() + 1];
+        std::fs::write(logs.join(LAUNCHD_LOGS[0]), &big).unwrap();
+        std::fs::write(logs.join(LAUNCHD_LOGS[1]), b"small").unwrap();
+        trim_launchd_logs(logs).unwrap();
+        assert_eq!(
+            std::fs::metadata(logs.join(LAUNCHD_LOGS[0])).unwrap().len(),
+            0
+        );
+        assert_eq!(std::fs::read(logs.join(LAUNCHD_LOGS[1])).unwrap(), b"small");
     }
 
     #[test]
@@ -456,6 +654,16 @@ mod tests {
             service.install(Utf8Path::new("tokenmtr")),
             Err(ServiceError::RelativeBinary(_))
         ));
+        for transient in [
+            "/Volumes/TokenMtr/TokenMtr.app/Contents/MacOS/tokenmtr",
+            "/private/var/folders/x/AppTranslocation/ABC/d/TokenMtr.app/Contents/MacOS/tokenmtr",
+        ] {
+            assert!(matches!(
+                service.install(Utf8Path::new(transient)),
+                Err(ServiceError::TransientBinary(_))
+            ));
+        }
+        assert!(!is_transient(Utf8Path::new(BINARY)));
         assert_eq!(runner.calls().len(), 0);
 
         let runner = FakeRunner {

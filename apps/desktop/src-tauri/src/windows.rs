@@ -190,28 +190,23 @@ pub fn hide_recap(app: &AppHandle<Wry>) {
 ///
 /// # Errors
 ///
-/// The target is invalid, or the window cannot be created.
-pub fn show_main(app: &AppHandle<Wry>, target: &DashboardTarget) -> Result<(), String> {
-    let fragment = target.fragment()?;
+/// The window cannot be created, shown or told to navigate.
+pub fn show_main(app: &AppHandle<Wry>, target: &DashboardTarget) -> tauri::Result<()> {
     hide_recap(app);
     if let Some(window) = app.get_webview_window(MAIN) {
-        app.emit(
-            NAVIGATE,
-            serde_json::json!({ "route": target.route, "agent": target.agent }),
-        )
-        .map_err(|error| error.to_string())?;
+        // Only the main window navigates; the recap has no routes.
+        app.emit_to(MAIN, NAVIGATE, target)?;
         return focus(app, &window);
     }
     let window = WebviewWindowBuilder::new(
         app,
         MAIN,
-        WebviewUrl::App(format!("index.html{fragment}").into()),
+        WebviewUrl::App(format!("index.html{}", target.fragment()).into()),
     )
     .title("TokenMtr")
     .inner_size(1100.0, 760.0)
     .min_inner_size(320.0, 480.0)
-    .build()
-    .map_err(|error| error.to_string())?;
+    .build()?;
     let handle = app.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::Destroyed = event
@@ -223,14 +218,12 @@ pub fn show_main(app: &AppHandle<Wry>, target: &DashboardTarget) -> Result<(), S
     focus(app, &window)
 }
 
-fn focus(app: &AppHandle<Wry>, window: &WebviewWindow<Wry>) -> Result<(), String> {
-    app.set_activation_policy(ActivationPolicy::Regular)
-        .map_err(|error| error.to_string())?;
+fn focus(app: &AppHandle<Wry>, window: &WebviewWindow<Wry>) -> tauri::Result<()> {
+    app.set_activation_policy(ActivationPolicy::Regular)?;
     window
         .show()
         .and_then(|()| window.unminimize())
         .and_then(|()| window.set_focus())
-        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

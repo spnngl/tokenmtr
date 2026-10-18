@@ -13,7 +13,7 @@ use tokenmtr_core::ProfileId;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-const FIXTURES: [&str; 11] = [
+const FIXTURES: [&str; 12] = [
     "sess-streaming.jsonl",
     "sess-streaming/subagents/agent-a1b2c3.jsonl",
     "sess-sidechain.jsonl",
@@ -25,6 +25,7 @@ const FIXTURES: [&str; 11] = [
     "sess-api-error.jsonl",
     "sess-compact.jsonl",
     "sess-drift.jsonl",
+    "sess-v2-1-287.jsonl",
 ];
 
 fn config_dir() -> Utf8PathBuf {
@@ -148,6 +149,57 @@ fn missing_cache_creation_falls_back_to_the_5m_bucket() -> TestResult {
     Ok(())
 }
 
+/// The platform comes from the model id, the price modifiers from `usage`, and cache writes the
+/// 5m/1h split leaves out are 5-minute writes.
+#[test]
+fn pricing_inputs_follow_the_model_id_and_usage() -> TestResult {
+    let line = |n: u32, model: &str, usage: Value| {
+        json!({"type": "assistant", "sessionId": "s1", "uuid": format!("u{n}"),
+            "requestId": format!("req{n}"), "timestamp": "2026-03-01T00:00:00Z",
+            "message": {"id": format!("msg{n}"), "model": model, "content": [], "usage": usage}})
+        .to_string()
+    };
+    let plain = json!({"input_tokens": 1, "output_tokens": 1});
+    let text = [
+        line(
+            0,
+            "claude-opus-4-7",
+            json!({"input_tokens": 1, "output_tokens": 1,
+            "cache_creation_input_tokens": 100, "speed": "fast", "inference_geo": "US",
+            "server_tool_use": {"web_search_requests": 2},
+            "cache_creation": {"ephemeral_5m_input_tokens": 10, "ephemeral_1h_input_tokens": 30}}),
+        ),
+        line(1, "us.anthropic.claude-opus-4-7", plain.clone()),
+        line(2, "claude-opus-4-1-20250805-v1:0", plain.clone()),
+        line(
+            3,
+            "claude-sonnet-4-5@20250929",
+            json!({"input_tokens": 1, "output_tokens": 1,
+            "inference_geo": "not_available"}),
+        ),
+    ]
+    .join("\n")
+        + "\n";
+    let dir = tempfile::tempdir()?;
+    let root = Utf8Path::from_path(dir.path()).ok_or("non-UTF-8 temp dir")?;
+    let path = root.join("projects/-app/s1.jsonl");
+    fs::create_dir_all(path.parent().ok_or("no parent")?)?;
+    fs::write(&path, text)?;
+    let mut batch = ParseBatch::new();
+    parse_into(&source_for(root), &path, ByteOffset::ZERO, &mut batch)?;
+    let events = serde_json::to_value(batch.events())?;
+    let providers: Vec<&Value> = (0..4).map(|i| &events[i]["provider"]).collect();
+    assert_eq!(providers, ["anthropic", "bedrock", "bedrock", "vertex_ai"]);
+    assert_eq!(events[0]["tokens"]["cache_write_5m"], 70);
+    assert_eq!(events[0]["tokens"]["cache_write_1h"], 30);
+    assert_eq!(
+        events[0]["modifiers"],
+        json!({"fast": true, "inference_geo": "us", "web_search_requests": 2})
+    );
+    assert_eq!(events[3]["modifiers"]["inference_geo"], Value::Null);
+    Ok(())
+}
+
 #[test]
 fn tool_uses_of_a_multi_line_message_are_kept_once_with_their_error_flag() -> TestResult {
     let (batch, _) = parse_fixture("sess-tools.jsonl")?;
@@ -223,6 +275,22 @@ fn unmappable_line_gives_one_issue_with_a_skeleton_and_no_values() -> TestResult
     for key in ["promptTokens", "completionTokens", "tier"] {
         assert!(issue.contains(key), "{key} missing from {issue}");
     }
+    Ok(())
+}
+
+#[test]
+fn the_newest_known_version_parses_without_drift() -> TestResult {
+    let (batch, outcome) = parse_fixture("sess-v2-1-287.jsonl")?;
+    assert_eq!(batch.events().len(), 1);
+    assert_eq!(outcome.issues.len(), 0);
+    assert!(outcome.drift.unknown_versions.is_empty());
+    assert_eq!(outcome.drift.usage_lines_failed, 0);
+    let tokens = &batch.events()[0].tokens;
+    assert_eq!(
+        (tokens.cache_write_5m, tokens.cache_write_1h, tokens.output),
+        (200, 100, 42),
+        "`iterations` must not be counted again"
+    );
     Ok(())
 }
 

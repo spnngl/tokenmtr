@@ -45,6 +45,12 @@ impl QuotaStatus {
     }
 }
 
+impl std::fmt::Display for QuotaStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// What one poll found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuotaOutcome {

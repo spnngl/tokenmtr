@@ -29,7 +29,8 @@ pub struct IngestSettings {
     pub zone: TimeZone,
     /// `import.claude_stats_cache` (D38).
     pub import_claude_stats_cache: bool,
-    /// macOS protected folders the doctor reports cwds under (D50).
+    /// macOS protected folders (D50): project resolution never reads cwds under them, and the
+    /// doctor reports cwds and sinks under them.
     pub protected: Vec<Utf8PathBuf>,
     /// `privacy.redact_paths` (D13): store keyed hashes instead of cwds and git branches.
     pub redact_paths: bool,

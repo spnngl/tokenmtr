@@ -3,7 +3,7 @@
 Every sink (CSV, JSONL, SQLite) carries the same five datasets with the same columns and the same
 values. The columns are defined once in `tokenmtr_export::schema`; the CSV header, the JSONL keys,
 the SQLite DDL and the table below all come from that definition.
-`EXPORT_SCHEMA_VERSION` (currently `1`) changes whenever a column is added, removed, renamed or
+`EXPORT_SCHEMA_VERSION` (currently `2`) changes whenever a column is added, removed, renamed or
 re-typed. A SQLite sink records it in its `_schema` table and refuses a file of another version.
 
 ## Row identity and revisions
@@ -12,6 +12,10 @@ re-typed. A SQLite sink records it in its `_schema` table and refuses a file of 
 - A row is re-exported with a higher `revision` whenever any of its values changes.
 - The current row of an id is the one with the highest `revision`.
 - Delivery is at-least-once: the same `(id, revision)` can arrive twice; sinks drop the repeat.
+- Rows are never deleted. A stats-cache `daily_aggregate` on a day that transcript events now cover
+  is re-exported with `superseded = true`; drop superseded rows before summing, or the day counts
+  twice. A subscription removed from the config is re-exported with `removed_at_utc` set; it bills
+  nothing from then on.
 
 ## Files
 
@@ -26,15 +30,21 @@ The partition comes from the dataset's partition column, in UTC: `2026-05` (`mon
 
 ## Encodings
 
-- CSV: RFC 4180 quoting, header row, empty field for an empty value.
+- CSV: RFC 4180 quoting, header row, empty field for an empty value. Cells are written raw:
+  a value starting with `=`, `+`, `-` or `@` (a project name, a branch) is not neutralised, so a
+  spreadsheet may run it as a formula. Import the file as text, or use a report's CSV, which is
+  neutralised.
 - JSONL: one object per line, keys are the column names, empty values are `null`; decimals are
   JSON numbers, booleans are `true`/`false`.
 - SQLite: one table per dataset named like the dataset, primary key on the first column,
-  `STRICT`. Decimals are `REAL`, booleans `INTEGER` (`0`/`1`), timestamps and dates `TEXT`.
+  `STRICT`. Decimals are exact `INTEGER` counts of their smallest unit, in a column named with the
+  unit: `cost_reported_usd_micros`, `cost_estimated_usd_micros`, `fee_micros` (millionths) and
+  `eur_per_usd_nanos` (billionths). Booleans are `INTEGER` (`0`/`1`), timestamps and dates `TEXT`.
   A row is replaced only when the incoming `revision` is higher, so the table holds one row per id.
 - Timestamps are ISO-8601 UTC (`2026-05-01T10:00:00Z`); dates are `YYYY-MM-DD`.
 - Money columns are decimals in USD with 6 decimal places (`fee` is in `fee_currency`);
-  `eur_per_usd` has 9.
+  `eur_per_usd` has 9. CSV and JSONL write the decimal; SQLite writes the integer described above,
+  so no sink rounds through floating point.
 
 ## Converting to EUR
 
@@ -50,9 +60,13 @@ A sink can redact these columns: `cwd`, `project`, `client`, `git_branch`, `acco
 - `hash`: the value becomes 16 lowercase hex characters, the first 8 bytes of a BLAKE3 hash keyed
   with the store's redaction key. The same value always gives the same hash on one machine;
   another key gives other hashes. Empty values stay empty.
-- `drop`: the value is empty. The column stays, so the schema never varies between sinks.
+- `drop`: the value is empty: an empty CSV field, JSON `null` and SQL `NULL`. Every redactable
+  column is therefore nullable. The column stays, so the schema never varies between sinks.
 
 Redaction runs before encoding, so a redacted sink never holds the raw value.
+The redaction key lives in the store database, so every store backup carries it: whoever holds a
+backup and a hashed export can hash candidate values and match them. Keep backups as private as
+the raw data.
 
 ## Datasets
 
@@ -72,7 +86,7 @@ Primary key: `event_id`. Partitioned by: `at_utc`.
 | `provider` | text | yes |  | Model provider, when known. |
 | `model` | text | no |  | Model id as the agent reported it. |
 | `service_tier` | text | yes |  | Provider service tier, when reported. |
-| `session_id` | text | no | `session_id` | Agent session id. |
+| `session_id` | text | yes | `session_id` | Agent session id; empty only when dropped. |
 | `parent_session_id` | text | yes | `session_id` | Session that spawned this one (subagents). |
 | `project` | text | yes | `project` | Resolved project key. |
 | `client` | text | yes | `client` | Client label of the project. |
@@ -88,10 +102,11 @@ Primary key: `event_id`. Partitioned by: `at_utc`.
 | `output` | integer | no |  | Output tokens. |
 | `reasoning` | integer | no |  | Reasoning tokens, when reported separately. |
 | `total_tokens` | integer | no |  | Sum of all token columns. |
-| `cost_reported_usd` | decimal(6) | yes |  | Cost the agent reported, in USD. |
-| `cost_estimated_usd` | decimal(6) | yes |  | Pay-as-you-go cost estimated from `pricing_version`, in USD. |
+| `cost_reported_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Cost the agent reported, in USD. |
+| `cost_estimated_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Pay-as-you-go cost estimated from `pricing_version`, in USD. |
 | `cost_source` | text | no |  | Which cost is the API value: `reported`, `estimated` or `unpriced`. |
 | `pricing_version` | text | yes |  | Pricing snapshot behind `cost_estimated_usd`. |
+| `superseded` | boolean | no |  | True for a `daily_aggregate` on a day transcript events now cover; exclude it from totals. |
 
 ### `tool_calls`
 
@@ -104,7 +119,7 @@ Primary key: `tool_call_id`. Partitioned by: `at_utc`.
 | `machine_id` | text | no |  | UUID of the machine that ingested the call. |
 | `agent` | text | no |  | Agent id. |
 | `profile` | text | no |  | Agent profile name. |
-| `session_id` | text | no | `session_id` | Agent session id. |
+| `session_id` | text | yes | `session_id` | Agent session id; empty only when dropped. |
 | `event_id` | text | yes |  | `event_id` of the usage event of the same message, when known. |
 | `at_utc` | timestamp (UTC) | no |  | When the tool was invoked; partitions files. |
 | `tool_name` | text | no |  | Tool name; for MCP tools the part after the server. |
@@ -124,11 +139,12 @@ Primary key: `subscription_id`. Partitioned by: nothing (one file).
 | `plan` | text | no |  | `pro`, `max_5x`, `max_20x`, `team`, `enterprise` or `custom`. |
 | `agents` | text | no |  | Covered agent ids, comma-separated. |
 | `profiles` | text | yes |  | Covered profiles, comma-separated; empty means all. |
-| `fee` | decimal(6) | no |  | Fee per billing period, in `fee_currency`. |
+| `fee` | decimal(6); SQL: integer `*_micros` | no |  | Fee per billing period, in `fee_currency`. |
 | `fee_currency` | text | no |  | `USD` or `EUR`. |
 | `period` | text | no |  | `monthly` or `yearly`. |
 | `start` | date | no |  | First covered day (inclusive). |
 | `end` | date | yes |  | First day no longer covered (exclusive); empty while open. |
+| `removed_at_utc` | timestamp (UTC) | yes |  | When the subscription left the config; it bills nothing since. Empty while configured. |
 
 ### `quota_snapshots`
 
@@ -157,7 +173,7 @@ Primary key: `date`. Partitioned by: `date`.
 | --- | --- | --- | --- | --- |
 | `date` | date | no |  | Primary key: publication date of the ECB reference rate; partitions files. |
 | `revision` | integer | no |  | Change counter of the row within its dataset; the highest revision of an id is current. |
-| `eur_per_usd` | decimal(9) | no |  | EUR for 1 USD. |
+| `eur_per_usd` | decimal(9); SQL: integer `*_nanos` | no |  | EUR for 1 USD. |
 | `source` | text | no |  | Rate source: `ecb`. |
 
 

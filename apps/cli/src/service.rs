@@ -97,14 +97,14 @@ mod tests {
             };
             let mut loaded = self.loaded.lock().unwrap();
             Ok(match (program, args.first().copied()) {
-                ("id", _) => reply(0, "501\n"),
-                ("launchctl", Some("print")) if *loaded => reply(0, "pid = 4242\n"),
-                ("launchctl", Some("print")) => reply(113, ""),
-                ("launchctl", Some("bootstrap")) => {
+                ("/usr/bin/id", _) => reply(0, "501\n"),
+                ("/bin/launchctl", Some("print")) if *loaded => reply(0, "pid = 4242\n"),
+                ("/bin/launchctl", Some("print")) => reply(113, ""),
+                ("/bin/launchctl", Some("bootstrap")) => {
                     *loaded = true;
                     reply(0, "")
                 }
-                ("launchctl", Some("bootout")) => {
+                ("/bin/launchctl", Some("bootout")) => {
                     *loaded = false;
                     reply(0, "")
                 }
@@ -129,7 +129,7 @@ mod tests {
             runner
                 .calls()
                 .iter()
-                .any(|call| call.starts_with("launchctl bootstrap gui/501"))
+                .any(|call| call.starts_with("/bin/launchctl bootstrap gui/501"))
         );
 
         let status = run(&manager, &ServiceAction::Status).unwrap();

@@ -9,6 +9,7 @@ use tauri_plugin_notification::NotificationExt as _;
 use tokenmtr_app::AppContext;
 
 use crate::alerts::{BATCH, Delivered, Notice, select_undelivered, stale_decision};
+use crate::daemon::{Link, probe};
 use crate::error::CommandError;
 use crate::state::{Pending, Shell};
 
@@ -114,6 +115,15 @@ pub async fn watch_stale(app: AppHandle<Wry>) {
         })
         .await;
         let wait = match checked {
+            // After a sleep the heartbeat is old but the daemon is fine: it beats again soon.
+            Ok((Some(_), wait))
+                if matches!(
+                    probe(shell.backend.transport()).await,
+                    Link::Connected { .. }
+                ) =>
+            {
+                wait
+            }
             Ok((Some(heartbeat), wait)) => {
                 show(&app, &shell, &Notice::daemon_stale());
                 if let Err(error) = shell.store.set_stale_announced(heartbeat) {

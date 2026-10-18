@@ -8,15 +8,15 @@ use rusqlite::types::Value;
 use serde::Serialize;
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
-    Advice, AgentId, Plan, PlanCatalog, QuotaEta, QuotaSnapshot, QuotaWindow, UsdMicros,
-    Utilization, WindowId, advise, quota_eta,
+    Advice, AgentId, Plan, PlanCatalog, ProfileId, QuotaEta, QuotaSnapshot, QuotaWindow, UsdMicros,
+    Utilization, WindowId, advise, quota_eta, saturating_micros,
 };
-use tokenmtr_store::{StoreRead, StoreReader};
+use tokenmtr_store::{QuotaStatus, StoreRead, StoreReader};
 
 use crate::context::QueryContext;
-use crate::engine::{Dim, Scope, fetch};
+use crate::engine::{Dim, Scope, closed, fetch};
 use crate::error::QueryError;
-use crate::filters::Filters;
+use crate::filters::{Filters, ProfileSelector};
 use crate::range::DateRange;
 
 fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
@@ -81,7 +81,7 @@ pub(crate) fn load_snapshots(
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct QuotaWindowView {
     /// Window id (`five_hour`, `seven_day`, …).
-    pub window: String,
+    pub window: WindowId,
     /// Percent used; may exceed 100.
     pub used_percent: f64,
     /// When the window resets.
@@ -98,13 +98,13 @@ pub struct QuotaMeter {
     /// Agent.
     pub agent: AgentId,
     /// Profile.
-    pub profile: String,
+    pub profile: ProfileId,
     /// When the poll ran.
     pub fetched_at: Timestamp,
     /// Seconds since the poll.
     pub age_secs: i64,
-    /// `ok`, `signed_out`, `token_expired` or `failed`.
-    pub status: String,
+    /// How the poll ended.
+    pub status: QuotaStatus,
     /// Account the poll belongs to.
     pub account: Option<String>,
     /// Windows; empty unless `status` is `ok`.
@@ -162,7 +162,10 @@ pub fn quota_latest(
                 },
             )?
             .collect::<Result<_, _>>()?;
-        let status = rows.first().map_or_else(String::new, |r| r.3.clone());
+        let Some(status) = rows.first().map(|r| r.3.as_str()) else {
+            continue;
+        };
+        let status: QuotaStatus = closed("quota status", status)?;
         let account = rows.iter().find_map(|r| r.4.clone());
         let history = load_snapshots(
             reader,
@@ -173,13 +176,13 @@ pub fn quota_latest(
         )?;
         let mut windows = Vec::new();
         for (window, percent, resets, _, _) in rows {
-            let (Some(used_percent), true) = (percent, !window.is_empty()) else {
+            let (Some(used_percent), Ok(window)) = (percent, WindowId::new(window)) else {
                 continue;
             };
             let resets_at = resets.map(micros_ts).transpose()?;
-            let eta = match (&resets_at, WindowId::new(window.clone())) {
-                (Some(at), Ok(id)) => quota_eta(&history, &id, *at),
-                _ => QuotaEta::NotEnoughData,
+            let eta = match &resets_at {
+                Some(at) => quota_eta(&history, &window, *at),
+                None => QuotaEta::NotEnoughData,
             };
             windows.push(QuotaWindowView {
                 window,
@@ -191,7 +194,9 @@ pub fn quota_latest(
         }
         meters.push(QuotaMeter {
             agent,
-            profile,
+            profile: profile
+                .parse()
+                .map_err(|_| QueryError::decode("profile", &profile))?,
             fetched_at,
             age_secs: (ctx.now().as_second() - fetched_at.as_second()).max(0),
             status,
@@ -322,14 +327,17 @@ pub fn advisor(
     };
     let filters = Filters::new(range)
         .agents([agent])
-        .profiles([profile.clone()]);
-    let value: i64 = fetch(reader, ctx, &filters, Dim::None, Scope::All)?
+        .profile_selectors([ProfileSelector {
+            agent: Some(agent),
+            profile: profile.clone(),
+        }]);
+    let value: i128 = fetch(reader, ctx, &filters, Dim::None, Scope::All)?
         .rows
         .iter()
-        .map(|r| r.cell.cost_usd)
+        .map(|r| i128::from(r.cell.cost_usd))
         .sum();
     // 30 days → average month (365.25 / 12 days).
-    let monthly = i64::try_from(i128::from(value) * 30_437 / 30_000).unwrap_or(i64::MAX);
+    let monthly = saturating_micros(value * 30_437 / 30_000);
     let advice = match plan {
         Some(plan) => advise(
             &snapshots,

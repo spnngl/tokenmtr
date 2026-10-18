@@ -36,7 +36,8 @@ pub use encode::{Decoded, RowEncoder, StoredRow};
 pub use error::{ExportError, SinkError};
 pub use file::FileSink;
 pub use health::{
-    HealthInput, LAG_INTERVALS, SinkHealth, SinkLag, SinkStatus, sink_status, total_pending,
+    HEALTH_RUNS, HealthInput, LAG_INTERVALS, SinkLag, SinkState, SinkStatus, sink_status,
+    total_pending,
 };
 pub use project::fetch_batch;
 pub use pump::{DEFAULT_BATCH_SIZE, PumpOptions, SinkRunOutcome, export_pending};
@@ -47,6 +48,5 @@ pub use schema::{
 };
 pub use sink::{
     ConfiguredSink, ExportBatch, FileTarget, Sink, SinkKind, SinkSpec, SqliteTarget, Target,
-    store_dataset,
 };
 pub use sqlite::SqliteSink;

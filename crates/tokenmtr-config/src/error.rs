@@ -158,6 +158,10 @@ pub enum Violation {
     /// Two sinks share an id.
     #[error("duplicate sink id {0}")]
     DuplicateSinkId(SinkId),
+    /// The sink would write the same files as an earlier one: same kind, same `dir` or `path`
+    /// (unset means the exports directory) and a dataset in common.
+    #[error("writes the same files as sink {0}")]
+    SinkTargetClash(SinkId),
     /// A sink sets a key its kind does not use.
     #[error("sink kind `{kind}` does not accept `{field}`")]
     FieldNotAllowed {

@@ -3,13 +3,15 @@
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
+use std::sync::{OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use rayon::prelude::*;
-use tokenmtr_core::{AgentId, MachineId, UsageEvent};
+use tokenmtr_core::{
+    AgentId, DedupKey, MachineId, ParsedEvent, SessionId, SourceFileId, UsageEvent,
+};
 use tokenmtr_platform::{ThreadPriority, set_thread_priority};
 use tokenmtr_store::{
     Checkpoint, IngestRun, IngestWrite, IssueKind, IssueUpdate, ParseIssue as StoredIssue,
@@ -20,7 +22,7 @@ use tokenmtr_store::{
 use super::error::IngestError;
 use super::fingerprint::{FileStat, ParseReason, Plan, decide, last_line_hash};
 use super::pricing::Pricer;
-use super::projects::ProjectCache;
+use super::projects::{ProjectCache, Reresolve};
 use super::report::{AgentScan, AggregateScan, FileScan, ScanReport};
 use super::settings::IngestSettings;
 use crate::batch::{BatchParts, ParseBatch};
@@ -30,6 +32,14 @@ use crate::{AgentKind, AgentSource, DriftReason, ParseIssue, ParseOutcome, disco
 
 /// Events per store transaction (D48).
 const CHUNK: usize = 5000;
+
+/// An unterminated last line older than this was left by a crashed writer: it is skipped as
+/// malformed, so the next appended line is not glued to it.
+const ABANDONED_TAIL: SignedDuration = SignedDuration::from_mins(10);
+
+/// Subject of the per-scan drift issue (D42): the share of failed usage-bearing lines over every
+/// file of one scan.
+pub const SCAN_ISSUE_SUBJECT: &str = "scan";
 
 /// Whether a scan trusts the stored checkpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +124,11 @@ pub struct Ingestor {
     pricer: Pricer,
     pub(super) reader: StoreReader,
     clock: fn() -> Timestamp,
+    /// The parse pool of user-initiated scans, built by the first one that needs it.
+    pool: OnceLock<rayon::ThreadPool>,
+    /// Whether this process already retried the cwds that fell back to themselves (D50): the
+    /// first scan does, so a restart retries them; a full scan retries every cwd.
+    fallbacks_retried: bool,
     #[cfg(test)]
     pub(crate) crash_before_commit: bool,
 }
@@ -123,11 +138,13 @@ impl Ingestor {
     #[must_use]
     pub fn new(settings: IngestSettings, reader: StoreReader) -> Self {
         Self {
-            resolver: ProjectResolver::new(settings.rules.clone()),
+            resolver: ProjectResolver::new(settings.rules.clone(), settings.protected.clone()),
+            fallbacks_retried: false,
             pricer: Pricer::new(settings.overrides.clone()),
             settings,
             reader,
             clock: Timestamp::now,
+            pool: OnceLock::new(),
             #[cfg(test)]
             crash_before_commit: false,
         }
@@ -190,8 +207,15 @@ impl Ingestor {
             .redact_paths
             .then(|| store.redaction_key().clone());
         let mut cache = ProjectCache::load(store, redaction)?;
+        let scope = match request.mode {
+            ScanMode::Full => Reresolve::All,
+            ScanMode::Incremental if !self.fallbacks_retried => Reresolve::StaleAndFallbacks,
+            ScanMode::Incremental => Reresolve::Stale,
+        };
+        let agents: Vec<AgentId> = self.settings.sources.iter().map(AgentSource::id).collect();
         let (cwds_reresolved, events_reassigned) =
-            cache.reresolve(store, &self.resolver, request.mode == ScanMode::Full, now)?;
+            cache.reresolve(store, &self.resolver, scope, &agents, now)?;
+        self.fallbacks_retried = true;
 
         let mut states: Vec<AgentState> = self
             .settings
@@ -230,6 +254,21 @@ impl Ingestor {
             let state = &mut states[slot];
             if !state.selected {
                 continue;
+            }
+            let agent = state.agent;
+            match state.scan.drift.threshold_issue() {
+                Some(issue) => {
+                    store.record_parse_issue(&to_stored(agent, SCAN_ISSUE_SUBJECT, &issue, now))?;
+                }
+                None if state.scan.drift.usage_lines > 0 => {
+                    store.close_parse_issue(
+                        agent,
+                        IssueKind::FormatDrift,
+                        SCAN_ISSUE_SUBJECT,
+                        now,
+                    )?;
+                }
+                None => {}
             }
             if self.settings.import_claude_stats_cache
                 && request.paths.is_none()
@@ -332,10 +371,29 @@ impl Ingestor {
                     stat,
                     from,
                     reason,
+                    expected: stored.and_then(|stored| stored.checkpoint.last_line_hash),
                 });
             }
         }
         Ok(tasks)
+    }
+
+    /// The parse pool, built once per ingestor: one thread per core at user-initiated priority.
+    fn pool(&self) -> Result<&rayon::ThreadPool, IngestError> {
+        if let Some(pool) = self.pool.get() {
+            return Ok(pool);
+        }
+        let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .thread_name(|index| format!("tokenmtr-parse-{index}"))
+            .start_handler(|_| {
+                if let Err(err) = set_thread_priority(ThreadPriority::UserInitiated) {
+                    tracing::debug!(%err, "cannot raise parse thread priority");
+                }
+            })
+            .build()?;
+        Ok(self.pool.get_or_init(|| pool))
     }
 
     /// Parses every task and hands the results to the writer. A user-initiated scan with more
@@ -352,18 +410,8 @@ impl Ingestor {
             }
             return Ok(());
         }
-        let threads = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZero::get)
-            .min(tasks.len());
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .thread_name(|index| format!("tokenmtr-parse-{index}"))
-            .start_handler(|_| {
-                if let Err(err) = set_thread_priority(ThreadPriority::UserInitiated) {
-                    tracing::debug!(%err, "cannot raise parse thread priority");
-                }
-            })
-            .build()?;
+        let pool = self.pool()?;
+        let threads = pool.current_num_threads().min(tasks.len());
         let cancel = AtomicBool::new(false);
         std::thread::scope(|scope| {
             let (tx, rx) = mpsc::sync_channel::<Parsed>(threads);
@@ -412,13 +460,15 @@ impl Ingestor {
             let found = match source.aggregates(profile, &self.settings.zone) {
                 Ok(found) => found,
                 Err(err) => {
-                    record_file_problem(
-                        store,
-                        agent,
-                        Utf8Path::new("stats-cache"),
-                        &err.to_string(),
-                        now,
-                    )?;
+                    // Each profile's own subject, so one profile's failure does not overwrite
+                    // another's.
+                    let subject = match &err {
+                        crate::AgentError::Io { path, .. } => path.clone(),
+                        crate::AgentError::Id(_) => {
+                            Utf8PathBuf::from(format!("stats-cache of profile {}", profile.id))
+                        }
+                    };
+                    record_file_problem(store, agent, &subject, &err.to_string(), now)?;
                     continue;
                 }
             };
@@ -449,6 +499,11 @@ impl Ingestor {
             for chunk in rows.chunks(CHUNK) {
                 summary.written.add(&store.upsert_events(chunk)?);
             }
+            store.supersede_daily_aggregates_covered_by_transcripts(
+                agent,
+                &profile.id,
+                &self.settings.zone,
+            )?;
         }
         Ok(summary)
     }
@@ -582,11 +637,27 @@ struct Task {
     stat: FileStat,
     from: u64,
     reason: ParseReason,
+    /// The stored last-line hash at `from`, which the bytes before `from` must still match.
+    expected: Option<[u8; 32]>,
 }
 
 impl Task {
     fn remaining(&self) -> u64 {
         self.stat.size.saturating_sub(self.from)
+    }
+
+    /// Where the parse starts. Planning checked the prefix, but the file may have been rewritten
+    /// in place since (pi's `_rewriteFile` truncates and rewrites the same inode): a prefix that
+    /// no longer ends with the stored line, newline included, restarts the file from zero.
+    /// Event dedup keys make the re-read idempotent.
+    fn start(&self) -> (u64, ParseReason) {
+        if self.from == 0 {
+            return (0, self.reason);
+        }
+        match last_line_hash(&self.file.path, self.from) {
+            Ok(Some(hash)) if Some(hash) == self.expected => (self.from, self.reason),
+            _ => (0, ParseReason::Rewritten),
+        }
     }
 }
 
@@ -600,27 +671,28 @@ struct Parsed {
 struct ParsedOk {
     parts: BatchParts,
     outcome: ParseOutcome,
-    hash: Option<[u8; 32]>,
+    /// Where the parse actually started, and why ([`Task::start`]).
+    from: u64,
+    reason: ParseReason,
 }
 
 /// Parses one file, converting a panic into an error so one bad file cannot end the scan.
 fn parse_task(source: &AgentKind, task: &Task, index: usize) -> Parsed {
     let started = Instant::now();
+    let (from, reason) = task.start();
     let parsed = catch_unwind(AssertUnwindSafe(|| {
         let mut batch = ParseBatch::new();
         source
-            .parse(&task.file, ByteOffset::new(task.from), &mut batch)
+            .parse(&task.file, ByteOffset::new(from), &mut batch)
             .map(|outcome| (batch.into_parts(), outcome))
     }));
     let result = match parsed {
-        Ok(Ok((parts, outcome))) => {
-            let hash = last_line_hash(&task.file.path, outcome.new_offset.get()).unwrap_or(None);
-            Ok(ParsedOk {
-                parts,
-                outcome,
-                hash,
-            })
-        }
+        Ok(Ok((parts, outcome))) => Ok(ParsedOk {
+            parts,
+            outcome,
+            from,
+            reason,
+        }),
         Ok(Err(err)) => Err(err.to_string()),
         Err(payload) => Err(panic_text(payload.as_ref())),
     };
@@ -640,9 +712,76 @@ fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
     format!("parser panicked: {text}")
 }
 
+/// The offset and last-line hash to store after a parse that started at `from`.
+///
+/// The hash is that of the bytes parsed; the file is read only when no line ended there. An
+/// unterminated tail older than [`ABANDONED_TAIL`] is a crashed writer's: it is skipped (and
+/// counted as malformed) so the next line the agent appends parses alone.
+fn checkpoint_end(
+    task: &Task,
+    from: u64,
+    outcome: &mut ParseOutcome,
+    now: Timestamp,
+) -> (u64, Option<[u8; 32]>) {
+    let to = outcome.new_offset.get();
+    if to < task.stat.size && now.duration_since(task.stat.mtime) > ABANDONED_TAIL {
+        outcome.drift.skipped.malformed += 1;
+        let size = task.stat.size;
+        return (size, last_line_hash(&task.file.path, size).unwrap_or(None));
+    }
+    let hash = match outcome.last_line_hash {
+        Some(hash) if to > from => Some(hash),
+        _ => last_line_hash(&task.file.path, to).unwrap_or(None),
+    };
+    (to, hash)
+}
+
+/// Who an event belongs to: the fields a forked copy must not overwrite.
+#[derive(Clone)]
+struct Owner {
+    session: SessionId,
+    parent_session: Option<SessionId>,
+    cwd: Option<Utf8PathBuf>,
+    git_branch: Option<String>,
+    source_file: Option<SourceFileId>,
+}
+
+impl Owner {
+    fn of_parsed(event: &ParsedEvent) -> Self {
+        Self {
+            session: event.session.clone(),
+            parent_session: event.parent_session.clone(),
+            cwd: event.cwd.clone(),
+            git_branch: event.git_branch.clone(),
+            source_file: event.source_file,
+        }
+    }
+
+    fn of_stored(event: UsageEvent) -> Self {
+        Self {
+            session: event.session,
+            parent_session: event.parent_session,
+            cwd: event.cwd,
+            git_branch: event.git_branch,
+            source_file: event.source_file,
+        }
+    }
+
+    fn apply(self, event: &mut ParsedEvent) {
+        event.session = self.session;
+        event.parent_session = self.parent_session;
+        event.cwd = self.cwd;
+        event.git_branch = self.git_branch;
+        event.source_file = self.source_file;
+    }
+}
+
 #[derive(Default)]
 struct Pending {
     events: Vec<UsageEvent>,
+    /// Attribution of the pending events by dedup key, for [`Run::keep_owner`]; flushed events
+    /// are found in the store.
+    owners: HashMap<DedupKey, Owner>,
     calls: Vec<ProfiledToolCall>,
     signals: Vec<SessionSignal>,
     orphans: Vec<ToolResultFlag>,
@@ -734,25 +873,30 @@ impl Run<'_> {
         }));
     }
 
-    fn accept(&mut self, task: &Task, ok: ParsedOk) -> Result<(), IngestError> {
-        let ParsedOk {
-            parts,
-            outcome,
-            hash,
-        } = ok;
+    /// Prices, attributes and stages the events of one parsed file, flushing every `CHUNK`.
+    fn stage_events(&mut self, task: &Task, events: Vec<ParsedEvent>) -> Result<(), IngestError> {
         let slot = task.slot;
         let agent = self.states[slot].agent;
-        let to = outcome.new_offset.get();
-        let events_found = count_of(parts.events.len());
-
-        for mut parsed in parts.events {
+        for mut parsed in events {
+            parsed.source_file = task.file.id;
+            if parsed.parent_session.is_some() {
+                self.keep_owner(slot, &mut parsed)?;
+            }
+            self.states[slot]
+                .pending
+                .owners
+                .insert(parsed.dedup_key.clone(), Owner::of_parsed(&parsed));
             let assignment = match &parsed.cwd {
-                Some(cwd) => self
-                    .cache
-                    .assign(self.store, self.resolver, agent, cwd, self.now)?,
+                Some(cwd) => self.cache.assign(
+                    self.store,
+                    self.resolver,
+                    agent,
+                    cwd,
+                    self.now,
+                    &mut self.states[slot].pending.issues,
+                )?,
                 None => None,
             };
-            parsed.source_file = task.file.id;
             let estimate = self.pricer.price(self.reader, &mut parsed)?;
             let mut event = parsed.into_usage_event(&self.machine, estimate);
             self.cache.label(&mut event, assignment);
@@ -761,6 +905,21 @@ impl Run<'_> {
                 self.flush(slot)?;
             }
         }
+        Ok(())
+    }
+
+    fn accept(&mut self, task: &Task, ok: ParsedOk) -> Result<(), IngestError> {
+        let ParsedOk {
+            parts,
+            mut outcome,
+            from,
+            reason,
+        } = ok;
+        let slot = task.slot;
+        let agent = self.states[slot].agent;
+        let (to, hash) = checkpoint_end(task, from, &mut outcome, self.now);
+        let events_found = count_of(parts.events.len());
+        self.stage_events(task, parts.events)?;
 
         let machine = &self.machine;
         let state = &mut self.states[slot];
@@ -802,7 +961,7 @@ impl Run<'_> {
         // A parse that read the file from the start and found no problem of a kind settles the
         // earlier issue of that kind; an appended parse says nothing about earlier lines.
         let mut settles = vec![IssueKind::ParseError];
-        if task.from == 0 {
+        if from == 0 {
             settles.extend([IssueKind::FormatDrift, IssueKind::UnknownVersion]);
         }
         for kind in settles.into_iter().filter(|kind| !recorded.contains(kind)) {
@@ -828,16 +987,34 @@ impl Run<'_> {
 
         let scan = &mut state.scan;
         scan.files_parsed += 1;
-        scan.bytes_parsed += to.saturating_sub(task.from);
+        scan.bytes_parsed += to.saturating_sub(from);
         scan.drift.merge(&outcome.drift);
         scan.files.push(FileScan {
             path: task.file.path.clone(),
-            reason: task.reason,
-            from: task.from,
+            reason,
+            from,
             to,
             events: events_found,
             error: None,
         });
+        Ok(())
+    }
+
+    /// Keeps the attribution of an event a forked session copied (M6): when its key already
+    /// belongs to another session, pending or stored, the copy takes that session's attribution
+    /// and only refreshes the usage. Without this the store would move the event to whichever
+    /// file the parse pool finished last. A fork's own events have keys nobody else holds.
+    fn keep_owner(&self, slot: usize, parsed: &mut ParsedEvent) -> Result<(), IngestError> {
+        let owner = match self.states[slot].pending.owners.get(&parsed.dedup_key) {
+            Some(owner) => Some(owner.clone()),
+            None => self
+                .reader
+                .usage_event_by_key(parsed.agent, &parsed.dedup_key)?
+                .map(|stored| Owner::of_stored(stored.row)),
+        };
+        if let Some(owner) = owner.filter(|owner| owner.session != parsed.session) {
+            owner.apply(parsed);
+        }
         Ok(())
     }
 
@@ -865,5 +1042,44 @@ impl Run<'_> {
         scan.orphan_results_applied += written.tool_results_applied;
         scan.orphan_results_unmatched += written.tool_results_unmatched;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tokenmtr_core::ProfileId;
+
+    use super::*;
+    use crate::testkit::utf8_dir;
+
+    /// The file changed between planning and parsing (pi rewrites a session in place): the
+    /// parse must not resume at the planned offset.
+    #[test]
+    fn a_prefix_rewritten_after_planning_restarts_the_parse_from_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = utf8_dir(&dir).join("s.jsonl");
+        fs::write(&path, "first\nsecond\n").unwrap();
+        let expected = last_line_hash(&path, 13).unwrap();
+        let task = |from| Task {
+            slot: 0,
+            file: SourceFile::new(path.clone(), ProfileId::default_profile()),
+            stat: FileStat::of(&path).unwrap(),
+            from,
+            reason: ParseReason::Appended,
+            expected,
+        };
+        assert_eq!(task(13).start(), (13, ParseReason::Appended));
+        assert_eq!(task(0).start(), (0, ParseReason::Appended));
+
+        fs::write(&path, "first\nsecund\nthird\n").unwrap();
+        assert_eq!(task(13).start(), (0, ParseReason::Rewritten));
+        fs::write(&path, "xsecond\nsecond\n").unwrap();
+        assert_eq!(
+            task(13).start(),
+            (0, ParseReason::Rewritten),
+            "13 is no longer a line end"
+        );
     }
 }

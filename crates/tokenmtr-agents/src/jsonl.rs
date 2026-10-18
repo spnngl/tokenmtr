@@ -12,6 +12,7 @@ use std::io;
 
 use camino::Utf8Path;
 use memchr::memmem::Finder;
+use sha2::{Digest as _, Sha256};
 
 use crate::error::AgentError;
 use crate::source::ByteOffset;
@@ -21,6 +22,26 @@ pub const READ_BUFFER_BYTES: usize = 1 << 20;
 
 /// Lines longer than this are dropped unparsed and counted in [`LineScan::oversized`].
 pub const MAX_LINE_BYTES: usize = 128 << 20;
+
+/// The key text that makes a line usage-bearing for drift accounting (D42), in every agent.
+pub const USAGE_NEEDLE: &[u8] = b"usage";
+
+/// The last-line hash ([`line_hash`]) covers at most this many bytes; a longer line hashes its
+/// tail.
+pub const HASH_WINDOW: usize = 64 * 1024;
+
+/// SHA-256 of the last line of `window`, the bytes just before an offset: from the newline that
+/// precedes it (exclusive) to the end, so the line's own terminating `\n` is included. `None`
+/// for an empty window.
+///
+/// Including the terminator makes the hash prove that the offset sits on a line boundary (D15).
+#[must_use]
+pub fn line_hash(window: &[u8]) -> Option<[u8; 32]> {
+    let (_, body) = window.split_last()?;
+    let start = memchr::memrchr(b'\n', body).map_or(0, |at| at + 1);
+    let window = &window[window.len().saturating_sub(HASH_WINDOW).max(start)..];
+    Some(Sha256::digest(window).into())
+}
 
 thread_local! {
     static BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -70,6 +91,13 @@ pub struct LineScan {
     pub filtered: u64,
     /// Lines over [`MAX_LINE_BYTES`], dropped.
     pub oversized: u64,
+    /// Of [`oversized`](Self::oversized), the lines that mention [`USAGE_NEEDLE`]. A mention
+    /// split across two 128 MiB chunks is missed.
+    pub oversized_usage: u64,
+    /// [`line_hash`] of the last line consumed, computed from the bytes read so it describes the
+    /// file as parsed. `None` when no line ended, or when the last one was oversized and its
+    /// hashed tail is gone: hash the file then.
+    pub last_line_hash: Option<[u8; 32]>,
 }
 
 /// Reads the complete lines of `path` from `start`, calling `on_line` (without the `\n`) for each
@@ -117,10 +145,17 @@ fn scan_file(
     let mut filled = 0_usize;
     // Inside a line longer than `MAX_LINE_BYTES`: drop bytes up to its newline.
     let mut discarding = false;
+    // The dropped part of that line mentions usage.
+    let mut discarded_usage = false;
+    // The last consumed line, up to `HASH_WINDOW` bytes with its `\n`.
+    let mut tail: Vec<u8> = Vec::new();
+    let mut tail_whole = false;
+    let usage = Finder::new(USAGE_NEEDLE);
     loop {
         if filled == buf.len() {
             // A full buffer holds no newline: one long line.
             if buf.len() >= MAX_LINE_BYTES {
+                discarded_usage |= usage.find(&buf[..filled]).is_some();
                 discarding = true;
                 buf_start += filled as u64;
                 filled = 0;
@@ -130,16 +165,24 @@ fn scan_file(
         }
         let read = read_at(file, &mut buf[filled..], buf_start + filled as u64)?;
         if read == 0 {
+            scan.last_line_hash = if tail_whole { line_hash(&tail) } else { None };
             return Ok(scan);
         }
         let end = filled + read;
         let mut line_start = 0;
+        // Start and newline of the last line that ends in this chunk, and whether it was cut.
+        let mut last: Option<(usize, usize, bool)> = None;
         while let Some(found) = memchr::memchr(b'\n', &buf[line_start..end]) {
             let line_end = line_start + found;
             scan.lines += 1;
+            last = Some((line_start, line_end, discarding));
             if discarding {
                 discarding = false;
                 scan.oversized += 1;
+                if discarded_usage || usage.find(&buf[line_start..line_end]).is_some() {
+                    scan.oversized_usage += 1;
+                }
+                discarded_usage = false;
             } else {
                 let line = &buf[line_start..line_end];
                 if line.is_empty() || !needles.matches(line) {
@@ -151,6 +194,13 @@ fn scan_file(
             }
             line_start = line_end + 1;
             scan.new_offset = ByteOffset::new(buf_start + line_start as u64);
+        }
+        if let Some((start, newline, cut)) = last {
+            let line = &buf[start..=newline];
+            let kept = &line[line.len().saturating_sub(HASH_WINDOW)..];
+            tail_whole = !cut || kept.len() == HASH_WINDOW;
+            tail.clear();
+            tail.extend_from_slice(kept);
         }
         buf.copy_within(line_start..end, 0);
         buf_start += line_start as u64;
@@ -231,6 +281,27 @@ mod tests {
         assert_eq!(lines[1].len(), long.len());
         assert_eq!(scan.new_offset.get(), text.len() as u64);
         Ok(())
+    }
+
+    #[test]
+    fn the_scan_hashes_the_last_consumed_line_with_its_newline() -> TestResult {
+        let (_, scan) = scan_text(b"first\nsecond\npartial", 0, &NeedleSet::all())?;
+        let expected: [u8; 32] = Sha256::digest(b"second\n").into();
+        assert_eq!(scan.last_line_hash, Some(expected));
+        let (_, nothing) = scan_text(b"partial", 0, &NeedleSet::all())?;
+        assert_eq!(nothing.last_line_hash, None);
+        Ok(())
+    }
+
+    #[test]
+    fn line_hash_takes_the_last_line_and_proves_the_boundary() {
+        let hash = |bytes: &[u8]| -> [u8; 32] { Sha256::digest(bytes).into() };
+        assert_eq!(line_hash(b"a\nbc\n"), Some(hash(b"bc\n")));
+        assert_eq!(line_hash(b"a\nbc"), Some(hash(b"bc")));
+        assert_ne!(line_hash(b"a\nbc\n"), line_hash(b"a\n\nbc"));
+        assert_eq!(line_hash(b""), None);
+        let long = vec![b'x'; HASH_WINDOW * 2];
+        assert_eq!(line_hash(&long), Some(hash(&long[HASH_WINDOW..])));
     }
 
     #[test]

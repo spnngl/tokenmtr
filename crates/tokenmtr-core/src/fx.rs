@@ -5,7 +5,7 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
-use crate::money::{EUR_PER_USD_SCALE, EurMicros, EurPerUsd, UsdMicros};
+use crate::money::{EUR_PER_USD_SCALE, EurMicros, EurPerUsd, UsdMicros, saturating_micros};
 
 /// A rate older than this many days is flagged approximate. The longest normal ECB gap is five
 /// days (Thursday → Tuesday around Easter); anything longer means the fetch is failing.
@@ -22,7 +22,7 @@ pub fn convert(usd: UsdMicros, rate: EurPerUsd) -> EurMicros {
     } else {
         (numerator - half) / scale
     };
-    EurMicros::new(i64::try_from(rounded).unwrap_or(if rounded < 0 { i64::MIN } else { i64::MAX }))
+    EurMicros::new(saturating_micros(rounded))
 }
 
 /// The UTC calendar date of an instant: the date D27 selects rates by.

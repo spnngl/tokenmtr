@@ -9,13 +9,13 @@ use rusqlite::types::Value;
 use serde::Serialize;
 use tokenmtr_core::fx::utc_date;
 use tokenmtr_core::{
-    AgentId, Currency, DedupKey, EventKind, ModelId, ParsedEvent, ProfileId, ProviderId, SessionId,
-    TokenCounts, estimate,
+    AgentId, CostSource, Currency, EventKind, ModelId, PriceQuery, ProviderId, SessionId,
+    SignalKind, TokenCounts, estimate, saturating_micros,
 };
 use tokenmtr_store::StoreReader;
 
 use crate::context::QueryContext;
-use crate::engine::{Dim, Row, Scope, fetch, usd_to, where_sql};
+use crate::engine::{Dim, Row, Scope, closed, fetch, to_count, usd_to, where_sql};
 use crate::error::QueryError;
 use crate::filters::Filters;
 use crate::usage::{Usage, ratio};
@@ -28,11 +28,7 @@ fn share(part: i64, whole: i64) -> f64 {
     if whole <= 0 {
         0.0
     } else {
-        100.0
-            * ratio(
-                u64::try_from(part.max(0)).unwrap_or(0),
-                u64::try_from(whole).unwrap_or(1),
-            )
+        100.0 * ratio(part.max(0).unsigned_abs(), whole.unsigned_abs())
     }
 }
 
@@ -64,31 +60,14 @@ fn probe_cost(
     provider: Option<&ProviderId>,
     tokens: TokenCounts,
 ) -> Option<i64> {
-    let (Ok(dedup_key), Ok(session)) = (DedupKey::try_from("probe"), SessionId::try_from("probe"))
-    else {
-        return None;
-    };
-    let event = ParsedEvent {
-        agent: AgentId::CLAUDE,
-        profile: ProfileId::default_profile(),
-        dedup_key,
-        at: Timestamp::UNIX_EPOCH,
-        session,
-        parent_session: None,
-        subagent: None,
-        is_sidechain: false,
-        cwd: None,
-        git_branch: None,
-        source_file: None,
-        approximate: false,
-        provider: provider.cloned(),
-        model: model.clone(),
-        kind: EventKind::Message,
-        tokens,
-        reported_cost: None,
+    let query = PriceQuery {
+        model,
+        provider,
+        tokens: &tokens,
         service_tier: None,
+        modifiers: None,
     };
-    estimate(&event, ctx.pricing()?, &[]).map(|e| e.usd.get())
+    estimate(&query, ctx.pricing()?, &[]).map(|p| p.estimate.usd.get())
 }
 
 /// Probe size: below the long-context price tiers (200k tokens) of every catalog entry.
@@ -135,7 +114,7 @@ fn cache_savings(ctx: &QueryContext, rows: &[Row]) -> Result<Option<i64>, QueryE
             continue;
         };
         let usd = i128::from(cell.cache_read) * i128::from(per_million) / i128::from(PROBE_TOKENS);
-        let usd = i64::try_from(usd).unwrap_or(i64::MAX);
+        let usd = saturating_micros(usd);
         total += usd_to(ctx.currency(), ctx.fx(), utc_date(cell.start), usd)?.0;
     }
     Ok(Some(total))
@@ -183,7 +162,7 @@ pub fn overview(
         usage,
         cache_savings_micros: savings,
         roi,
-        sessions: u64::try_from(sessions).unwrap_or(0),
+        sessions: to_count(sessions)?,
     })
 }
 
@@ -400,7 +379,7 @@ pub fn unresolved_cwds(
         let events: i64 = row.get(1)?;
         out.push(UnresolvedCwd {
             cwd: row.get(0)?,
-            events: u64::try_from(events).unwrap_or(0),
+            events: to_count(events)?,
             api_value_usd_micros: row.get(2)?,
             last_at: micros_ts(row.get(3)?)?,
         });
@@ -479,22 +458,25 @@ pub fn sessions(
         let key = (row.cell.agent, row.cell.k1.clone().unwrap_or_default());
         let acc = by_session.entry(key).or_insert_with(|| SessionAcc {
             profile: row.cell.profile.as_str().to_owned(),
-            first: row.cell.start,
+            first: row.cell.first_at,
             last: row.cell.last_at,
             usage: Usage::default(),
         });
-        acc.first = acc.first.min(row.cell.start);
+        acc.first = acc.first.min(row.cell.first_at);
         acc.last = acc.last.max(row.cell.last_at);
         acc.usage.add(row);
     }
-    let total = u64::try_from(by_session.len()).unwrap_or(0);
+    let total = u64::try_from(by_session.len()).unwrap_or(u64::MAX);
     let mut ordered: Vec<_> = by_session.into_iter().collect();
     ordered.sort_by(|a, b| b.1.last.cmp(&a.1.last).then_with(|| a.0.cmp(&b.0)));
     let skip = usize::try_from(u64::from(page) * u64::from(page_size)).unwrap_or(usize::MAX);
     let take = usize::try_from(page_size).unwrap_or(usize::MAX);
+    let paged: Vec<_> = ordered.into_iter().skip(skip).take(take).collect();
+    let keys: Vec<&(AgentId, String)> = paged.iter().map(|(key, _)| key).collect();
+    let mut metas = session_metas(reader, &keys)?;
     let mut rows = Vec::new();
-    for ((agent, session), acc) in ordered.into_iter().skip(skip).take(take) {
-        let meta = session_meta(reader, agent, &session)?;
+    for ((agent, session), acc) in paged {
+        let meta = metas.remove(&(agent, session.clone())).unwrap_or_default();
         rows.push(SessionRow {
             agent,
             session,
@@ -519,6 +501,7 @@ pub fn sessions(
     })
 }
 
+#[derive(Default)]
 struct SessionMeta {
     project: Option<String>,
     models: Vec<String>,
@@ -527,48 +510,62 @@ struct SessionMeta {
     api_errors: u64,
 }
 
-fn session_meta(
+/// Sessions per metadata query: two parameters each, far below `SQLite`'s parameter limit.
+const META_CHUNK: usize = 200;
+
+/// Project, models and error counts of `keys`, in one query per [`META_CHUNK`] sessions.
+fn session_metas(
     reader: &StoreReader,
-    agent: AgentId,
-    session: &str,
-) -> Result<SessionMeta, QueryError> {
-    let conn = reader.connection();
-    let params = [
-        Value::Text(agent.as_str().to_owned()),
-        Value::Text(session.to_owned()),
-    ];
-    let project: Option<String> = conn.query_row(
-        "SELECT project FROM usage_event WHERE agent = ? AND session = ? AND project IS NOT NULL \
-         GROUP BY project ORDER BY COUNT(*) DESC, project LIMIT 1",
-        params_from_iter(params.iter()),
-        |row| row.get(0),
-    ).or_else(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => Ok(None),
-        other => Err(other),
-    })?;
-    let mut statement = conn.prepare_cached(
-        "SELECT DISTINCT model FROM usage_event WHERE agent = ? AND session = ? ORDER BY model",
-    )?;
-    let models = statement
-        .query_map(params_from_iter(params.iter()), |row| row.get(0))?
-        .collect::<Result<Vec<String>, _>>()?;
-    let (calls, errors): (i64, i64) = conn.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(is_error = 1), 0) FROM tool_call WHERE agent = ? AND session = ?",
-        params_from_iter(params.iter()),
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )?;
-    let api_errors: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM session_signal WHERE agent = ? AND session = ? AND kind = 'api_error'",
-        params_from_iter(params.iter()),
-        |row| row.get(0),
-    )?;
-    Ok(SessionMeta {
-        project,
-        models,
-        tool_calls: u64::try_from(calls).unwrap_or(0),
-        tool_errors: u64::try_from(errors).unwrap_or(0),
-        api_errors: u64::try_from(api_errors).unwrap_or(0),
-    })
+    keys: &[&(AgentId, String)],
+) -> Result<HashMap<(AgentId, String), SessionMeta>, QueryError> {
+    let mut out = HashMap::new();
+    for chunk in keys.chunks(META_CHUNK) {
+        let sql = format!(
+            "WITH page(agent, session) AS (VALUES {}) SELECT p.agent, p.session, \
+             (SELECT project FROM usage_event u WHERE u.agent = p.agent AND u.session = p.session \
+              AND project IS NOT NULL GROUP BY project ORDER BY COUNT(*) DESC, project LIMIT 1), \
+             (SELECT json_group_array(DISTINCT model) FROM usage_event u \
+              WHERE u.agent = p.agent AND u.session = p.session), \
+             (SELECT COUNT(*) FROM tool_call t WHERE t.agent = p.agent AND t.session = p.session), \
+             (SELECT COALESCE(SUM(is_error = 1), 0) FROM tool_call t \
+              WHERE t.agent = p.agent AND t.session = p.session), \
+             (SELECT COUNT(*) FROM session_signal s WHERE s.agent = p.agent \
+              AND s.session = p.session AND s.kind = 'api_error') \
+             FROM page p",
+            vec!["(?, ?)"; chunk.len()].join(", ")
+        );
+        let params = chunk.iter().flat_map(|(agent, session)| {
+            [
+                Value::Text(agent.as_str().to_owned()),
+                Value::Text(session.clone()),
+            ]
+        });
+        let mut statement = reader.connection().prepare(&sql)?;
+        let mut rows = statement.query(params_from_iter(params))?;
+        while let Some(row) = rows.next()? {
+            let agent: String = row.get(0)?;
+            let models: String = row.get(3)?;
+            let mut models: Vec<String> =
+                serde_json::from_str(&models).map_err(|_| QueryError::decode("models", &models))?;
+            models.sort();
+            out.insert(
+                (
+                    agent
+                        .parse()
+                        .map_err(|_| QueryError::decode("agent", &agent))?,
+                    row.get(1)?,
+                ),
+                SessionMeta {
+                    project: row.get(2)?,
+                    models,
+                    tool_calls: to_count(row.get(4)?)?,
+                    tool_errors: to_count(row.get(5)?)?,
+                    api_errors: to_count(row.get(6)?)?,
+                },
+            );
+        }
+    }
+    Ok(out)
 }
 
 /// One usage event of a session drilldown.
@@ -578,8 +575,8 @@ pub struct SessionEvent {
     pub at: Timestamp,
     /// Model.
     pub model: String,
-    /// Event kind (`message`, `tool_result`, …).
-    pub kind: String,
+    /// Event kind.
+    pub kind: EventKind,
     /// Git branch at the time.
     pub git_branch: Option<String>,
     /// Processed tokens.
@@ -588,8 +585,8 @@ pub struct SessionEvent {
     pub output: u64,
     /// API value in the result currency.
     pub api_value_micros: i64,
-    /// `reported`, `estimated` or `unpriced`.
-    pub cost_source: String,
+    /// Which cost is the API value.
+    pub cost_source: CostSource,
 }
 
 /// One tool call of a session drilldown.
@@ -616,8 +613,8 @@ pub struct SessionDetail {
     pub events_truncated: bool,
     /// Tool calls in time order.
     pub tool_calls: Vec<SessionToolCall>,
-    /// Signals (`api_error`, `compaction`) with their time.
-    pub signals: Vec<(Timestamp, String)>,
+    /// Signals with their time.
+    pub signals: Vec<(Timestamp, SignalKind)>,
 }
 
 const DETAIL_LIMIT: i64 = 2000;
@@ -658,15 +655,15 @@ pub fn session_detail(
         events.push(SessionEvent {
             at,
             model: row.get(1)?,
-            kind: row.get(2)?,
+            kind: closed("event kind", &row.get::<_, String>(2)?)?,
             git_branch: row.get(3)?,
-            total_tokens: u64::try_from(tokens).unwrap_or(0),
-            output: u64::try_from(output).unwrap_or(0),
+            total_tokens: to_count(tokens)?,
+            output: to_count(output)?,
             api_value_micros: usd_to(ctx.currency(), ctx.fx(), utc_date(at), usd)?.0,
-            cost_source: row.get(7)?,
+            cost_source: closed("cost source", &row.get::<_, String>(7)?)?,
         });
     }
-    let events_truncated = i64::try_from(events.len()).unwrap_or(0) > DETAIL_LIMIT;
+    let events_truncated = i64::try_from(events.len()).unwrap_or(i64::MAX) > DETAIL_LIMIT;
     events.truncate(usize::try_from(DETAIL_LIMIT).unwrap_or(0));
     let mut statement = conn.prepare(
         "SELECT at_us, tool_name, mcp_server, is_error FROM tool_call \
@@ -689,7 +686,10 @@ pub fn session_detail(
     let mut rows = statement.query(params_from_iter(params.iter()))?;
     let mut signals = Vec::new();
     while let Some(row) = rows.next()? {
-        signals.push((micros_ts(row.get(0)?)?, row.get(1)?));
+        signals.push((
+            micros_ts(row.get(0)?)?,
+            closed("signal kind", &row.get::<_, String>(1)?)?,
+        ));
     }
     Ok(SessionDetail {
         currency: ctx.currency(),
@@ -806,8 +806,8 @@ fn tool_rows(
     while let Some(row) = rows.next()? {
         let (tool_name, mcp_server) = split(row.get(0)?, row.get(1)?);
         let (calls, errors, sessions): (i64, i64, i64) = (row.get(2)?, row.get(3)?, row.get(4)?);
-        let calls = u64::try_from(calls).unwrap_or(0);
-        let errors = u64::try_from(errors).unwrap_or(0);
+        let calls = to_count(calls)?;
+        let errors = to_count(errors)?;
         out.push(ToolRow {
             tool_name,
             mcp_server,
@@ -818,7 +818,7 @@ fn tool_rows(
             } else {
                 100.0 * ratio(errors, calls)
             },
-            sessions: u64::try_from(sessions).unwrap_or(0),
+            sessions: to_count(sessions)?,
         });
     }
     Ok(out)
@@ -938,7 +938,7 @@ pub fn signals(
         let date = ctx.zone().to_datetime(micros_ts(row.get(0)?)?).date();
         let kind: String = row.get(1)?;
         let n: i64 = row.get(2)?;
-        let n = u64::try_from(n).unwrap_or(0);
+        let n = to_count(n)?;
         if let Some(day) = days.get_mut(&date) {
             match kind.as_str() {
                 "api_error" => day.api_errors += n,
@@ -966,7 +966,7 @@ pub fn signals(
                 .parse()
                 .map_err(|_| QueryError::decode("agent", &agent))?,
             session: row.get(1)?,
-            compactions: u64::try_from(n).unwrap_or(0),
+            compactions: to_count(n)?,
         });
     }
     Ok(SignalsReport {

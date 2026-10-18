@@ -30,7 +30,7 @@ impl SecretStore for FakeStore {
         match self.0.get(service) {
             None => Ok(None),
             Some(Ok(text)) => Ok(Some(SecretString::from(text.clone()))),
-            Some(Err(())) => Err(SecretError::Store("access denied".to_owned())),
+            Some(Err(())) => Err(SecretError::Denied),
         }
     }
 }
@@ -195,7 +195,81 @@ fn a_denied_keychain_with_no_file_is_an_error() -> TestResult {
 
     let result = ClaudeCredentials::load(&CredentialLocation::default_profile(&home), &store);
 
-    assert!(matches!(result, Err(CredentialsError::Secret(_))));
+    let error = result.err().ok_or("expected an error")?;
+    assert!(error.is_keychain_denied());
+
+    // Once denied, the daemon asks the file sources only.
+    let location = CredentialLocation::default_profile(&home).without_keychain();
+    assert!(
+        location
+            .sources()
+            .iter()
+            .all(|s| matches!(s, CredentialSource::File { .. }))
+    );
+    assert!(ClaudeCredentials::load(&location, &store)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn expiry_comes_from_expires_at() -> TestResult {
+    let fixture = ClaudeCredentials::parse(&fixture_text("claude_credentials.json")?)?
+        .ok_or("expected credentials")?;
+    assert_eq!(
+        fixture.expires_at(),
+        Some(jiff::Timestamp::from_millisecond(1_893_456_000_000)?)
+    );
+    assert!(!fixture.is_expired("2029-12-31T23:59:59Z".parse()?));
+    assert!(fixture.is_expired("2030-01-01T00:00:00Z".parse()?));
+
+    for json in [
+        r#"{"claudeAiOauth":{"accessToken":"t"}}"#,
+        r#"{"claudeAiOauth":{"accessToken":"t","expiresAt":"soon"}}"#,
+    ] {
+        let credentials = ClaudeCredentials::parse(json)?.ok_or("expected credentials")?;
+        assert_eq!(credentials.expires_at(), None, "{json}");
+        assert!(!credentials.is_expired(jiff::Timestamp::MAX));
+    }
+    Ok(())
+}
+
+#[test]
+fn a_file_other_users_may_write_is_refused() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_dir, config_dir) = temp_home()?;
+    let file = config_dir.join(".credentials.json");
+    std::fs::write(&file, token_json("from-file"))?;
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o666))?;
+    let location = CredentialLocation::config_dir(&config_dir);
+
+    let result = ClaudeCredentials::load(&location, &FakeStore::default());
+    assert!(matches!(result, Err(CredentialsError::Insecure { .. })));
+
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
+    assert_eq!(
+        token_of(ClaudeCredentials::load(&location, &FakeStore::default())?)?,
+        "from-file"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_symlinked_file_is_checked_at_its_target() -> TestResult {
+    let (_dir, config_dir) = temp_home()?;
+    std::fs::write(config_dir.join("real.json"), token_json("via-link"))?;
+    std::os::unix::fs::symlink("real.json", config_dir.join(".credentials.json"))?;
+    std::fs::create_dir(config_dir.join("dir"))?;
+    let location = CredentialLocation::config_dir(&config_dir);
+
+    assert_eq!(
+        token_of(ClaudeCredentials::load(&location, &FakeStore::default())?)?,
+        "via-link"
+    );
+
+    std::fs::remove_file(config_dir.join(".credentials.json"))?;
+    std::os::unix::fs::symlink("dir", config_dir.join(".credentials.json"))?;
+    let result = ClaudeCredentials::load(&location, &FakeStore::default());
+    assert!(matches!(result, Err(CredentialsError::Insecure { .. })));
     Ok(())
 }
 

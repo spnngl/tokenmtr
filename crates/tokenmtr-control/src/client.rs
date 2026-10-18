@@ -1,4 +1,9 @@
 //! The control client: connect, handshake, request/response, event stream.
+//!
+//! Every step except waiting for pushed events is bounded, so a wedged daemon makes callers
+//! fail with [`ClientError::Timeout`] instead of hanging.
+
+use std::time::Duration;
 
 use tokenmtr_core::{AgentId, SinkId};
 use tokenmtr_platform::{ControlStream, ControlTransport, LineReader, LineWriter};
@@ -9,6 +14,39 @@ use crate::protocol::{
     BackupSummary, ClientInfo, DaemonStatus, Event, ExportSummary, IssueList, PROTOCOL_VERSION,
     QuotaSummary, Request, Response, ScanSummary,
 };
+
+/// Bound on connecting plus the `Hello` handshake.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bound on requests that only read daemon state or flip a flag.
+const QUICK_TIMEOUT: Duration = Duration::from_secs(10);
+/// Bound on requests that scan, export, back up or reach the network.
+const WORK_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// How long `request` may take before the daemon counts as unresponsive.
+const fn request_timeout(request: &Request) -> Duration {
+    match request {
+        Request::ScanNow { .. }
+        | Request::ExportNow { .. }
+        | Request::BackupNow
+        | Request::RefreshQuota => WORK_TIMEOUT,
+        Request::Hello { .. }
+        | Request::Status
+        | Request::Reload
+        | Request::Issues
+        | Request::Subscribe
+        | Request::Shutdown => QUICK_TIMEOUT,
+    }
+}
+
+/// Runs `step`, failing with [`ClientError::Timeout`] after `limit`.
+async fn within<T>(
+    limit: Duration,
+    step: impl Future<Output = Result<T, ClientError>>,
+) -> Result<T, ClientError> {
+    tokio::time::timeout(limit, step)
+        .await
+        .map_err(|_| ClientError::Timeout(limit))?
+}
 
 /// What the daemon reported in `Welcome`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,27 +63,37 @@ pub struct Client {
     reader: LineReader<OwnedReadHalf>,
     writer: LineWriter<OwnedWriteHalf>,
     daemon: DaemonInfo,
+    /// A timed-out request may still be answered later, so the stream is out of step.
+    timed_out: bool,
 }
 
 impl Client {
-    /// Connects through `transport` and completes the handshake.
+    /// Connects through `transport` and completes the handshake, within 2 s.
     ///
     /// # Errors
     /// [`ClientError::Connect`] when no daemon listens, [`ClientError::Incompatible`] when the
-    /// protocol versions differ (the daemon sends no data then), or a transport error.
+    /// protocol versions differ (the daemon sends no data then), [`ClientError::Timeout`], or a
+    /// transport error.
     pub async fn connect(
         transport: &ControlTransport,
         client: ClientInfo,
     ) -> Result<Self, ClientError> {
-        let stream = transport.connect().await.map_err(ClientError::Connect)?;
-        Self::over(stream, client).await
+        within(CONNECT_TIMEOUT, async {
+            let stream = transport.connect().await.map_err(ClientError::Connect)?;
+            Self::handshake(stream, client).await
+        })
+        .await
     }
 
-    /// Handshakes over an already connected stream.
+    /// Handshakes over an already connected stream, within 2 s.
     ///
     /// # Errors
     /// As [`Client::connect`], except for the connect failure.
     pub async fn over(stream: ControlStream, client: ClientInfo) -> Result<Self, ClientError> {
+        within(CONNECT_TIMEOUT, Self::handshake(stream, client)).await
+    }
+
+    async fn handshake(stream: ControlStream, client: ClientInfo) -> Result<Self, ClientError> {
         let (read, write) = stream.into_split();
         let mut reader = LineReader::new(read);
         let mut writer = LineWriter::new(write);
@@ -66,6 +114,7 @@ impl Client {
                     daemon_version,
                     store_schema,
                 },
+                timed_out: false,
             }),
             Response::Incompatible {
                 daemon_protocol,
@@ -92,13 +141,24 @@ impl Client {
     /// Sends one request and returns its response. A [`Response::Error`] becomes
     /// [`ClientError::Remote`].
     ///
+    /// State reads time out after 10 s; scans, exports, backups and quota refreshes after
+    /// 5 min. After a timeout every further request fails with [`ClientError::Closed`].
+    ///
     /// # Errors
-    /// Transport failures, a closed connection, or a daemon-side error.
+    /// Transport failures, a closed connection, a timeout, or a daemon-side error.
     pub async fn request(&mut self, request: &Request) -> Result<Response, ClientError> {
-        self.writer
-            .write_line(&serde_json::to_string(request)?)
-            .await?;
-        match read_response(&mut self.reader).await? {
+        if self.timed_out {
+            return Err(ClientError::Closed);
+        }
+        let line = serde_json::to_string(request)?;
+        let (reader, writer) = (&mut self.reader, &mut self.writer);
+        let answer = within(request_timeout(request), async {
+            writer.write_line(&line).await?;
+            read_response(reader).await
+        })
+        .await;
+        self.timed_out = matches!(answer, Err(ClientError::Timeout(_)));
+        match answer? {
             Response::Error { kind, message } => Err(ClientError::Remote { kind, message }),
             response => Ok(response),
         }

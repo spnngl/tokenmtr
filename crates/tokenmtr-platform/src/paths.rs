@@ -72,8 +72,18 @@ impl Layout {
                     home.join("Documents"),
                     home.join("Desktop"),
                     home.join("Downloads"),
+                    // Photos, Apple Music and TV libraries live here, behind their own consents.
+                    home.join("Pictures"),
+                    home.join("Movies"),
+                    home.join("Music"),
+                    // iCloud Drive.
                     library.join("Mobile Documents"),
                     library.join("CloudStorage"),
+                    // Other apps' data ("access data from other apps", macOS 14).
+                    library.join("Containers"),
+                    library.join("Group Containers"),
+                    // Removable and network volumes.
+                    Utf8PathBuf::from("/Volumes"),
                 ]
             }
         }
@@ -187,7 +197,8 @@ impl Paths {
     }
 
     /// Folders the OS guards with per-app consent prompts (D50): on macOS Documents, Desktop,
-    /// Downloads, iCloud Drive and cloud storage.
+    /// Downloads, Pictures, Movies, Music, iCloud Drive, cloud storage, other apps' containers
+    /// and `/Volumes`.
     #[must_use]
     pub fn protected(&self) -> Vec<Utf8PathBuf> {
         self.layout.protected(&self.home)
@@ -199,10 +210,16 @@ impl Paths {
     /// case-insensitive); symlinks are not resolved, so pass an already-canonical path.
     #[must_use]
     pub fn is_protected(&self, path: &Utf8Path) -> bool {
-        self.protected()
-            .iter()
-            .any(|folder| starts_with_ignore_case(path, folder))
+        self.protected().iter().any(|folder| is_under(path, folder))
     }
+}
+
+/// Whether `path` is `folder` or lies under it, comparing components lexically and ASCII
+/// case-insensitively (default macOS volumes are case-insensitive). Symlinks and `..` are not
+/// resolved: the check must run before the filesystem is touched.
+#[must_use]
+pub fn is_under(path: &Utf8Path, folder: &Utf8Path) -> bool {
+    starts_with_ignore_case(path, folder)
 }
 
 fn starts_with_ignore_case(path: &Utf8Path, prefix: &Utf8Path) -> bool {
@@ -273,11 +290,15 @@ mod tests {
     }
 
     #[test]
-    fn protected_lists_every_folder_under_home() {
+    fn protected_lists_home_folders_and_volumes() {
         let p = paths(&[("HOME", "/Users/me")]).unwrap();
         let protected = p.protected();
-        assert_eq!(protected.len(), 5);
-        assert!(protected.iter().all(|folder| folder.starts_with(p.home())));
+        assert_eq!(protected.len(), 11);
+        assert!(
+            protected
+                .iter()
+                .all(|folder| folder.starts_with(p.home()) || folder == "/Volumes")
+        );
         assert!(protected.iter().all(|folder| p.is_protected(folder)));
     }
 
@@ -291,6 +312,13 @@ mod tests {
             "/Users/me/Downloads",
             "/Users/me/Library/Mobile Documents/com~apple~CloudDocs/x",
             "/Users/me/Library/CloudStorage/Dropbox/tokenmtr",
+            "/Users/me/Pictures/x",
+            "/Users/me/Movies",
+            "/Users/me/Music/y",
+            "/Users/me/Library/Containers/com.apple.mail",
+            "/Users/me/Library/Group Containers/g",
+            "/Volumes/External/repo",
+            "/volumes/x",
         ] {
             assert!(p.is_protected(Utf8Path::new(hit)), "{hit}");
         }
@@ -299,6 +327,8 @@ mod tests {
             "/Users/me",
             "/Users/me/Library/Application Support/dev.tokenmtr.app/exports",
             "/Users/other/Documents",
+            "/Users/me/src/Pictures",
+            "/Vol",
         ] {
             assert!(!p.is_protected(Utf8Path::new(miss)), "{miss}");
         }

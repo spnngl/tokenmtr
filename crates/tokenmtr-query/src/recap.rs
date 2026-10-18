@@ -63,9 +63,22 @@ impl BudgetSpec {
     }
 }
 
+/// Whether a budget's money could be measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetState {
+    /// Spent and projected amounts are real.
+    Measured,
+    /// The budget's currency needs an FX rate and the store has none yet (before the first ECB
+    /// fetch): only the limit and period are real; spent, projected and percents are zero.
+    NoFxRate,
+}
+
 /// One budget meter (D34).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BudgetView {
+    /// Whether the money fields below are measured.
+    pub state: BudgetState,
     /// Budget id.
     pub id: String,
     /// Calendar period.
@@ -115,8 +128,8 @@ fn remaining_days(range: DateRange, today: jiff::civil::Date) -> u32 {
 }
 
 /// Status of every budget for its current calendar period in the context's zone. Money is
-/// converted to the budget's currency with the D27 rate of each day; a EUR budget with no FX
-/// rate at all is omitted.
+/// converted to the budget's currency with the D27 rate of each day; a budget that needs an FX
+/// rate when the store has none is listed as [`BudgetState::NoFxRate`].
 ///
 /// # Errors
 ///
@@ -129,9 +142,12 @@ pub fn budgets(
     let today = ctx.today();
     let mut out = Vec::new();
     for spec in specs {
-        match one_budget(reader, ctx, spec, today) {
+        let range = period_of(spec.budget.period())
+            .containing(today, ctx.week_start())
+            .map_err(|_| QueryError::decode("budget period", today))?;
+        match one_budget(reader, ctx, spec, range, today) {
             Ok(view) => out.push(view),
-            Err(QueryError::NoFxRate { .. }) => {}
+            Err(QueryError::NoFxRate { .. }) => out.push(unmeasured(spec, range)),
             Err(e) => return Err(e),
         }
     }
@@ -142,14 +158,12 @@ fn one_budget(
     reader: &StoreReader,
     ctx: &QueryContext,
     spec: &BudgetSpec,
+    range: DateRange,
     today: jiff::civil::Date,
 ) -> Result<BudgetView, QueryError> {
     let budget = &spec.budget;
     let currency = budget.amount().currency();
     let local = ctx.in_currency(currency);
-    let range = period_of(budget.period())
-        .containing(today, ctx.week_start())
-        .map_err(|_| QueryError::decode("budget period", today))?;
     let measure = |usage: &crate::usage::Usage| match budget.measure() {
         BudgetMeasure::Paid => usage.paid_micros,
         BudgetMeasure::ApiValue => usage.api_value_micros,
@@ -179,6 +193,7 @@ fn one_budget(
         remaining_days(range, today),
     )?;
     Ok(BudgetView {
+        state: BudgetState::Measured,
         id: budget.id().as_str().to_owned(),
         period: budget.period(),
         measure: budget.measure(),
@@ -191,6 +206,24 @@ fn one_budget(
         projected_micros: status.projected.micros(),
         projected_percent: status.projected_percent,
     })
+}
+
+fn unmeasured(spec: &BudgetSpec, range: DateRange) -> BudgetView {
+    let budget = &spec.budget;
+    BudgetView {
+        state: BudgetState::NoFxRate,
+        id: budget.id().as_str().to_owned(),
+        period: budget.period(),
+        measure: budget.measure(),
+        currency: budget.amount().currency(),
+        period_start: range.start(),
+        period_end: range.end(),
+        limit_micros: budget.amount().micros(),
+        spent_micros: 0,
+        percent: 0,
+        projected_micros: 0,
+        projected_percent: 0,
+    }
 }
 
 /// Everything the recap needs from the user's config.
@@ -339,7 +372,7 @@ fn live_events(
         let at: i64 = row.get(2)?;
         let n = |i| -> Result<u64, QueryError> {
             let v: i64 = row.get(i)?;
-            Ok(u64::try_from(v).unwrap_or(0))
+            u64::try_from(v).map_err(|_| QueryError::decode("token count", v))
         };
         let cost: Option<i64> = row.get(9)?;
         events.push(UsageEvent {
@@ -412,9 +445,12 @@ fn last_activity(
     selection: Selection,
 ) -> Result<Option<Timestamp>, QueryError> {
     let (sql, params) = match selection {
-        Selection::All => ("SELECT MAX(at_us) FROM usage_event", Vec::new()),
+        Selection::All => (
+            "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0",
+            Vec::new(),
+        ),
         Selection::Agent(agent) => (
-            "SELECT MAX(at_us) FROM usage_event WHERE agent = ?",
+            "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0 AND agent = ?",
             vec![Value::Text(agent.as_str().to_owned())],
         ),
     };

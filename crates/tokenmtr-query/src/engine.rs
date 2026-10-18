@@ -12,8 +12,8 @@ use jiff::civil::Date;
 use rusqlite::types::Value;
 use tokenmtr_core::fx::utc_date;
 use tokenmtr_core::{
-    AgentId, Currency, EurPerUsd, ProfileId, ProviderId, Subscription, UsdMicros, convert,
-    prorated_fee,
+    AgentId, Currency, EurPerUsd, ProfileId, ProviderId, Subscription, TokenCounts, UsdMicros,
+    convert, prorated_fee, saturating_micros,
 };
 use tokenmtr_store::StoreReader;
 
@@ -75,16 +75,22 @@ pub(crate) struct Cell {
     pub estimated: u64,
     pub unpriced: u64,
     pub approximate: u64,
+    pub first_at: Timestamp,
     pub last_at: Timestamp,
 }
 
 impl Cell {
+    /// The cell's tokens as [`TokenCounts::total_tokens`] counts them (saturating).
     pub(crate) const fn total_tokens(&self) -> u64 {
-        self.input_uncached
-            + self.cache_read
-            + self.cache_write_5m
-            + self.cache_write_1h
-            + self.output
+        TokenCounts {
+            input_uncached: self.input_uncached,
+            cache_read: self.cache_read,
+            cache_write_5m: self.cache_write_5m,
+            cache_write_1h: self.cache_write_1h,
+            output: self.output,
+            reasoning: self.reasoning,
+        }
+        .total_tokens()
     }
 }
 
@@ -136,7 +142,20 @@ fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
 }
 
 fn count(row: &rusqlite::Row<'_>, i: usize) -> Result<u64, QueryError> {
-    let v: i64 = row.get(i)?;
+    to_count(row.get(i)?)
+}
+
+/// A closed set stored by its snake-case name (a serde unit enum such as `CostSource`).
+pub(crate) fn closed<T: serde::de::DeserializeOwned>(
+    what: &'static str,
+    text: &str,
+) -> Result<T, QueryError> {
+    T::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(text))
+        .map_err(|_| QueryError::decode(what, text))
+}
+
+/// A SQL count or token sum as `u64`; a negative value means a corrupt store.
+pub(crate) fn to_count(v: i64) -> Result<u64, QueryError> {
     u64::try_from(v).map_err(|_| QueryError::decode("count", v))
 }
 
@@ -151,7 +170,8 @@ pub(crate) fn where_sql(
     scope: Scope,
 ) -> Result<(String, Vec<Value>), QueryError> {
     let (from, to) = filters.range().instants(ctx.zone())?;
-    let mut sql = String::from("at_us >= ? AND at_us < ?");
+    // Superseded stats-cache rows stay stored for the export but never count (D38).
+    let mut sql = String::from("at_us >= ? AND at_us < ? AND superseded = 0");
     let mut params = vec![
         Value::Integer(from.as_microsecond()),
         Value::Integer(to.as_microsecond()),
@@ -177,7 +197,7 @@ fn query_cells(
          SUM(cache_write_5m), SUM(cache_write_1h), SUM(output), SUM(reasoning), \
          COALESCE(SUM(cost_api_usd_micros), 0), SUM(cost_source = 'reported'), \
          SUM(cost_source = 'estimated'), SUM(cost_source = 'unpriced'), SUM(approximate), \
-         MAX(at_us) FROM usage_event WHERE "
+         MIN(at_us), MAX(at_us) FROM usage_event WHERE "
     );
     let (conditions, params) = where_sql(ctx, filters, scope)?;
     sql.push_str(&conditions);
@@ -217,20 +237,22 @@ fn query_cells(
             estimated: count(row, 15)?,
             unpriced: count(row, 16)?,
             approximate: count(row, 17)?,
-            last_at: micros_ts(row.get(18)?)?,
+            first_at: micros_ts(row.get(18)?)?,
+            last_at: micros_ts(row.get(19)?)?,
         });
     }
     Ok(cells)
 }
 
-/// First matching subscription wins, like `tokenmtr_core::billing_mode`.
-fn mode_of(subs: &[Subscription], cell: &Cell, utc: Date) -> Mode {
+/// First matching subscription wins, like `tokenmtr_core::billing_mode`: coverage uses the
+/// cell's `local` date, the display-zone day its fee is charged on (D8, D28).
+fn mode_of(subs: &[Subscription], cell: &Cell, local: Date) -> Mode {
     subs.iter()
         .position(|s| {
             s.agents().contains(&cell.agent)
                 && s.profiles().is_none_or(|p| p.contains(&cell.profile))
                 && cell.provider.as_ref() == Some(s.provider())
-                && s.is_active_on(utc)
+                && s.is_active_on(local)
         })
         .map_or(Mode::Api, Mode::Subscription)
 }
@@ -257,10 +279,14 @@ pub(crate) fn usd_to(
 fn eur_to_usd(eur: i64, rate: EurPerUsd) -> i64 {
     let rate = i128::from(rate.scaled());
     let usd = (i128::from(eur) * 1_000_000_000 + rate / 2) / rate;
-    i64::try_from(usd).unwrap_or(i64::MAX)
+    saturating_micros(usd)
 }
 
 /// The fee of `sub` on local `day` in `currency` (0 outside its active range).
+///
+/// A fee belongs to a local day, not to an instant, so it converts at the rate before that day;
+/// API value converts at the rate before the event's UTC date (D27), as the export documents.
+/// The two dates differ only for events near midnight.
 fn fee_in(
     ctx: &QueryContext,
     currency: Currency,
@@ -296,7 +322,7 @@ fn split(fee: i64, values: &[i64], total: i64) -> Vec<i64> {
             let upto = (fee * cumulative + total / 2) / total;
             let part = upto - given;
             given = upto;
-            i64::try_from(part).unwrap_or(0)
+            saturating_micros(part)
         })
         .collect()
 }
@@ -320,7 +346,7 @@ pub(crate) fn fetch(
     for cell in query_cells(reader, ctx, filters, dim, scope)? {
         let utc = utc_date(cell.start);
         let local = ctx.zone().to_datetime(cell.start).date();
-        let mode = mode_of(subs, &cell, utc);
+        let mode = mode_of(subs, &cell, local);
         let keep = match (filters.billing_filter(), mode) {
             (BillingFilter::Any, _)
             | (BillingFilter::Api, Mode::Api)
@@ -367,12 +393,14 @@ fn allocate_fees(
     if scoped {
         let all = fetch_plain(reader, ctx, &Filters::new(filters.range()))?;
         for (key, usd) in all {
-            *denominators.entry(key).or_default() += usd;
+            let total = denominators.entry(key).or_default();
+            *total = total.saturating_add(usd);
         }
     } else {
         for row in &fetched.rows {
             if let Mode::Subscription(i) = row.mode {
-                *denominators.entry((i, row.local)).or_default() += row.cell.cost_usd;
+                let total = denominators.entry((i, row.local)).or_default();
+                *total = total.saturating_add(row.cell.cost_usd);
             }
         }
     }
@@ -414,7 +442,7 @@ fn allocate_fees(
                     .iter()
                     .map(|v| {
                         let part = (i128::from(fee) * i128::from(*v) + total / 2) / total;
-                        i64::try_from(part).unwrap_or(0)
+                        saturating_micros(part)
                     })
                     .collect()
             } else {
@@ -422,8 +450,8 @@ fn allocate_fees(
             };
             for (&k, part) in indices.iter().zip(parts) {
                 let row = &mut fetched.rows[k];
-                row.paid += part;
-                row.fee += part;
+                row.paid = row.paid.saturating_add(part);
+                row.fee = row.fee.saturating_add(part);
                 row.approximate |= fee_approx;
             }
         }
@@ -443,12 +471,9 @@ fn fetch_plain(
     Ok(query_cells(reader, ctx, filters, Dim::None, Scope::All)?
         .into_iter()
         .filter_map(|cell| {
-            let utc = utc_date(cell.start);
-            match mode_of(ctx.subscriptions(), &cell, utc) {
-                Mode::Subscription(i) => {
-                    let local = ctx.zone().to_datetime(cell.start).date();
-                    Some(((i, local), cell.cost_usd))
-                }
+            let local = ctx.zone().to_datetime(cell.start).date();
+            match mode_of(ctx.subscriptions(), &cell, local) {
+                Mode::Subscription(i) => Some(((i, local), cell.cost_usd)),
                 Mode::Api => None,
             }
         })

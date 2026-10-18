@@ -33,6 +33,42 @@ impl TryFrom<String> for ClientName {
     }
 }
 
+/// One profile restriction. Profile names are unique only within an agent (D30), so a profile
+/// can be pinned to its agent: `claude/work`. A bare `work` matches that name under any agent.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ProfileSelector {
+    /// The agent the profile belongs to; `None` matches any agent.
+    pub agent: Option<AgentId>,
+    /// The profile name.
+    pub profile: ProfileId,
+}
+
+impl ProfileSelector {
+    /// Whether the selector picks `profile` of `agent`.
+    #[must_use]
+    pub fn matches(&self, agent: AgentId, profile: &ProfileId) -> bool {
+        self.agent.is_none_or(|a| a == agent) && self.profile == *profile
+    }
+}
+
+impl FromStr for ProfileSelector {
+    type Err = IdError;
+
+    /// Parses `agent/profile` or a bare `profile`.
+    fn from_str(value: &str) -> Result<Self, IdError> {
+        Ok(match value.split_once('/') {
+            Some((agent, profile)) => Self {
+                agent: Some(agent.parse()?),
+                profile: profile.parse()?,
+            },
+            None => Self {
+                agent: None,
+                profile: value.parse()?,
+            },
+        })
+    }
+}
+
 /// Restricts events by how they are billed (derived at query time, D28).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,7 +88,7 @@ pub enum BillingFilter {
 pub struct Filters {
     range: DateRange,
     agents: Vec<AgentId>,
-    profiles: Vec<ProfileId>,
+    profiles: Vec<ProfileSelector>,
     models: Vec<ModelId>,
     projects: Vec<ProjectKey>,
     clients: Vec<ClientName>,
@@ -81,9 +117,25 @@ impl Filters {
         self
     }
 
-    /// Restricts to these profiles.
+    /// Restricts to these profile names, under any agent.
     #[must_use]
     pub fn profiles(mut self, profiles: impl IntoIterator<Item = ProfileId>) -> Self {
+        self.profiles = profiles
+            .into_iter()
+            .map(|profile| ProfileSelector {
+                agent: None,
+                profile,
+            })
+            .collect();
+        self
+    }
+
+    /// Restricts to these profiles, each pinned to its agent or not.
+    #[must_use]
+    pub fn profile_selectors(
+        mut self,
+        profiles: impl IntoIterator<Item = ProfileSelector>,
+    ) -> Self {
         self.profiles = profiles.into_iter().collect();
         self
     }
@@ -141,10 +193,26 @@ impl Filters {
         &self.agents
     }
 
-    /// The profiles restriction (empty: all).
+    /// Whether a profile restriction is set.
     #[must_use]
-    pub fn profile_list(&self) -> &[ProfileId] {
-        &self.profiles
+    pub const fn restricts_profiles(&self) -> bool {
+        !self.profiles.is_empty()
+    }
+
+    /// The restricted profile names that apply to `agent` (empty when none or unrestricted).
+    #[must_use]
+    pub fn profiles_of(&self, agent: AgentId) -> Vec<ProfileId> {
+        let mut out: Vec<ProfileId> = Vec::new();
+        for s in self
+            .profiles
+            .iter()
+            .filter(|s| s.agent.is_none_or(|a| a == agent))
+        {
+            if !out.contains(&s.profile) {
+                out.push(s.profile.clone());
+            }
+        }
+        out
     }
 
     /// Whether anything besides the range restricts the selection. When false, paid cost
@@ -172,7 +240,26 @@ impl Filters {
     /// Only the agent and profile conditions, for tables without model or project columns.
     pub(crate) fn sql_agent_profile(&self, sql: &mut String, params: &mut Vec<Value>) {
         self.sql_agents(sql, params);
-        list(sql, params, "profile", &self.profiles);
+        if self.profiles.is_empty() {
+            return;
+        }
+        let terms: Vec<&str> = self
+            .profiles
+            .iter()
+            .map(|s| {
+                if let Some(agent) = s.agent {
+                    params.push(Value::Text(agent.as_str().to_owned()));
+                    params.push(Value::Text(s.profile.as_str().to_owned()));
+                    "(agent = ? AND profile = ?)"
+                } else {
+                    params.push(Value::Text(s.profile.as_str().to_owned()));
+                    "profile = ?"
+                }
+            })
+            .collect();
+        sql.push_str(" AND (");
+        sql.push_str(&terms.join(" OR "));
+        sql.push(')');
     }
 
     /// Only the agent condition, for tables without a profile column.
@@ -202,7 +289,7 @@ pub struct FilterSpec {
     pub range: Option<RangeSpec>,
     /// Agent ids.
     pub agents: Vec<String>,
-    /// Profile ids.
+    /// Profiles: `agent/profile`, or a bare profile name matching it under any agent.
     pub profiles: Vec<String>,
     /// Model ids.
     pub models: Vec<String>,
@@ -241,7 +328,7 @@ impl Filters {
         Ok(Self {
             range,
             agents: parse_all("agent", &spec.agents, AgentId::from_str)?,
-            profiles: parse_all("profile", &spec.profiles, ProfileId::from_str)?,
+            profiles: parse_all("profile", &spec.profiles, ProfileSelector::from_str)?,
             models: parse_all("model", &spec.models, ModelId::from_str)?,
             projects: parse_all("project", &spec.projects, ProjectKey::from_str)?,
             clients: parse_all("client", &spec.clients, |v| {

@@ -41,12 +41,19 @@ pub enum RemoteError {
     /// An endpoint base URL does not parse.
     #[error("invalid endpoint URL {0:?}")]
     BadUrl(String),
+    /// A request URL is not on the allow-list: an [`crate::ALLOWED_HOSTS`] host over HTTPS, or a
+    /// loopback host (D13). Carries the host only.
+    #[error("host {0:?} is not allowed")]
+    HostNotAllowed(String),
     /// Transport failure.
     #[error("network error: {0}")]
     Network(NetworkKind),
     /// The server answered with a status the caller does not handle.
     #[error("unexpected HTTP status {0}")]
     Status(u16),
+    /// HTTP 304 to a request that has no cached copy to fall back on.
+    #[error("not modified, and there is no cached copy")]
+    NotModified,
     /// The body is larger than the endpoint's cap.
     #[error("response body exceeds {limit} bytes")]
     TooLarge {
@@ -56,4 +63,33 @@ pub enum RemoteError {
     /// The body does not have the expected shape.
     #[error("malformed response: {0}")]
     Malformed(&'static str),
+}
+
+/// Where and how a JSON document failed to parse. Keeps the category and position only: serde
+/// messages quote the offending value, which must not be echoed (D55).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct JsonPosition {
+    category: serde_json::error::Category,
+    line: usize,
+    column: usize,
+}
+
+impl From<serde_json::Error> for JsonPosition {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            category: error.classify(),
+            line: error.line(),
+            column: error.column(),
+        }
+    }
+}
+
+impl std::fmt::Display for JsonPosition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} at line {}, column {}",
+            self.category, self.line, self.column
+        )
+    }
 }

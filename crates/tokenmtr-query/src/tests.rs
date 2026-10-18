@@ -825,6 +825,114 @@ fn sessions_tools_signals_and_daily_aggregates() {
     assert!((m.iter().map(|r| r.share_percent).sum::<f64>() - 100.0).abs() < 1e-9);
 }
 
+#[test]
+fn superseded_aggregates_never_count() {
+    let seed = Seed::new();
+    let mut agg = reported(seed.ev("agg", ts("2026-02-02T00:00:00Z")), 1_000);
+    agg.kind = EventKind::DailyAggregate;
+    agg.approximate = true;
+    seed.put(&[agg, reported(seed.ev("x", ts("2026-02-02T10:07:00Z")), 100)]);
+    let flagged = seed
+        .store()
+        .supersede_daily_aggregates_covered_by_transcripts(
+            AgentId::CLAUDE,
+            &ProfileId::default_profile(),
+            &TimeZone::UTC,
+        )
+        .unwrap();
+    assert_eq!(flagged, 1);
+    let reader = seed.reader();
+    let c = usd_ctx("UTC", "2026-02-03T00:00:00Z");
+    let f = Filters::new(DateRange::day(date(2026, 2, 2)).unwrap());
+    let t = overview(&reader, &c, &f).unwrap();
+    assert_eq!((t.usage.events, t.usage.api_value_micros), (1, 100));
+}
+
+#[test]
+fn profile_selectors_pin_the_agent_and_sessions_start_at_their_first_event() {
+    let seed = Seed::new();
+    let work = || ProfileId::try_from("work".to_owned()).unwrap();
+    let mut claude = seed.ev("c", ts("2026-02-02T10:07:00Z"));
+    claude.profile = work();
+    let mut pi = seed.ev("p", ts("2026-02-02T10:08:00Z"));
+    pi.agent = AgentId::PI;
+    pi.id = EventId::new(&seed.machine, AgentId::PI, &pi.dedup_key);
+    pi.profile = work();
+    seed.put(&[claude, pi, seed.ev("d", ts("2026-02-02T10:09:00Z"))]);
+    let reader = seed.reader();
+    let c = usd_ctx("UTC", "2026-02-03T00:00:00Z");
+    let base = Filters::new(DateRange::day(date(2026, 2, 2)).unwrap());
+    let count = |f: &Filters| overview(&reader, &c, f).unwrap().usage.events;
+    assert_eq!(count(&base.clone().profiles([work()])), 2);
+    let spec = |profiles: &[&str]| FilterSpec {
+        range: Some(RangeSpec::Custom {
+            start: date(2026, 2, 2),
+            end: date(2026, 2, 3),
+        }),
+        profiles: profiles.iter().map(|p| (*p).to_owned()).collect(),
+        ..FilterSpec::default()
+    };
+    let pinned = Filters::parse(&spec(&["claude/work"]), &c).unwrap();
+    assert_eq!(count(&pinned), 1);
+    assert_eq!(pinned.profiles_of(AgentId::PI), Vec::<ProfileId>::new());
+    let both = Filters::parse(&spec(&["claude/work", "pi/work"]), &c).unwrap();
+    assert_eq!(count(&both), 2);
+    assert!(Filters::parse(&spec(&["nope/work"]), &c).is_err());
+
+    let page = sessions(&reader, &c, &base, 0, 50).unwrap();
+    let started = |agent: AgentId| {
+        page.rows
+            .iter()
+            .find(|r| r.agent == agent)
+            .unwrap()
+            .started_at
+    };
+    assert_eq!(started(AgentId::PI), ts("2026-02-02T10:08:00Z"));
+    assert_eq!(started(AgentId::CLAUDE), ts("2026-02-02T10:07:00Z"));
+}
+
+#[test]
+fn subscriptions_cover_events_by_their_local_day() {
+    let seed = Seed::new();
+    // 2026-03-31T23:30Z is 2026-04-01 01:30 in Paris: the first day of the subscription.
+    seed.put(&[provider(
+        reported(seed.ev("a", ts("2026-03-31T23:30:00Z")), 1_000_000),
+        "anthropic",
+    )]);
+    let c = usd_ctx("Europe/Paris", "2026-04-02T00:00:00Z")
+        .with_subscriptions(vec![anthropic_subscription()]);
+    let f = days(date(2026, 4, 1), date(2026, 4, 2)).billing(BillingFilter::Subscription(None));
+    assert_eq!(overview(&seed.reader(), &c, &f).unwrap().usage.events, 1);
+}
+
+#[test]
+fn a_budget_without_any_fx_rate_is_listed_as_unmeasured() {
+    let seed = Seed::new();
+    let spec = BudgetSpec {
+        budget: Budget::new(
+            BudgetId::try_from("eur".to_owned()).unwrap(),
+            BudgetPeriod::Month,
+            Money::from_micros(Currency::Eur, 40_000_000),
+            BudgetMeasure::ApiValue,
+        )
+        .unwrap(),
+        scope: BudgetScope::default(),
+    };
+    seed.put(&[reported(
+        seed.ev("a", ts("2026-02-02T09:00:00Z")),
+        1_000_000,
+    )]);
+    let ctx = usd_ctx("UTC", "2026-02-08T12:00:00Z");
+    let views = budgets(&seed.reader(), &ctx, &[spec]).unwrap();
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].state, BudgetState::NoFxRate);
+    assert_eq!(
+        (views[0].limit_micros, views[0].spent_micros),
+        (40_000_000, 0)
+    );
+    assert_eq!(json(&views[0])["state"], "no_fx_rate");
+}
+
 fn poll(seed: &Seed, profile: &str, at: Timestamp, outcome: QuotaOutcome) {
     seed.store()
         .upsert_quota_snapshots(&[QuotaPoll {
@@ -868,15 +976,21 @@ fn quota_meters_history_and_eta() {
 
     let meters = quota_latest(&reader, &c, &f).unwrap();
     assert_eq!(meters.len(), 2);
-    let default = meters.iter().find(|m| m.profile == "default").unwrap();
-    assert_eq!(default.status, "ok");
+    let default = meters
+        .iter()
+        .find(|m| m.profile.as_str() == "default")
+        .unwrap();
+    assert_eq!(default.status, tokenmtr_store::QuotaStatus::Ok);
     assert_eq!(default.windows.len(), 1);
     assert!((default.windows[0].used_percent - 50.0).abs() < 1e-9);
     assert_eq!(default.windows[0].resets_in_secs, Some(7_200));
     // 1 % per minute: full in 50 minutes, long before the reset.
     assert!(matches!(default.windows[0].eta, QuotaEta::WillHit { .. }));
-    let work = meters.iter().find(|m| m.profile == "work").unwrap();
-    assert_eq!(work.status, "failed");
+    let work = meters
+        .iter()
+        .find(|m| m.profile.as_str() == "work")
+        .unwrap();
+    assert_eq!(work.status, tokenmtr_store::QuotaStatus::Failed);
     assert!(work.windows.is_empty());
 
     let history = quota_history(
@@ -1194,7 +1308,7 @@ fn stored_subscriptions_and_rates_load_into_the_context() {
     let seed = Seed::new();
     seed_fx(&seed);
     seed.store()
-        .upsert_subscriptions(&[anthropic_subscription()])
+        .mirror_subscriptions(&[anthropic_subscription()])
         .unwrap();
     let reader = seed.reader();
     assert_eq!(load_subscriptions(&reader).unwrap().len(), 1);

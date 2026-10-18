@@ -6,17 +6,21 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use jiff::Timestamp;
 use tokenmtr_agents::ingest::{IngestSettings, Ingestor, ScanPriority, ScanRequest};
 use tokenmtr_control::{EventBus, Server, ServerInfo, Shutdown};
+use tokenmtr_core::{AgentId, ProfileId, WindowId};
 use tokenmtr_platform::ThreadPriority;
-use tokenmtr_store::{SCHEMA_VERSION, Store, StoreReader};
+use tokenmtr_platform::control::DaemonLock;
+use tokenmtr_store::{
+    QuotaReading, Revision, SCHEMA_VERSION, Store, StoreRead, StoreReader, Versioned,
+};
 use tokio::sync::{Notify, watch};
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::Instant;
 
 use crate::changes::std_duration;
-use crate::ctx::{Active, Ctx, Job, Runtime, lock};
+use crate::ctx::{Active, Ctx, Job, QuotaResets, Runtime, lock};
 use crate::error::DaemonError;
 use crate::handler::ControlHandler;
-use crate::reload::watch_plan;
+use crate::reload::{ReloadCause, config_bytes, watch_plan};
 use crate::scheduler::Scheduler;
 use crate::settings::Settings;
 use crate::watcher;
@@ -28,32 +32,27 @@ pub struct Daemon {
     ctx: Arc<Ctx>,
     stop: watch::Sender<bool>,
     tasks: JoinSet<()>,
+    /// The control server; hands back the daemon lock once the socket is gone.
+    server: JoinHandle<DaemonLock>,
 }
 
 impl Daemon {
-    /// Starts the daemon: loads the config, opens the store, binds the control socket (`0600`)
-    /// and spawns every task. Returns once the socket accepts connections.
+    /// Starts the daemon: takes the daemon lock and binds the control socket (`0600`), loads the
+    /// config, opens the store and spawns every task. Returns once the socket accepts
+    /// connections. The lock is held until [`Daemon::shutdown`] ends.
     ///
     /// # Errors
     /// [`DaemonError::AlreadyRunning`] when another daemon owns the socket,
+    /// [`DaemonError::Locked`] when another process (an erase, a restore) holds the lock,
     /// [`DaemonError::NewerSchema`] when the store was written by a newer `TokenMtr` (it is left
     /// untouched), [`DaemonError::Config`] when the config is invalid; store and I/O failures
     /// otherwise.
     pub async fn start(settings: Settings) -> Result<Self, DaemonError> {
-        // Bind first: the socket is the single-instance lock (D1), so a second daemon fails
-        // before it touches the store.
+        // Lock and bind first (D1), so a second daemon fails before it touches the store. On
+        // error the listener drops, removing the socket and releasing the lock.
         let listener = settings.transport.bind().await?;
         let socket = settings.transport.socket_path().to_owned();
-        let built = build(settings).await;
-        let (ctx, commands, server_bus) = match built {
-            Ok(parts) => parts,
-            Err(error) => {
-                drop(listener);
-                // Best effort: the socket is ours, nobody else can use it now.
-                let _ = std::fs::remove_file(&socket);
-                return Err(error);
-            }
-        };
+        let (ctx, commands, server_bus) = build(settings).await?;
 
         let (stop, shutdown) = watch::channel(false);
         let mut tasks = JoinSet::new();
@@ -68,13 +67,25 @@ impl Daemon {
             },
             server_bus,
         );
-        tasks.spawn(server.serve(shutdown));
+        let server = tokio::spawn(server.serve(shutdown));
 
         ctx.schedule_now(Job::Heartbeat);
-        let active = ctx.active();
-        ctx.rearm(None, &active);
+        // `rearm` reads the store and the backup directory.
+        let armed = ctx
+            .blocking(ThreadPriority::UserInitiated, |ctx| {
+                ctx.rearm(None, &ctx.active());
+            })
+            .await;
+        if let Err(error) = armed {
+            tracing::error!(%error, "cannot schedule the periodic jobs");
+        }
         tracing::info!(socket = %socket, "daemon started");
-        Ok(Self { ctx, stop, tasks })
+        Ok(Self {
+            ctx,
+            stop,
+            tasks,
+            server,
+        })
     }
 
     /// Resolves once a client sent `Request::Shutdown`. The owner of the daemon then calls
@@ -84,39 +95,37 @@ impl Daemon {
         self.ctx.stop_requested.notified().await;
     }
 
-    /// Stops the daemon: no new work starts, the running transaction finishes, sinks get a last
-    /// export, the socket is removed. Takes at most [`Timing::shutdown_grace`] to wait for
-    /// running work; what does not finish by then is abandoned.
+    /// Stops the daemon: no new work starts, the socket is removed, the running transaction
+    /// finishes, sinks get a last export, then the daemon lock is released. Takes at most
+    /// [`Timing::shutdown_grace`]; when running work does not stop by then it is abandoned and
+    /// the last export is skipped, since it would wait on the locks that work holds.
     ///
     /// # Errors
-    /// Never fails today; reserved for a flush that cannot be abandoned.
+    /// [`DaemonError::Task`] when the control server panicked.
     ///
     /// [`Timing::shutdown_grace`]: crate::Timing::shutdown_grace
-    #[allow(
-        clippy::unused_async,
-        reason = "reserved for failures; the signature is public"
-    )]
     pub async fn shutdown(mut self) -> Result<(), DaemonError> {
         let deadline = Instant::now() + self.ctx.settings.timing.shutdown_grace;
         self.stop.send_replace(true);
         let drained = tokio::time::timeout_at(deadline, async {
             while self.tasks.join_next().await.is_some() {}
+            (&mut self.server).await
         })
         .await;
-        if drained.is_err() {
-            tracing::warn!("abandoning work that did not stop in time");
+        let Ok(served) = drained else {
+            tracing::warn!("abandoning work that did not stop in time; skipping the last export");
             self.tasks.abort_all();
-        }
+            self.server.abort();
+            return Ok(());
+        };
+        let lock = served?;
         let flush = self.ctx.blocking(ThreadPriority::UserInitiated, |ctx| {
             ctx.export_blocking(None)
         });
         if tokio::time::timeout_at(deadline, flush).await.is_err() {
-            tracing::warn!("the final export did not finish in time");
+            tracing::warn!("the last export did not finish in time");
         }
-        let socket = self.ctx.settings.transport.socket_path();
-        if let Err(error) = std::fs::remove_file(socket) {
-            tracing::debug!(%error, "cannot remove the control socket");
-        }
+        drop(lock);
         tracing::info!("daemon stopped");
         Ok(())
     }
@@ -126,17 +135,19 @@ impl Daemon {
 async fn build(
     settings: Settings,
 ) -> Result<(Arc<Ctx>, crate::scheduler::Commands<Job>, EventBus), DaemonError> {
+    let seen = config_bytes(&settings.config_path);
     let config = load_config(&settings.config_path, &*settings.env)?;
     let ingest = IngestSettings::from_config(&config, &settings.paths, &*settings.env);
     let path = store_path(&settings.paths, &config);
     let open_path = path.clone();
     let open_ingest = ingest.clone();
-    let (store, beat, reader, ingestor) = tokio::task::spawn_blocking(move || {
+    let (store, beat, exports, reader, ingestor) = tokio::task::spawn_blocking(move || {
         let store = Store::open(&open_path)?;
         let beat = Store::open(&open_path)?;
+        let exports = Store::open(&open_path)?;
         let reader = StoreReader::open(&open_path)?;
         let ingestor = Ingestor::open(open_ingest, &open_path)?;
-        Ok::<_, DaemonError>((store, beat, reader, ingestor))
+        Ok::<_, DaemonError>((store, beat, exports, reader, ingestor))
     })
     .await??;
 
@@ -150,11 +161,15 @@ async fn build(
         store_path: path,
         store: Mutex::new(store),
         beat: Mutex::new(beat),
+        exports: Mutex::new(exports),
         reader: Mutex::new(reader),
         ingestor: Mutex::new(ingestor),
         sinks: Mutex::new(sinks),
         active: RwLock::new(Arc::new(Active { config, ingest })),
-        run: Mutex::new(Runtime::default()),
+        run: Mutex::new(Runtime {
+            config_bytes: seen,
+            ..Runtime::default()
+        }),
         bus: bus.clone(),
         scheduler,
         watch_plan,
@@ -162,11 +177,56 @@ async fn build(
         started_at: Timestamp::now(),
         stop_requested: Notify::new(),
     });
-    // What the store holds now: only later movement is a change worth announcing.
-    let heads: HashMap<_, _> = ctx.heads()?;
-    lock(&ctx.run).heads = heads;
-    ctx.sync_subscriptions(&ctx.active().config);
+    ctx.blocking(ThreadPriority::UserInitiated, |ctx| {
+        // What the store holds now: only later movement is a change worth announcing.
+        let heads: HashMap<_, _> = ctx.heads()?;
+        // A window that reset while the daemon was down still raises `quota_reset`.
+        let resets = stored_quota_resets(&lock(&ctx.reader))?;
+        let mut run = lock(&ctx.run);
+        run.heads = heads;
+        run.quota_resets = resets;
+        drop(run);
+        ctx.sync_subscriptions(&ctx.active().config);
+        Ok::<_, DaemonError>(())
+    })
+    .await??;
     Ok((ctx, commands, bus))
+}
+
+/// The `resets_at` of the newest stored reading of every Claude quota window.
+fn stored_quota_resets(reader: &StoreReader) -> Result<QuotaResets, DaemonError> {
+    const PAGE: usize = 1_000;
+    let mut newest: HashMap<(ProfileId, WindowId), (Timestamp, Option<Timestamp>)> = HashMap::new();
+    let mut after = Revision::ZERO;
+    loop {
+        let page = reader.quota_snapshots_after(after, PAGE)?;
+        let Some(last) = page.last() else {
+            break;
+        };
+        after = last.revision;
+        let full = page.len() == PAGE;
+        for Versioned { row, .. } in page {
+            let QuotaReading::Window(window) = row.reading else {
+                continue;
+            };
+            if row.agent != AgentId::CLAUDE {
+                continue;
+            }
+            let entry = newest
+                .entry((row.profile, window.id))
+                .or_insert((row.fetched_at, window.state.resets_at));
+            if row.fetched_at >= entry.0 {
+                *entry = (row.fetched_at, window.state.resets_at);
+            }
+        }
+        if !full {
+            break;
+        }
+    }
+    Ok(newest
+        .into_iter()
+        .map(|(key, (_, resets_at))| (key, resets_at))
+        .collect())
 }
 
 /// The scheduler task: runs due jobs, each as its own task, and waits for them on the way out.
@@ -279,7 +339,7 @@ async fn run_job(ctx: Arc<Ctx>, job: Job) {
         Job::Publish => ctx.publish(),
         Job::Reload => {
             // The error is logged and kept as `config_error` by `reload`.
-            let _ = ctx.reload().await;
+            let _ = ctx.reload(ReloadCause::FileEvent).await;
         }
     }
 }

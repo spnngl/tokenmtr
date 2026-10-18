@@ -19,8 +19,8 @@ pub use client::{Client, DaemonInfo, Subscription};
 pub use error::ClientError;
 pub use protocol::{
     AgentScanSummary, BackupSummary, ClientInfo, DaemonStatus, Dataset, ErrorKind, Event,
-    ExportSummary, IssueList, IssueSummary, PROTOCOL_VERSION, QuotaProfileSummary, QuotaSummary,
-    Request, Response, ScanSummary, SinkExportSummary, SinkSummary, Task,
+    ExportSummary, IssueKind, IssueList, IssueSummary, PROTOCOL_VERSION, QuotaProfileSummary,
+    QuotaSummary, Request, Response, ScanSummary, SinkExportSummary, SinkSummary, Task,
 };
 pub use server::{EventBus, Handler, Server, ServerInfo, Shutdown, wait_shutdown};
 

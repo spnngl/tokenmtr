@@ -2,14 +2,18 @@
 //!
 //! One poll per Claude profile with its own credentials. Tokens are read inside a blocking task,
 //! live in [`ClaudeCredentials`] (a `SecretString`) and never reach a log line or an error (D55).
+//! They are kept in memory until they expire or the server rejects them, so the Keychain is not
+//! read on every poll. Failed polls back off ([`ProfileRuntime::record`]).
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use tokenmtr_config::{ProfileConfig, ProfileLocation};
 use tokenmtr_control::QuotaProfileSummary;
 use tokenmtr_core::alert::QuotaWindowStatus;
+use tokenmtr_core::forecast::RESET_TOLERANCE;
 use tokenmtr_core::{AgentId, ProfileId, QuotaWindow};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_remote::{
@@ -18,20 +22,107 @@ use tokenmtr_remote::{
 use tokenmtr_store::{AccountRecord, QuotaOutcome, QuotaPoll};
 
 use crate::alerts::Evaluation;
+use crate::changes::std_duration;
 use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
 
 /// The plan is re-detected at most this often.
 const ACCOUNT_REFRESH: Duration = Duration::from_hours(24);
+/// The longest wait between two polls of a failing profile, unless the poll interval is longer.
+const MAX_BACKOFF: Duration = Duration::from_hours(1);
 
 /// What one profile's poll found, before it is stored.
 struct Polled {
     profile: ProfileId,
     account: AccountInfo,
-    outcome: QuotaOutcome,
+    /// `None` when the poll was skipped because the profile is backing off: nothing is stored.
+    outcome: Option<QuotaOutcome>,
     status: &'static str,
     /// The account to save when plan detection ran.
     detected: Option<AccountInfo>,
+}
+
+impl Polled {
+    fn without_windows(
+        profile: ProfileId,
+        outcome: Option<QuotaOutcome>,
+        status: &'static str,
+    ) -> Self {
+        Self {
+            profile,
+            account: AccountInfo::default(),
+            outcome,
+            status,
+            detected: None,
+        }
+    }
+}
+
+/// Quota state that lives as long as the process, per Claude profile.
+#[derive(Debug, Default)]
+pub(crate) struct QuotaRuntime {
+    profiles: HashMap<ProfileId, ProfileRuntime>,
+}
+
+/// One profile's credential cache and retry schedule.
+#[derive(Debug, Default)]
+struct ProfileRuntime {
+    /// Where the credentials were read; a reload that moves the profile starts afresh.
+    location: Option<CredentialLocation>,
+    /// Credentials reused until they expire or the server answers 401/403.
+    credentials: Option<Arc<ClaudeCredentials>>,
+    /// The Keychain refused once: only files are read until the daemon restarts.
+    keychain_denied: bool,
+    /// Consecutive failed polls; 0 after a success.
+    failures: u32,
+    /// No request before this instant.
+    not_before: Option<Instant>,
+}
+
+impl ProfileRuntime {
+    /// Updates the cache and the retry schedule after a poll that started at `started`.
+    ///
+    /// Failures (403, 429, malformed bodies, network trouble) wait `interval`, then twice as
+    /// long after each further failure, up to [`MAX_BACKOFF`]; a 429's `Retry-After` replaces
+    /// that wait. Credential states (signed out, expired) do not back off: re-reading them is
+    /// local and cheap, and the user fixing them should show at the next interval.
+    fn record(
+        &mut self,
+        outcome: &Remote,
+        credentials: Option<Arc<ClaudeCredentials>>,
+        interval: Duration,
+        started: Instant,
+    ) {
+        let retry_after = match outcome {
+            Remote::Ok(_) => {
+                self.credentials = credentials;
+                self.failures = 0;
+                self.not_before = None;
+                return;
+            }
+            Remote::SignedOut | Remote::TokenExpired => {
+                self.credentials = None;
+                self.failures = 0;
+                self.not_before = None;
+                return;
+            }
+            Remote::Forbidden => {
+                self.credentials = None;
+                None
+            }
+            Remote::RateLimited { retry_after } => *retry_after,
+            Remote::Malformed | Remote::NetworkDown => None,
+        };
+        self.failures = self.failures.saturating_add(1);
+        let wait = retry_after.unwrap_or_else(|| backoff(self.failures, interval));
+        self.not_before = started.checked_add(wait.min(MAX_BACKOFF.max(interval)));
+    }
+}
+
+/// `interval` doubled for each failure after the first.
+fn backoff(failures: u32, interval: Duration) -> Duration {
+    let doublings = failures.saturating_sub(1).min(16);
+    interval.saturating_mul(2_u32.saturating_pow(doublings))
 }
 
 impl Ctx {
@@ -75,32 +166,67 @@ impl Ctx {
         profile: ProfileConfig,
     ) -> Result<Polled, DaemonError> {
         let location = credential_location(&self.settings.paths, &profile);
-        let credentials = self
-            .blocking(ThreadPriority::Background, move |ctx| {
-                ClaudeCredentials::load(&location, &*ctx.settings.secrets)
-            })
-            .await?;
-        let credentials = match credentials {
-            Ok(credentials) => credentials,
-            Err(error) => {
-                tracing::warn!(profile = %profile.id, %error, "cannot read the Claude credentials");
-                return Ok(Polled {
-                    profile: profile.id,
-                    account: AccountInfo::default(),
-                    outcome: QuotaOutcome::Failed,
-                    status: "failed",
-                    detected: None,
-                });
+        let interval = std_duration(self.active().config.quota.interval);
+        let started = Instant::now();
+        let (cached, keychain_denied) = {
+            let mut run = lock(&self.run);
+            let state = run.quota.profiles.entry(profile.id.clone()).or_default();
+            if state.location.as_ref() != Some(&location) {
+                *state = ProfileRuntime {
+                    location: Some(location.clone()),
+                    ..ProfileRuntime::default()
+                };
+            }
+            if state.not_before.is_some_and(|at| started < at) {
+                return Ok(Polled::without_windows(profile.id, None, "backoff"));
+            }
+            let fresh = state
+                .credentials
+                .clone()
+                .filter(|credentials| !credentials.is_expired(Timestamp::now()));
+            (fresh, state.keychain_denied)
+        };
+        let credentials = if let Some(credentials) = cached {
+            Some(credentials)
+        } else {
+            let location = if keychain_denied {
+                location.without_keychain()
+            } else {
+                location
+            };
+            let loaded = self
+                .blocking(ThreadPriority::Background, move |ctx| {
+                    ClaudeCredentials::load(&location, &*ctx.settings.secrets)
+                })
+                .await?;
+            match loaded {
+                Ok(credentials) => credentials.map(Arc::new),
+                Err(error) => {
+                    if error.is_keychain_denied() {
+                        tracing::warn!(
+                            profile = %profile.id,
+                            "the Keychain denied access to the Claude credentials; \
+                             not asking again until the daemon restarts"
+                        );
+                        if let Some(state) = lock(&self.run).quota.profiles.get_mut(&profile.id) {
+                            state.keychain_denied = true;
+                        }
+                    } else {
+                        tracing::warn!(profile = %profile.id, %error, "cannot read the Claude credentials");
+                    }
+                    return Ok(Polled::without_windows(
+                        profile.id,
+                        Some(QuotaOutcome::Failed),
+                        "failed",
+                    ));
+                }
             }
         };
-        let poll = source.poll(credentials.as_ref()).await;
-        let (outcome, status) = match poll.outcome {
-            Remote::Ok(snapshot) => (QuotaOutcome::Windows(snapshot.windows), "ok"),
-            Remote::TokenExpired => (QuotaOutcome::TokenExpired, "token_expired"),
-            Remote::SignedOut => (QuotaOutcome::SignedOut, "signed_out"),
-            Remote::Malformed => (QuotaOutcome::Failed, "malformed"),
-            Remote::NetworkDown => (QuotaOutcome::Failed, "network_down"),
-        };
+        let poll = source.poll(credentials.as_deref()).await;
+        if let Some(state) = lock(&self.run).quota.profiles.get_mut(&profile.id) {
+            state.record(&poll.outcome, credentials.clone(), interval, started);
+        }
+        let (outcome, status) = store_outcome(poll.outcome);
         let account = credentials
             .as_ref()
             .map(|credentials| credentials.account().clone())
@@ -120,7 +246,7 @@ impl Ctx {
         Ok(Polled {
             profile: profile.id,
             account,
-            outcome,
+            outcome: Some(outcome),
             status,
             detected,
         })
@@ -142,7 +268,10 @@ impl Ctx {
         let mut statuses = Vec::new();
         let mut polls = Vec::with_capacity(polled.len());
         for poll in polled {
-            if let QuotaOutcome::Windows(windows) = &poll.outcome {
+            let Some(outcome) = poll.outcome else {
+                continue;
+            };
+            if let QuotaOutcome::Windows(windows) = &outcome {
                 statuses.extend(self.window_statuses(&poll.profile, windows));
             }
             if let Some(info) = poll.detected {
@@ -153,7 +282,7 @@ impl Ctx {
                 profile: poll.profile,
                 account: poll.account.email,
                 fetched_at: now,
-                outcome: poll.outcome,
+                outcome,
             });
         }
         if let Err(error) = lock(&self.store).upsert_quota_snapshots(&polls) {
@@ -187,6 +316,8 @@ impl Ctx {
     }
 
     /// The windows of one poll with the `resets_at` the previous poll saw; remembers this one.
+    /// A `resets_at` within [`RESET_TOLERANCE`] of the previous one is the same window instance
+    /// and keeps the previous value ([`same_instance`]).
     fn window_statuses(
         &self,
         profile: &ProfileId,
@@ -198,15 +329,45 @@ impl Ctx {
             .map(|window| {
                 let key = (profile.clone(), window.id.clone());
                 let previous_resets_at = run.quota_resets.get(&key).copied().flatten();
-                run.quota_resets.insert(key, window.state.resets_at);
+                let resets_at = same_instance(window.state.resets_at, previous_resets_at);
+                run.quota_resets.insert(key, resets_at);
                 QuotaWindowStatus {
+                    agent: AgentId::CLAUDE,
+                    profile: profile.clone(),
                     window: window.id.clone(),
                     utilization: window.state.utilization,
-                    resets_at: window.state.resets_at,
+                    resets_at,
                     previous_resets_at,
                 }
             })
             .collect()
+    }
+}
+
+/// The store outcome and the `refresh_quota` status string of a remote outcome. 403 and 429
+/// are stored as `failed`: the store and the app know no finer kinds, and neither proves the
+/// token is gone.
+fn store_outcome(outcome: Remote) -> (QuotaOutcome, &'static str) {
+    match outcome {
+        Remote::Ok(snapshot) => (QuotaOutcome::Windows(snapshot.windows), "ok"),
+        Remote::TokenExpired => (QuotaOutcome::TokenExpired, "token_expired"),
+        Remote::SignedOut => (QuotaOutcome::SignedOut, "signed_out"),
+        Remote::Forbidden => (QuotaOutcome::Failed, "forbidden"),
+        Remote::RateLimited { .. } => (QuotaOutcome::Failed, "rate_limited"),
+        Remote::Malformed => (QuotaOutcome::Failed, "malformed"),
+        Remote::NetworkDown => (QuotaOutcome::Failed, "network_down"),
+    }
+}
+
+/// `resets_at`, or `previous` when both are known and within [`RESET_TOLERANCE`]: the API
+/// jitters the reset time between polls, and keeping the first value keeps the alert instance
+/// (D36) stable even when the jitter crosses a rounding boundary.
+fn same_instance(resets_at: Option<Timestamp>, previous: Option<Timestamp>) -> Option<Timestamp> {
+    match (resets_at, previous) {
+        (Some(at), Some(previous)) if at.duration_since(previous).abs() <= RESET_TOLERANCE => {
+            Some(previous)
+        }
+        _ => resets_at,
     }
 }
 
@@ -238,5 +399,103 @@ fn credential_location(
         ProfileLocation::Default | ProfileLocation::Roots(_) => {
             CredentialLocation::default_profile(paths.home())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokenmtr_core::QuotaSnapshot;
+
+    const INTERVAL: Duration = Duration::from_mins(5);
+
+    fn credentials() -> Option<Arc<ClaudeCredentials>> {
+        ClaudeCredentials::parse(r#"{"claudeAiOauth":{"accessToken":"t"}}"#)
+            .unwrap()
+            .map(Arc::new)
+    }
+
+    fn ok() -> Remote {
+        Remote::Ok(QuotaSnapshot {
+            fetched_at: Timestamp::UNIX_EPOCH,
+            windows: Vec::new(),
+        })
+    }
+
+    fn wait(state: &ProfileRuntime, started: Instant) -> Option<Duration> {
+        state.not_before.map(|at| at.duration_since(started))
+    }
+
+    #[test]
+    fn failures_back_off_exponentially_up_to_the_cap_and_reset_on_success() {
+        let mut state = ProfileRuntime::default();
+        let started = Instant::now();
+        let mut waits = Vec::new();
+        for _ in 0..6 {
+            state.record(&Remote::NetworkDown, credentials(), INTERVAL, started);
+            waits.push(wait(&state, started).unwrap().as_secs() / 60);
+        }
+        assert_eq!(waits, [5, 10, 20, 40, 60, 60]);
+
+        state.record(&ok(), credentials(), INTERVAL, started);
+        assert_eq!((state.failures, state.not_before), (0, None));
+        assert!(state.credentials.is_some());
+    }
+
+    #[test]
+    fn retry_after_replaces_the_computed_wait() {
+        let mut state = ProfileRuntime::default();
+        let started = Instant::now();
+        let limited = |seconds| Remote::RateLimited {
+            retry_after: Some(Duration::from_secs(seconds)),
+        };
+        state.record(&limited(1_800), credentials(), INTERVAL, started);
+        assert_eq!(wait(&state, started), Some(Duration::from_mins(30)));
+        state.record(&limited(86_400), credentials(), INTERVAL, started);
+        assert_eq!(wait(&state, started), Some(MAX_BACKOFF));
+        state.record(
+            &Remote::RateLimited { retry_after: None },
+            None,
+            INTERVAL,
+            started,
+        );
+        assert_eq!(wait(&state, started), Some(Duration::from_mins(20)));
+    }
+
+    #[test]
+    fn rejected_tokens_are_dropped_from_the_cache() {
+        let started = Instant::now();
+        for outcome in [Remote::TokenExpired, Remote::Forbidden, Remote::SignedOut] {
+            let mut state = ProfileRuntime {
+                credentials: credentials(),
+                ..ProfileRuntime::default()
+            };
+            state.record(&outcome, credentials(), INTERVAL, started);
+            assert!(state.credentials.is_none(), "{outcome:?}");
+        }
+        let mut state = ProfileRuntime::default();
+        state.record(&Remote::TokenExpired, credentials(), INTERVAL, started);
+        assert_eq!(
+            state.not_before, None,
+            "expiry is re-checked at the next interval"
+        );
+    }
+
+    #[test]
+    fn jittered_resets_keep_the_first_instance() {
+        let at = |s: &str| Some(s.parse::<Timestamp>().unwrap());
+        let previous = at("2026-05-12T14:59:59.943Z");
+        assert_eq!(
+            same_instance(at("2026-05-12T15:00:00.120Z"), previous),
+            previous
+        );
+        assert_eq!(
+            same_instance(at("2026-05-12T15:04:59Z"), previous),
+            previous
+        );
+        let next = at("2026-05-12T19:59:59.900Z");
+        assert_eq!(same_instance(next, previous), next);
+        assert_eq!(same_instance(None, previous), None);
+        assert_eq!(same_instance(next, None), next);
     }
 }

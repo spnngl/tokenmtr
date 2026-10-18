@@ -118,22 +118,10 @@ impl SinkSpec {
         Self {
             id: config.id.clone(),
             interval: config.interval,
-            datasets: config.datasets.iter().copied().map(store_dataset).collect(),
+            datasets: config.datasets.clone(),
             redact: config.redact.clone(),
             target,
         }
-    }
-}
-
-/// The store's name for a config dataset.
-#[must_use]
-pub const fn store_dataset(dataset: tokenmtr_config::Dataset) -> Dataset {
-    match dataset {
-        tokenmtr_config::Dataset::UsageEvents => Dataset::UsageEvents,
-        tokenmtr_config::Dataset::ToolCalls => Dataset::ToolCalls,
-        tokenmtr_config::Dataset::QuotaSnapshots => Dataset::QuotaSnapshots,
-        tokenmtr_config::Dataset::FxRates => Dataset::FxRates,
-        tokenmtr_config::Dataset::Subscriptions => Dataset::Subscriptions,
     }
 }
 

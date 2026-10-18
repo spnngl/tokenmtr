@@ -36,10 +36,11 @@
 //!
 //! Each exported dataset ([`Dataset`]) has one counter in `dataset_revision`. An upsert gives a
 //! row the next revision only when a value column differs from the stored row; rewriting identical
-//! data changes nothing and costs no revision. Revisions are unique per dataset and gap-free,
-//! except after [`Store::delete_daily_aggregates_covered_by_transcripts`], the only delete: it
-//! leaves gaps and is not propagated to sinks (D17 has no delete channel), so
-//! use it only when that is acceptable. An exporter reads `revision > cursor ORDER BY revision LIMIT n` (D17) through
+//! data changes nothing and costs no revision. Revisions are unique per dataset and gap-free.
+//! Rows of exported datasets are never deleted (D14, D17 has no delete channel): stats-cache
+//! aggregates that transcripts cover are flagged `superseded` instead
+//! ([`Store::supersede_daily_aggregates_covered_by_transcripts`]) and subscriptions removed from
+//! config get `removed_at`. An exporter reads `revision > cursor ORDER BY revision LIMIT n` (D17) through
 //! [`StoreRead::usage_events_after`] and its siblings, then moves its cursor with
 //! [`Store::set_sink_cursor`]. `updated_at_us` records when the revision was assigned, which is
 //! what sink lag is measured from (D41).
@@ -94,7 +95,7 @@ pub use fx::{FxRateRow, FxSource};
 pub use ingest::{IngestWrite, IngestWriteReport, IssueUpdate, ToolResultFlag};
 pub use issue::{IssueKind, OpenParseIssue, ParseIssue};
 pub use migrations::SCHEMA_VERSION;
-pub use pricing::StoredPricingSnapshot;
+pub use pricing::{RepriceCursor, RepricePage, Repriced, StoredPricingSnapshot, UnpricedEvent};
 pub use project::{ProjectResolution, ProjectSource};
 pub use quota::{QuotaOutcome, QuotaPoll, QuotaReading, QuotaSample, QuotaStatus};
 pub use runs::{BackupRun, IngestRun};
@@ -103,5 +104,6 @@ pub use sink::SinkRun;
 pub use temp::TempStore;
 pub use tool_calls::ProfiledToolCall;
 pub use types::{
-    Dataset, Page, PageCursor, Pending, RedactionKey, Revision, UpsertStats, Versioned,
+    Dataset, Page, PageCursor, Pending, RedactionKey, Revision, StoredEvent, StoredSubscription,
+    UpsertStats, Versioned,
 };

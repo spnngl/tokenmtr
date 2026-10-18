@@ -2,8 +2,7 @@
 
 use std::fs;
 use std::io;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
@@ -12,11 +11,8 @@ use tokenmtr_platform::{ControlTransport, Paths, ServiceManager};
 
 use crate::backup::backup_files;
 use crate::error::AppError;
-use crate::guard::{daemon_running, ensure_daemon_stopped};
-use crate::settings::{backup_dir, store_path};
-
-/// How long a daemon gets to release its socket after the service was removed.
-const STOP_GRACE: Duration = Duration::from_secs(5);
+use crate::guard::{STOP_GRACE, lock_daemon, stopped_within};
+use crate::settings::{backup_dir_in, store_path_in};
 
 /// What to delete besides the store, its WAL files, the backups and the logs. Checkpoints live
 /// in the store (D15), so they go with it. Sink outputs and agent files are never deleted.
@@ -40,60 +36,93 @@ pub struct EraseReport {
 /// Deletes the store, its `-wal`/`-shm`/`-journal`/`-lock` files, the backups and the logs, and per
 /// `scope` the config and the service (D56).
 ///
+/// The daemon is stopped first and cannot start while files are deleted (see
+/// [`with_daemon_stopped`](crate::with_daemon_stopped)); a service that is kept is started again
+/// afterwards, on an empty store. `config` is `None` when the config file does not load: an
+/// invalid config never blocks erasing, the default locations are erased then.
+///
 /// # Errors
 ///
-/// [`AppError::DaemonRunning`] when a daemon is still answering after the optional service
-/// removal (a running daemon would recreate what is deleted); [`AppError::Service`] and
-/// [`AppError::Io`] on failures. Files removed before a failure stay removed.
+/// [`AppError::DaemonRunning`] when a daemon outside the service manager still runs (a running
+/// daemon would recreate what is deleted); [`AppError::Service`] and [`AppError::Io`] on
+/// failures. Files removed before a failure stay removed.
 pub fn erase(
     paths: &Paths,
     transport: &ControlTransport,
     config_path: &Utf8Path,
-    config: &Config,
+    config: Option<&Config>,
     scope: EraseScope,
     service: &dyn ServiceManager,
 ) -> Result<EraseReport, AppError> {
-    let mut report = EraseReport::default();
-    if scope.service {
+    erase_within(
+        paths,
+        transport,
+        config_path,
+        config,
+        scope,
+        service,
+        STOP_GRACE,
+    )
+}
+
+fn erase_within(
+    paths: &Paths,
+    transport: &ControlTransport,
+    config_path: &Utf8Path,
+    config: Option<&Config>,
+    scope: EraseScope,
+    service: &dyn ServiceManager,
+    grace: Duration,
+) -> Result<EraseReport, AppError> {
+    let delete = || remove_data(paths, config_path, config, scope.config);
+    let removed = if scope.service {
         service.uninstall()?;
-        report.service_removed = true;
-        wait_until_stopped(transport);
-    }
-    ensure_daemon_stopped(transport)?;
+        let lock = lock_daemon(transport, grace)?;
+        let removed = delete();
+        drop(lock);
+        removed
+    } else {
+        stopped_within(transport, service, grace, delete)
+    }?;
+    Ok(EraseReport {
+        removed,
+        service_removed: scope.service,
+    })
+}
 
-    let store = store_path(paths, config);
+fn remove_data(
+    paths: &Paths,
+    config_path: &Utf8Path,
+    config: Option<&Config>,
+    with_config: bool,
+) -> Result<Vec<Utf8PathBuf>, AppError> {
+    let mut removed = Vec::new();
+    let store = store_path_in(paths, config);
     for suffix in ["", "-wal", "-shm", "-journal", "-lock"] {
-        remove_file(&Utf8PathBuf::from(format!("{store}{suffix}")), &mut report)?;
+        remove_file(&Utf8PathBuf::from(format!("{store}{suffix}")), &mut removed)?;
     }
-    for backup in backup_files(&backup_dir(paths, config)) {
-        remove_file(&backup, &mut report)?;
+    for backup in backup_files(&backup_dir_in(paths, config)) {
+        remove_file(&backup, &mut removed)?;
     }
-    remove_dir(paths.logs_dir(), &mut report)?;
-    if scope.config {
-        remove_file(config_path, &mut report)?;
+    remove_dir(paths.logs_dir(), &mut removed)?;
+    if with_config {
+        remove_file(config_path, &mut removed)?;
     }
-    Ok(report)
+    Ok(removed)
 }
 
-fn wait_until_stopped(transport: &ControlTransport) {
-    let deadline = Instant::now() + STOP_GRACE;
-    while daemon_running(transport) && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(50));
-    }
-}
-
-fn remove_file(path: &Utf8Path, report: &mut EraseReport) -> Result<(), AppError> {
+fn remove_file(path: &Utf8Path, removed: &mut Vec<Utf8PathBuf>) -> Result<(), AppError> {
     match fs::remove_file(path) {
-        Ok(()) => report.removed.push(path.to_owned()),
+        Ok(()) => removed.push(path.to_owned()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(AppError::io(path, error)),
     }
     Ok(())
 }
 
-fn remove_dir(path: &Utf8Path, report: &mut EraseReport) -> Result<(), AppError> {
+fn remove_dir(path: &Utf8Path, removed: &mut Vec<Utf8PathBuf>) -> Result<(), AppError> {
     match fs::remove_dir_all(path) {
-        Ok(()) => report.removed.push(path.to_owned()),
+        Ok(()) => removed.push(path.to_owned()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(AppError::io(path, error)),
     }
@@ -102,36 +131,14 @@ fn remove_dir(path: &Utf8Path, report: &mut EraseReport) -> Result<(), AppError>
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-    use std::os::unix::net::UnixListener;
-
     use tokenmtr_config::{ConfigFormat, TomlCodec};
-    use tokenmtr_platform::{ServiceError, ServiceStatus};
     use tokenmtr_store::Store;
 
     use super::*;
+    use crate::guard::tests::FakeService;
+    use crate::settings::{backup_dir, store_path};
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
-
-    #[derive(Default)]
-    struct FakeService {
-        uninstalled: Cell<bool>,
-    }
-
-    impl ServiceManager for FakeService {
-        fn install(&self, _binary: &Utf8Path) -> Result<(), ServiceError> {
-            Ok(())
-        }
-
-        fn uninstall(&self) -> Result<(), ServiceError> {
-            self.uninstalled.set(true);
-            Ok(())
-        }
-
-        fn status(&self) -> Result<ServiceStatus, ServiceError> {
-            Ok(ServiceStatus::NotInstalled)
-        }
-    }
 
     struct Fixture {
         _dir: tempfile::TempDir,
@@ -183,21 +190,32 @@ mod tests {
         })
     }
 
-    fn run(f: &Fixture, scope: EraseScope, service: &FakeService) -> Result<EraseReport, AppError> {
-        erase(
+    fn run(
+        f: &Fixture,
+        config: Option<&Config>,
+        scope: EraseScope,
+        service: &FakeService,
+    ) -> Result<EraseReport, AppError> {
+        erase_within(
             &f.paths,
             &f.transport,
             &f.config_path,
-            &f.config,
+            config,
             scope,
             service,
+            Duration::ZERO,
         )
     }
 
     #[test]
     fn erase_deletes_the_store_backups_and_logs_but_not_outputs_or_agent_files() -> TestResult {
         let f = fixture()?;
-        let report = run(&f, EraseScope::default(), &FakeService::default())?;
+        let report = run(
+            &f,
+            Some(&f.config),
+            EraseScope::default(),
+            &FakeService::default(),
+        )?;
         let store = store_path(&f.paths, &f.config);
         assert!(!store.exists());
         assert!(!f.paths.logs_dir().exists());
@@ -213,11 +231,29 @@ mod tests {
     }
 
     #[test]
+    fn an_unloadable_config_erases_the_default_locations() -> TestResult {
+        let f = fixture()?;
+        run(&f, None, EraseScope::default(), &FakeService::default())?;
+        assert!(!store_path(&f.paths, &f.config).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn a_kept_service_is_stopped_then_started_again() -> TestResult {
+        let f = fixture()?;
+        let service = FakeService::loaded();
+        run(&f, Some(&f.config), EraseScope::default(), &service)?;
+        assert_eq!(*service.calls.borrow(), ["stop", "start"]);
+        Ok(())
+    }
+
+    #[test]
     fn scope_adds_the_config_and_the_service() -> TestResult {
         let f = fixture()?;
-        let service = FakeService::default();
+        let service = FakeService::loaded();
         let report = run(
             &f,
+            Some(&f.config),
             EraseScope {
                 config: true,
                 service: true,
@@ -225,7 +261,7 @@ mod tests {
             &service,
         )?;
         assert!(!f.config_path.exists());
-        assert!(service.uninstalled.get());
+        assert_eq!(*service.calls.borrow(), ["uninstall"]);
         assert!(report.service_removed);
         Ok(())
     }
@@ -233,8 +269,13 @@ mod tests {
     #[test]
     fn erase_refuses_while_the_daemon_runs() -> TestResult {
         let f = fixture()?;
-        let _listener = UnixListener::bind(f.transport.socket_path())?;
-        let result = run(&f, EraseScope::default(), &FakeService::default());
+        let _daemon = f.transport.lock()?;
+        let result = run(
+            &f,
+            Some(&f.config),
+            EraseScope::default(),
+            &FakeService::default(),
+        );
         assert!(matches!(result, Err(AppError::DaemonRunning { .. })));
         assert!(store_path(&f.paths, &f.config).exists());
         Ok(())

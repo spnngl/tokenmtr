@@ -3,20 +3,20 @@
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use tokenmtr_core::EventCost;
-use tokenmtr_core::{ApiCost, Override, ParsedEvent, PricingCatalog, UsageEvent, estimate};
+use tokenmtr_core::pricing::SOURCE_LITELLM;
+use tokenmtr_core::{Override, PriceQuery, PricingCatalog, estimate};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_remote::{EcbFx, FxFetch, LitellmRefresh, RefreshOutcome};
-use tokenmtr_store::{FxSource, Revision, StoreRead};
+use tokenmtr_store::{FxSource, RepriceCursor, Repriced, Revision, StoreRead};
 
 use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
 
-/// Events read per page while re-pricing.
+/// Events priced per write transaction while re-pricing.
 const PAGE: usize = 1000;
 
-/// Where stored snapshots say they came from.
-pub(crate) const PRICING_SOURCE: &str = "litellm";
+/// Where downloaded snapshots say they came from.
+pub(crate) const PRICING_SOURCE: &str = SOURCE_LITELLM;
 
 /// What a price list refresh did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,13 +62,23 @@ impl Ctx {
         .await?
     }
 
-    /// Conditional GET of the price list; a valid new list becomes the active snapshot and
-    /// prices the events that had no price (D11).
+    /// Conditional GET of the price list, validated against the active snapshot; a valid new
+    /// list becomes the active snapshot, keeps the models it dropped priced, and prices the
+    /// events that had no price (D11). The `ETag` is stored with the snapshot, so it survives
+    /// restarts.
     pub(crate) async fn refresh_pricing(self: &Arc<Self>) -> Result<PricingResult, DaemonError> {
         let http = self.http()?;
         let source = LitellmRefresh::new(http.client.clone(), http.endpoints.github_raw.clone());
-        let etag = lock(&self.run).pricing_etag.clone();
-        match source.refresh(etag.as_deref()).await? {
+        let active = self
+            .blocking(ThreadPriority::Background, |ctx| {
+                lock(&ctx.reader).active_pricing_snapshot()
+            })
+            .await??;
+        let etag = active
+            .as_ref()
+            .and_then(|snapshot| snapshot.etag.as_deref());
+        let body = active.as_ref().map(|snapshot| snapshot.body.as_slice());
+        match source.refresh(etag, body).await? {
             RefreshOutcome::NotModified => Ok(PricingResult::Unchanged),
             RefreshOutcome::Rejected(reason) => {
                 tracing::warn!(%reason, "the downloaded price list was rejected");
@@ -81,14 +91,15 @@ impl Ctx {
             } => {
                 let overrides = self.active().ingest.overrides.clone();
                 self.blocking(ThreadPriority::Background, move |ctx| {
-                    let version = lock(&ctx.store).put_pricing_snapshot(
-                        &body,
-                        Timestamp::now(),
-                        Some(PRICING_SOURCE),
-                    )?;
-                    lock(&ctx.run).pricing_etag = etag;
+                    let version = {
+                        let mut store = lock(&ctx.store);
+                        let version =
+                            store.put_pricing_snapshot(&body, Timestamp::now(), Some(SOURCE_LITELLM))?;
+                        store.set_pricing_etag(etag.as_deref())?;
+                        version
+                    };
                     let repriced = ctx.reprice_unpriced(&catalog, &overrides)?;
-                    tracing::info!(%version, repriced, "price list updated");
+                    tracing::info!(%version, carried = catalog.carried(), repriced, "price list updated");
                     ctx.after_write(true);
                     Ok(PricingResult::Updated { repriced })
                 })
@@ -97,66 +108,34 @@ impl Ctx {
         }
     }
 
-    /// Gives a price to every event that has none; priced events keep theirs (D11).
+    /// Gives a price to every event that has none; priced events keep theirs (D11). Each page is
+    /// one write that changes only the cost columns of rows no scan rewrote meanwhile.
     fn reprice_unpriced(
         &self,
         catalog: &PricingCatalog,
         overrides: &[Override],
     ) -> Result<u64, DaemonError> {
-        let mut after = Revision::ZERO;
+        let mut cursor = RepriceCursor::default();
         let mut repriced = 0_u64;
         loop {
-            let page = lock(&self.reader).usage_events_after(after, PAGE)?;
-            let Some(last) = page.last().map(|event| event.revision) else {
-                return Ok(repriced);
-            };
-            let full = page.len() == PAGE;
-            let updates: Vec<UsageEvent> = page
-                .into_iter()
-                .filter_map(|event| priced(event.row, catalog, overrides))
-                .collect();
-            if !updates.is_empty() {
-                lock(&self.store).upsert_events(&updates)?;
-                repriced += u64::try_from(updates.len()).unwrap_or(u64::MAX);
+            let page = lock(&self.store).reprice_unpriced(cursor, PAGE, |event| {
+                let query = PriceQuery {
+                    model: &event.model,
+                    provider: event.provider.as_ref(),
+                    tokens: &event.tokens,
+                    service_tier: event.service_tier.as_deref(),
+                    modifiers: None,
+                };
+                estimate(&query, catalog, overrides).map(|priced| Repriced {
+                    estimate: priced.estimate,
+                    approximate: priced.approximate,
+                })
+            })?;
+            repriced = repriced.saturating_add(page.repriced);
+            match page.next {
+                Some(next) => cursor = next,
+                None => return Ok(repriced),
             }
-            if !full {
-                return Ok(repriced);
-            }
-            after = last;
         }
     }
-}
-
-/// `event` with an estimate, if it had no price and the catalog has a rate for it.
-fn priced(
-    mut event: UsageEvent,
-    catalog: &PricingCatalog,
-    overrides: &[Override],
-) -> Option<UsageEvent> {
-    if !matches!(event.cost.api_cost(), ApiCost::Unpriced) {
-        return None;
-    }
-    let parsed = ParsedEvent {
-        agent: event.agent,
-        profile: event.profile.clone(),
-        dedup_key: event.dedup_key.clone(),
-        at: event.at,
-        session: event.session.clone(),
-        parent_session: event.parent_session.clone(),
-        subagent: event.subagent.clone(),
-        is_sidechain: event.is_sidechain,
-        cwd: event.cwd.clone(),
-        git_branch: event.git_branch.clone(),
-        source_file: event.source_file,
-        approximate: event.approximate,
-        provider: event.provider.clone(),
-        model: event.model.clone(),
-        kind: event.kind,
-        tokens: event.tokens,
-        reported_cost: None,
-        service_tier: event.service_tier.clone(),
-    };
-    let estimate = estimate(&parsed, catalog, overrides)?;
-    event.cost = EventCost::new(None, Some(estimate));
-    Some(event)
 }

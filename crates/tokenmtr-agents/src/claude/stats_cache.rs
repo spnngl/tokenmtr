@@ -169,6 +169,7 @@ fn event(
         tokens: mix.split(total),
         reported_cost: None,
         service_tier: None,
+        modifiers: None,
     })
 }
 

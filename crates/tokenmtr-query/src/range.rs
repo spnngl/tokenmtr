@@ -243,6 +243,8 @@ impl Bucket {
     #[must_use]
     pub fn pick(range: &DateRange, max_points: u32) -> Self {
         let days = range.days();
+        // Day buckets are exactly `days`; a range not aligned to the week start touches up to
+        // one more week than `days / 7` rounded up, hence the strict comparison.
         if days <= max_points {
             Self::Day
         } else if days.div_ceil(7) < max_points {

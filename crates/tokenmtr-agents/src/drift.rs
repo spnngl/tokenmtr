@@ -5,10 +5,13 @@ use std::collections::BTreeSet;
 use camino::Utf8PathBuf;
 use serde::Serialize;
 
+use crate::jsonl::LineScan;
 use crate::skeleton::KeySkeleton;
 use crate::source::ByteOffset;
 
-/// Skipped usage-bearing lines above this share (in percent) of a scan raise a drift issue.
+/// Skipped usage-bearing lines above this share (in percent) of a scan raise a drift issue. The
+/// ingestor decides on the counters of the whole scan ([`DriftStats::threshold_issue`]), so one
+/// bad line in a short append does not raise it.
 pub const DRIFT_THRESHOLD_PERCENT: u64 = 1;
 
 /// How a parser classified one line it was handed. Feed it to [`DriftStats::record`].
@@ -58,7 +61,9 @@ pub struct DriftStats {
     pub events: u64,
     /// Usage-bearing lines that should have mapped: events plus failures.
     pub usage_lines: u64,
-    /// Usage-bearing lines that failed: unmappable lines and malformed lines mentioning usage.
+    /// Usage-bearing lines that failed: unmappable lines, and malformed or oversized lines
+    /// mentioning usage. Ignored lines (e.g. Claude's `<synthetic>` model) are deliberate and do
+    /// not count.
     pub usage_lines_failed: u64,
     /// Lines skipped, by reason.
     pub skipped: SkippedLines,
@@ -91,6 +96,17 @@ impl DriftStats {
         }
     }
 
+    /// Takes the reader's counters for a parse that started at `start`: bytes and lines read,
+    /// pre-filtered lines, and oversized lines, which fail when they mention usage.
+    pub const fn record_scan(&mut self, start: ByteOffset, scan: &LineScan) {
+        self.bytes_read = scan.new_offset.get().saturating_sub(start.get());
+        self.lines_read = scan.lines;
+        self.skipped.no_needle = scan.filtered;
+        self.skipped.oversized = scan.oversized;
+        self.usage_lines += scan.oversized_usage;
+        self.usage_lines_failed += scan.oversized_usage;
+    }
+
     /// Adds the counters of another parse call.
     pub fn merge(&mut self, other: &Self) {
         self.bytes_read += other.bytes_read;
@@ -108,22 +124,31 @@ impl DriftStats {
             .extend(other.unknown_versions.iter().cloned());
     }
 
-    /// The drift issue these counters call for, if any (D42): an unmappable usage-bearing line, or
-    /// failed usage-bearing lines above [`DRIFT_THRESHOLD_PERCENT`] of the usage-bearing lines.
-    /// `sample` is the skeleton of the first unmappable line.
+    /// The per-file drift issue (D42): raised as soon as one known usage-bearing line fails to
+    /// map. `sample` is the skeleton of the first unmappable line.
     #[must_use]
-    pub fn drift_issue(&self, sample: Option<KeySkeleton>) -> Option<ParseIssue> {
-        let reason = if self.skipped.unmapped > 0 {
-            DriftReason::UnmappedLine
-        } else if self.usage_lines_failed * 100 > self.usage_lines * DRIFT_THRESHOLD_PERCENT {
-            DriftReason::SkippedOverThreshold
-        } else {
+    pub fn unmapped_issue(&self, sample: Option<KeySkeleton>) -> Option<ParseIssue> {
+        if self.skipped.unmapped == 0 {
             return None;
-        };
+        }
         Some(ParseIssue::FormatDrift {
-            reason,
+            reason: DriftReason::UnmappedLine,
             lines: self.usage_lines_failed,
             sample,
+        })
+    }
+
+    /// The per-scan drift issue (D42): failed usage-bearing lines above
+    /// [`DRIFT_THRESHOLD_PERCENT`] of the usage-bearing lines. Call it on the counters of a whole
+    /// scan, [`merge`](Self::merge)d over its files.
+    #[must_use]
+    pub fn threshold_issue(&self) -> Option<ParseIssue> {
+        let over = self.usage_lines_failed.saturating_mul(100)
+            > self.usage_lines.saturating_mul(DRIFT_THRESHOLD_PERCENT);
+        over.then_some(ParseIssue::FormatDrift {
+            reason: DriftReason::SkippedOverThreshold,
+            lines: self.usage_lines_failed,
+            sample: None,
         })
     }
 }
@@ -172,6 +197,9 @@ pub enum ParseIssue {
 pub struct ParseOutcome {
     /// Offset after the last complete line. A half-written last line stays before it (D15).
     pub new_offset: ByteOffset,
+    /// The reader's [`LineScan::last_line_hash`]: the checkpoint hash at `new_offset`, taken from
+    /// the bytes parsed.
+    pub last_line_hash: Option<[u8; 32]>,
     /// Issues raised by this call.
     pub issues: Vec<ParseIssue>,
     /// Counters of this call.
@@ -197,14 +225,44 @@ mod tests {
 
     #[test]
     fn one_percent_is_tolerated_more_is_not() {
-        assert_eq!(stats(99, 1).drift_issue(None), None);
+        assert_eq!(stats(99, 1).threshold_issue(), None);
         assert!(matches!(
-            stats(98, 2).drift_issue(None),
+            stats(98, 2).threshold_issue(),
             Some(ParseIssue::FormatDrift {
                 reason: DriftReason::SkippedOverThreshold,
                 ..
             })
         ));
+        assert_eq!(stats(98, 2).unmapped_issue(None), None, "never per file");
+    }
+
+    #[test]
+    fn the_threshold_applies_to_the_merged_scan() {
+        let mut scan = stats(49, 1);
+        assert!(scan.threshold_issue().is_some(), "2% of one file");
+        scan.merge(&stats(100, 0));
+        assert_eq!(scan.threshold_issue(), None, "under 1% of the scan");
+    }
+
+    #[test]
+    fn oversized_lines_mentioning_usage_fail() {
+        let mut stats = stats(10, 0);
+        let scan = LineScan {
+            new_offset: ByteOffset::new(100),
+            oversized: 2,
+            oversized_usage: 1,
+            ..LineScan::default()
+        };
+        stats.record_scan(ByteOffset::new(40), &scan);
+        assert_eq!(
+            (
+                stats.bytes_read,
+                stats.usage_lines,
+                stats.usage_lines_failed
+            ),
+            (60, 11, 1)
+        );
+        assert_eq!(stats.skipped.oversized, 2);
     }
 
     #[test]
@@ -213,7 +271,7 @@ mod tests {
         stats.record(LineClass::Malformed {
             usage_bearing: false,
         });
-        assert_eq!(stats.drift_issue(None), None);
+        assert_eq!(stats.threshold_issue(), None);
     }
 
     #[test]
@@ -221,7 +279,7 @@ mod tests {
         let mut stats = stats(1000, 0);
         stats.record(LineClass::Unmapped);
         assert!(matches!(
-            stats.drift_issue(None),
+            stats.unmapped_issue(None),
             Some(ParseIssue::FormatDrift {
                 reason: DriftReason::UnmappedLine,
                 lines: 1,

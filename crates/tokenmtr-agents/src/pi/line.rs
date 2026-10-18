@@ -330,7 +330,7 @@ fn map_event(
     Some(Mapping::Event(Box::new(ParsedEvent {
         agent: AgentId::PI,
         profile: ctx.profile.clone(),
-        dedup_key: dedup_key(ctx, entry, source.response_id)?,
+        dedup_key: dedup_key(entry, source, &tokens, reported_cost)?,
         at: at?,
         session: ctx.session.clone()?,
         parent_session: ctx.parent_session.clone(),
@@ -349,22 +349,51 @@ fn map_event(
         tokens,
         reported_cost,
         service_tier: None,
+        modifiers: None,
     })))
 }
 
-/// The assistant `responseId`, else `"{entry id}|{entry timestamp}"` (D12). A copy of an entry in a
-/// forked session file keeps both, so it dedups against the original. Entries of version 1 files
-/// have no id: the session id stands in.
-fn dedup_key(ctx: &LineContext, entry: &Entry<'_>, response_id: Option<&str>) -> Option<DedupKey> {
-    if let Some(id) = response_id.filter(|id| !id.is_empty()) {
+/// The assistant `responseId`, else a key built from what pi never rewrites (D12): the entry
+/// timestamp text, the event kind, provider, model, token counts and cost in micro-USD, joined
+/// with `|`.
+///
+/// - pi's v1 to v2 migration gives every entry a new random `id`, so an id-based key would count
+///   a migrated file twice; the entry `timestamp` and the usage survive the rewrite verbatim.
+/// - A forked session file copies the entry, so the copy dedups against the original.
+/// - Neither the session nor the file is part of the key, for the same reason.
+fn dedup_key(
+    entry: &Entry<'_>,
+    source: &Source<'_>,
+    tokens: &TokenCounts,
+    cost: Option<UsdMicros>,
+) -> Option<DedupKey> {
+    if let Some(id) = source.response_id.filter(|id| !id.is_empty()) {
         return DedupKey::try_from(id).ok();
     }
-    let id = entry
-        .id
-        .as_deref()
-        .filter(|id| !id.is_empty())
-        .or_else(|| ctx.session.as_ref().map(SessionId::as_str))?;
-    DedupKey::try_from(format!("{id}|{}", entry.timestamp.as_deref()?)).ok()
+    let timestamp = entry.timestamp.as_deref().filter(|at| !at.is_empty())?;
+    let kind = match source.kind {
+        EventKind::Message => "message",
+        EventKind::ToolResult => "tool_result",
+        EventKind::Compaction => "compaction",
+        EventKind::BranchSummary => "branch_summary",
+        EventKind::Auxiliary => "auxiliary",
+        EventKind::DailyAggregate => "daily_aggregate",
+    };
+    let TokenCounts {
+        input_uncached,
+        cache_read,
+        cache_write_5m,
+        cache_write_1h,
+        output,
+        reasoning,
+    } = *tokens;
+    let cost = cost.map_or_else(String::new, |cost| cost.get().to_string());
+    DedupKey::try_from(format!(
+        "{timestamp}|{kind}|{}|{}|{input_uncached}|{cache_read}|{cache_write_5m}|{cache_write_1h}|{output}|{reasoning}|{cost}",
+        source.provider.unwrap_or_default(),
+        source.model.unwrap_or_default(),
+    ))
+    .ok()
 }
 
 /// A line that did not deserialize: not JSON at all, or JSON of an unexpected shape. A usage-bearing
@@ -396,8 +425,6 @@ struct Probe<'a> {
 struct Entry<'a> {
     #[serde(rename = "type", borrow)]
     kind: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    id: Option<Cow<'a, str>>,
     #[serde(borrow)]
     timestamp: Option<Cow<'a, str>>,
     /// `usage` entries only.

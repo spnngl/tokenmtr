@@ -175,9 +175,8 @@ pub fn quota_history(
     app: &AppContext,
     now: Timestamp,
     request: &QueryRequest,
-    agent: &str,
+    agent: AgentId,
 ) -> Result<Value, CommandError> {
-    let agent = parse_agent(agent)?;
     let configured: Vec<ProfileId> = app
         .config()
         .agents
@@ -185,13 +184,13 @@ pub fn quota_history(
         .map(|config| config.profiles.iter().map(|p| p.id.clone()).collect())
         .unwrap_or_default();
     filtered(app, now, request, |reader, ctx, filters| {
-        let profiles = if filters.profile_list().is_empty() {
-            &configured
+        let profiles = if filters.restricts_profiles() {
+            filters.profiles_of(agent)
         } else {
-            filters.profile_list()
+            configured.clone()
         };
         let mut out = Vec::new();
-        for profile in profiles {
+        for profile in &profiles {
             out.extend(tokenmtr_query::quota_history(
                 reader,
                 ctx,
@@ -229,10 +228,10 @@ pub fn advisor(
             if !filters.agent_list().is_empty() && !filters.agent_list().contains(agent) {
                 continue;
             }
-            let profiles = if filters.profile_list().is_empty() {
-                configured(*agent)
+            let profiles = if filters.restricts_profiles() {
+                filters.profiles_of(*agent)
             } else {
-                filters.profile_list().to_vec()
+                configured(*agent)
             };
             for profile in &profiles {
                 out.push(tokenmtr_query::advisor(
@@ -248,18 +247,16 @@ pub fn advisor(
 pub fn session_detail(
     app: &AppContext,
     now: Timestamp,
-    agent: &str,
-    session: &str,
+    agent: AgentId,
+    session: &SessionId,
     currency: Currency,
 ) -> Result<Value, CommandError> {
-    let agent = parse_agent(agent)?;
-    let session = SessionId::try_from(session.to_owned()).map_err(CommandError::invalid)?;
     let ctx = tokenmtr_app::query_context(app.config(), app.reader(), now, Some(currency))?;
     json(tokenmtr_query::session_detail(
         app.reader(),
         &ctx,
         agent,
-        &session,
+        session,
     ))
 }
 
@@ -376,10 +373,6 @@ pub fn recap(
     }))
 }
 
-fn parse_agent(agent: &str) -> Result<AgentId, CommandError> {
-    agent.parse().map_err(CommandError::invalid)
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -413,7 +406,8 @@ mod tests {
         assert_eq!(models[0]["model"], "claude-sonnet-4");
         let page = sessions(&app, fixture.now, &request("USD")?, 0, 10)?;
         assert_eq!(page["total"], 1);
-        let detail = session_detail(&app, fixture.now, "claude", "s1", Currency::Usd)?;
+        let session = SessionId::try_from("s1")?;
+        let detail = session_detail(&app, fixture.now, AgentId::CLAUDE, &session, Currency::Usd)?;
         assert_eq!(detail["events"].as_array().map(Vec::len), Some(2));
         Ok(())
     }
@@ -450,15 +444,6 @@ mod tests {
         assert_eq!(backups(&app)?, json!([]));
         assert_eq!(system_health(&app, fixture.now)?["level"], "ok");
         assert!(budgets(&app, fixture.now, Currency::Usd)?.is_array());
-        Ok(())
-    }
-
-    #[test]
-    fn a_bad_agent_is_an_invalid_request() -> Result<(), Box<dyn std::error::Error>> {
-        let fixture = seeded(CONFIG)?;
-        let app = fixture.backend.context()?;
-        let error = quota_history(&app, fixture.now, &request("USD")?, "not an agent");
-        assert!(error.is_err());
         Ok(())
     }
 }

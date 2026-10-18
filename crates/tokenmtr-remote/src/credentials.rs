@@ -3,7 +3,11 @@
 //! The daemon never refreshes or writes the token: Claude Code owns it. The access token lives
 //! only in a [`SecretString`]; no error here carries credential text.
 
+use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
+
 use camino::{Utf8Path, Utf8PathBuf};
+use jiff::Timestamp;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -22,7 +26,8 @@ const CONFIG_DIR_HASH_LEN: usize = 8;
 /// `Claude Code-credentials-<first 8 hex of sha256(config_dir)>`.
 ///
 /// Derived from Claude Code's behaviour as remembered, **not verified on a real install**
-/// (PLAN.md Phase 10 step 1). The hash input is the path string exactly as the variable holds
+/// (PLAN.md Phase 10 step 1): Claude Code ships as compiled bytecode, so the derivation cannot be
+/// read from the package, and no install with a custom config dir was at hand. The hash input is the path string exactly as the variable holds
 /// it (Claude Code also NFC-normalizes it, which only matters for non-ASCII paths). Override
 /// with [`CredentialLocation::with_keychain_service`] when the real name differs.
 #[must_use]
@@ -103,6 +108,20 @@ impl CredentialLocation {
         self
     }
 
+    /// The same location without its Keychain sources, for a profile whose Keychain access was
+    /// denied.
+    #[must_use]
+    pub fn without_keychain(&self) -> Self {
+        Self {
+            sources: self
+                .sources
+                .iter()
+                .filter(|source| matches!(source, CredentialSource::File { .. }))
+                .cloned()
+                .collect(),
+        }
+    }
+
     /// The sources in lookup order.
     #[must_use]
     pub fn sources(&self) -> &[CredentialSource] {
@@ -125,10 +144,27 @@ pub enum CredentialsError {
         #[source]
         source: std::io::Error,
     },
+    /// The credentials file is not a regular file, or other users may write it, so its token
+    /// cannot be trusted. Claude Code writes it `0600`.
+    #[error("refusing credentials file {path}: {reason}")]
+    Insecure {
+        /// The file.
+        path: Utf8PathBuf,
+        /// Why it was refused.
+        reason: &'static str,
+    },
     /// A credentials document is not the JSON Claude Code writes. The parser's message is
     /// dropped on purpose: it can quote input.
     #[error("credentials are not valid Claude Code credentials JSON")]
     Malformed,
+}
+
+impl CredentialsError {
+    /// Whether the Keychain refused access ([`SecretError::Denied`]).
+    #[must_use]
+    pub fn is_keychain_denied(&self) -> bool {
+        matches!(self, Self::Secret(SecretError::Denied))
+    }
 }
 
 /// `{"claudeAiOauth": {...}}`; every other key is ignored.
@@ -142,6 +178,8 @@ struct RawCredentials {
 #[serde(rename_all = "camelCase")]
 struct RawOauth {
     access_token: Option<SecretString>,
+    /// Milliseconds since the epoch. Read leniently: a value of another type means "unknown".
+    expires_at: Option<serde_json::Value>,
     subscription_type: Option<String>,
     rate_limit_tier: Option<String>,
 }
@@ -152,6 +190,7 @@ struct RawOauth {
 #[derive(Debug)]
 pub struct ClaudeCredentials {
     access_token: SecretString,
+    expires_at: Option<Timestamp>,
     account: AccountInfo,
 }
 
@@ -177,8 +216,14 @@ impl ClaudeCredentials {
             oauth.subscription_type.as_deref(),
             oauth.rate_limit_tier.as_deref(),
         );
+        let expires_at = oauth
+            .expires_at
+            .as_ref()
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|ms| Timestamp::from_millisecond(ms).ok());
         Ok(Some(Self {
             access_token,
+            expires_at,
             account: AccountInfo {
                 email: None,
                 organization: None,
@@ -188,8 +233,11 @@ impl ClaudeCredentials {
         }))
     }
 
-    /// Reads the first source of `location` that holds credentials. Blocking: the Keychain may
-    /// prompt, so call from a blocking context.
+    /// Reads the first source of `location` that holds credentials. Blocking (Keychain and file
+    /// reads), so call from a blocking context. The Keychain never prompts.
+    ///
+    /// A credentials file must be a regular file that only its owner may write
+    /// ([`CredentialsError::Insecure`]).
     ///
     /// A source that fails does not hide a later one that works; when nothing works, the first
     /// failure is returned, otherwise `Ok(None)` (signed out).
@@ -222,18 +270,23 @@ impl ClaudeCredentials {
             CredentialSource::Keychain { service } => secrets
                 .get(service)?
                 .map_or(Ok(None), |text| Self::parse(text.expose_secret())),
-            CredentialSource::File { path } => match std::fs::read_to_string(path) {
-                Ok(text) => {
-                    let text = SecretString::from(text);
-                    Self::parse(text.expose_secret())
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                Err(source) => Err(CredentialsError::Io {
-                    path: path.clone(),
-                    source,
-                }),
+            CredentialSource::File { path } => match read_credentials_file(path)? {
+                Some(text) => Self::parse(text.expose_secret()),
+                None => Ok(None),
             },
         }
+    }
+
+    /// When the access token expires, if the credentials say.
+    #[must_use]
+    pub fn expires_at(&self) -> Option<Timestamp> {
+        self.expires_at
+    }
+
+    /// Whether the token is past its `expiresAt` at `now`. Unknown expiry is not expired.
+    #[must_use]
+    pub fn is_expired(&self, now: Timestamp) -> bool {
+        self.expires_at.is_some_and(|at| at <= now)
     }
 
     /// The bearer token.
@@ -248,4 +301,32 @@ impl ClaudeCredentials {
     pub fn account(&self) -> &AccountInfo {
         &self.account
     }
+}
+
+/// Reads a credentials file, `None` when it does not exist. The checks run on the opened file
+/// (a symlink is followed), so they hold for the bytes actually read.
+fn read_credentials_file(path: &Utf8Path) -> Result<Option<SecretString>, CredentialsError> {
+    let io = |source| CredentialsError::Io {
+        path: path.to_owned(),
+        source,
+    };
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io(e)),
+    };
+    let meta = file.metadata().map_err(io)?;
+    let refuse = |reason| CredentialsError::Insecure {
+        path: path.to_owned(),
+        reason,
+    };
+    if !meta.is_file() {
+        return Err(refuse("not a regular file"));
+    }
+    if meta.permissions().mode() & 0o022 != 0 {
+        return Err(refuse("other users may write it"));
+    }
+    let mut text = String::new();
+    file.read_to_string(&mut text).map_err(io)?;
+    Ok(Some(SecretString::from(text)))
 }

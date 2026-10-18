@@ -212,7 +212,7 @@ pub(crate) fn pending(
     let (rows, oldest): (i64, Option<i64>) = conn.query_row(
         &format!(
             "SELECT COUNT(*), MIN(updated_at_us) FROM {} WHERE revision > ?1",
-            dataset.table()
+            crate::types::table(dataset)
         ),
         [after],
         |row| Ok((row.get(0)?, row.get(1)?)),

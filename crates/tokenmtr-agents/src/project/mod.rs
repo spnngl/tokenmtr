@@ -8,8 +8,10 @@
 //! 3. The main repository's root path, when it has no `origin`.
 //! 4. The cwd itself.
 //!
-//! A cwd that no longer exists, or that the OS refuses to list (macOS protected folders, D50),
-//! skips the git steps and is reported as a [`CwdProblem`] so the caller can raise one issue.
+//! A cwd under a macOS protected folder (D50) is never touched: the check is lexical, so the
+//! daemon cannot trigger a consent prompt. A cwd that no longer exists, that the OS refuses to
+//! list or that is not a readable directory also skips the git steps. Each is reported as a
+//! [`CwdProblem`] so the caller can raise one issue.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
@@ -22,8 +24,10 @@ use tokenmtr_store::{ProjectResolution, ProjectSource};
 pub enum CwdProblem {
     /// The directory does not exist (deleted, or on another machine). Suggest a `[[projects]]` rule.
     Missing,
-    /// The OS denied access (macOS protected folder, D50).
+    /// Under a protected folder, or the OS denied access (macOS, D50).
     Protected,
+    /// It exists but cannot be read as a directory (not a directory, a symlink loop, ...).
+    Unreadable,
 }
 
 /// A resolution, with the problem that forced the cwd fallback, if any.
@@ -39,13 +43,15 @@ pub struct Resolved {
 #[derive(Debug, Clone, Default)]
 pub struct ProjectResolver {
     rules: Vec<ProjectRule>,
+    /// Folders whose cwds are never read ([`tokenmtr_platform::Paths::protected`]).
+    protected: Vec<Utf8PathBuf>,
 }
 
 impl ProjectResolver {
-    /// A resolver over `rules`, in config order.
+    /// A resolver over `rules`, in config order, that never reads under `protected`.
     #[must_use]
-    pub const fn new(rules: Vec<ProjectRule>) -> Self {
-        Self { rules }
+    pub const fn new(rules: Vec<ProjectRule>, protected: Vec<Utf8PathBuf>) -> Self {
+        Self { rules, protected }
     }
 
     /// The first rule matching `cwd`.
@@ -67,14 +73,21 @@ impl ProjectResolver {
                 problem: None,
             });
         }
-        let problem = match std::fs::read_dir(cwd) {
-            Ok(_) => None,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Some(CwdProblem::Missing),
-            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
-                Some(CwdProblem::Protected)
+        let protected = self
+            .protected
+            .iter()
+            .any(|folder| tokenmtr_platform::paths::is_under(cwd, folder));
+        let problem = if protected {
+            Some(CwdProblem::Protected)
+        } else {
+            match std::fs::read_dir(cwd) {
+                Ok(_) => None,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Some(CwdProblem::Missing),
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                    Some(CwdProblem::Protected)
+                }
+                Err(_) => Some(CwdProblem::Unreadable),
             }
-            // Not a directory, too many symlinks, ...: treat as a plain path.
-            Err(_) => Some(CwdProblem::Missing),
         };
         let git = if problem.is_none() {
             git_facts(cwd)

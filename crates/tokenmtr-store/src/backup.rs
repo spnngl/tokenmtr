@@ -107,6 +107,9 @@ pub fn restore(src: &Utf8Path, dest: &Utf8Path) -> Result<(), StoreError> {
         reject_newer_schema(&check)?;
         check_integrity(&check)?;
     }
+    // The stale WAL goes first: a crash before the rename leaves the old database at its last
+    // checkpoint, still consistent, whereas the new file next to the old WAL would replay foreign
+    // frames on open.
     for suffix in ["-wal", "-shm"] {
         match fs::remove_file(format!("{dest}{suffix}")) {
             Ok(()) => {}

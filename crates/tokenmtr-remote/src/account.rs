@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use tokenmtr_core::Plan;
 
+use crate::error::JsonPosition;
+
 /// What is known about one Claude login. Every field is optional because each source (the
 /// credentials file, the profile endpoint) fills only some of them.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,12 +80,18 @@ struct ProfileOrganization {
     rate_limit_tier: Option<String>,
 }
 
+/// Why a profile body was rejected: category and position only, never the offending value (D55).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("profile response is not the expected JSON ({0})")]
+pub struct ProfileParseError(JsonPosition);
+
 /// Parses an `/api/oauth/profile` body.
 ///
 /// # Errors
-/// [`serde_json::Error`] if the body is not a JSON object of the expected shape.
-pub fn parse_profile_response(body: &[u8]) -> Result<AccountInfo, serde_json::Error> {
-    let profile: ProfileResponse = serde_json::from_slice(body)?;
+/// [`ProfileParseError`] if the body is not a JSON object of the expected shape.
+pub fn parse_profile_response(body: &[u8]) -> Result<AccountInfo, ProfileParseError> {
+    let profile: ProfileResponse =
+        serde_json::from_slice(body).map_err(|e| ProfileParseError(e.into()))?;
     let (organization, organization_type, rate_limit_tier) = match profile.organization {
         Some(o) => (o.name, o.organization_type, o.rate_limit_tier),
         None => (None, None, None),

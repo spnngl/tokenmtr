@@ -1,5 +1,6 @@
 //! The shared HTTP client, endpoint base URLs and conditional GET (D13).
 
+use std::net::IpAddr;
 use std::time::Duration;
 
 use reqwest::header::{ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
@@ -19,11 +20,18 @@ pub const ALLOWED_HOSTS: [&str; 3] = [
 ];
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest silence between two reads of one response. It bounds stalls without capping how long
+/// a large, steadily flowing body may take.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// Whole-exchange cap of the small API calls (quota, profile).
+pub(crate) const API_TIMEOUT: Duration = Duration::from_secs(30);
+/// Whole-exchange backstop of the multi-megabyte downloads (ECB history, `LiteLLM` list).
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(10);
 const MAX_REDIRECTS: usize = 5;
 
-/// Builds the one `reqwest` client every endpoint shares: rustls, timeouts, the tokenmtr
-/// user-agent, and redirects that never leave the original host.
+/// Builds the one `reqwest` client every endpoint shares: rustls, connect and idle-read
+/// timeouts, the tokenmtr user-agent, and redirects that stay on the original host and on the
+/// allow-list ([`may_follow`]).
 ///
 /// # Errors
 /// [`RemoteError::ClientBuild`] if the TLS backend cannot initialise.
@@ -31,13 +39,9 @@ pub fn build_client() -> Result<Client, RemoteError> {
     Client::builder()
         .user_agent(USER_AGENT)
         .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
         .redirect(Policy::custom(|attempt| {
-            let same_host = attempt
-                .previous()
-                .last()
-                .is_some_and(|prev| prev.host_str() == attempt.url().host_str());
-            if same_host && attempt.previous().len() < MAX_REDIRECTS {
+            if may_follow(attempt.previous(), attempt.url()) {
                 attempt.follow()
             } else {
                 attempt.stop()
@@ -45,6 +49,31 @@ pub fn build_client() -> Result<Client, RemoteError> {
         }))
         .build()
         .map_err(RemoteError::ClientBuild)
+}
+
+/// Whether a request may go to `url` (D13): an [`ALLOWED_HOSTS`] host over HTTPS, or a loopback
+/// host over any scheme (the mock servers of tests; loopback cannot leak anything off the
+/// machine).
+fn is_allowed(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let loopback = host == "localhost"
+        || host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .parse::<IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    loopback || (url.scheme() == "https" && ALLOWED_HOSTS.contains(&host))
+}
+
+/// Whether to follow a redirect to `next` after `previous` hops: same host as the last hop, no
+/// HTTPS-to-HTTP downgrade, allowed by [`is_allowed`], and fewer than [`MAX_REDIRECTS`] hops.
+fn may_follow(previous: &[Url], next: &Url) -> bool {
+    previous.last().is_some_and(|prev| {
+        prev.host_str() == next.host_str() && (prev.scheme() != "https" || next.scheme() == "https")
+    }) && is_allowed(next)
+        && previous.len() < MAX_REDIRECTS
 }
 
 /// Base URLs of the three remote hosts. Tests point them at a mock server.
@@ -89,10 +118,23 @@ fn parse_base(base: &str) -> Result<Url, RemoteError> {
     Url::parse(base).map_err(|_| RemoteError::BadUrl(base.to_owned()))
 }
 
-/// Joins an absolute `path` onto `base`, replacing any path the base has.
+/// Joins an absolute `path` onto `base`, replacing any path the base has. Every request URL is
+/// built here, so this is where the allow-list ([`is_allowed`]) is enforced.
+///
+/// # Errors
+/// [`RemoteError::BadUrl`] if the join fails, [`RemoteError::HostNotAllowed`] if the result is
+/// not allowed.
 pub(crate) fn join(base: &Url, path: &str) -> Result<Url, RemoteError> {
-    base.join(path)
-        .map_err(|_| RemoteError::BadUrl(path.to_owned()))
+    let url = base
+        .join(path)
+        .map_err(|_| RemoteError::BadUrl(path.to_owned()))?;
+    if is_allowed(&url) {
+        Ok(url)
+    } else {
+        Err(RemoteError::HostNotAllowed(
+            url.host_str().unwrap_or_default().to_owned(),
+        ))
+    }
 }
 
 /// Cache validators a server returned, replayed on the next request.
@@ -148,7 +190,7 @@ pub(crate) async fn get_conditional(
     validators: &Validators,
     limit: usize,
 ) -> Result<Fetched, RemoteError> {
-    let mut request = client.get(url);
+    let mut request = client.get(url).timeout(DOWNLOAD_TIMEOUT);
     if let Some(etag) = &validators.etag {
         request = request.header(IF_NONE_MATCH, etag);
     }
@@ -220,6 +262,55 @@ mod tests {
     fn join_replaces_the_base_path() -> Result<(), RemoteError> {
         let base = parse_base("http://127.0.0.1:1/ignored")?;
         assert_eq!(join(&base, "/api/x")?.path(), "/api/x");
+        Ok(())
+    }
+
+    #[test]
+    fn join_enforces_the_allow_list() -> Result<(), RemoteError> {
+        for allowed in [
+            "https://api.anthropic.com",
+            "https://raw.githubusercontent.com",
+            "http://localhost:8080",
+            "http://[::1]:8080",
+        ] {
+            assert!(join(&parse_base(allowed)?, "/x").is_ok(), "{allowed}");
+        }
+        for refused in [
+            "http://api.anthropic.com",
+            "https://example.com",
+            "https://api.anthropic.com.evil.test",
+            "http://10.0.0.1",
+        ] {
+            assert!(
+                matches!(
+                    join(&parse_base(refused)?, "/x"),
+                    Err(RemoteError::HostNotAllowed(_))
+                ),
+                "{refused}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn redirects_stay_on_host_https_and_hop_limit() -> Result<(), RemoteError> {
+        let url = |s: &str| parse_base(s);
+        let ecb = url("https://www.ecb.europa.eu/a")?;
+        assert!(may_follow(
+            std::slice::from_ref(&ecb),
+            &url("https://www.ecb.europa.eu/b")?
+        ));
+        assert!(!may_follow(
+            std::slice::from_ref(&ecb),
+            &url("http://www.ecb.europa.eu/b")?
+        ));
+        assert!(!may_follow(
+            std::slice::from_ref(&ecb),
+            &url("https://api.anthropic.com/b")?
+        ));
+        assert!(!may_follow(&[], &url("https://www.ecb.europa.eu/b")?));
+        let hops = vec![ecb; MAX_REDIRECTS];
+        assert!(!may_follow(&hops, &url("https://www.ecb.europa.eu/b")?));
         Ok(())
     }
 }

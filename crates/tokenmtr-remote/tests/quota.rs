@@ -2,6 +2,8 @@
 
 mod common;
 
+use std::time::Duration;
+
 use common::{FAKE_TOKEN, TestResult, closed_port_base, endpoints, fixture, fixture_text};
 use tokenmtr_core::{Plan, WindowId};
 use tokenmtr_remote::{
@@ -116,14 +118,50 @@ async fn no_credentials_is_signed_out_and_sends_nothing() -> TestResult {
 }
 
 #[tokio::test]
-async fn bad_bodies_are_malformed() -> TestResult {
-    for body in [
-        "not json at all",
-        "[]",
-        r#"{"five_hour": {"utilization": "high"}}"#,
-        r#"{"five_hour": {"utilization": -3.0}}"#,
-        r#"{"five_hour": {"utilization": 1.0, "resets_at": "tomorrow"}}"#,
+async fn expired_credentials_are_token_expired_and_send_nothing() -> TestResult {
+    let server = MockServer::start().await;
+    mount_usage(&server, ResponseTemplate::new(200)).await;
+    let expired =
+        ClaudeCredentials::parse(r#"{"claudeAiOauth":{"accessToken":"t","expiresAt":1000}}"#)?
+            .ok_or("expected credentials")?;
+
+    let poll = quota(&server)?.poll(Some(&expired)).await;
+
+    assert!(matches!(poll.outcome, QuotaOutcome::TokenExpired));
+    let requests = server.received_requests().await.ok_or("no request log")?;
+    assert!(requests.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn one_bad_window_keeps_the_others() -> TestResult {
+    for bad in [
+        r#"{"utilization": "high"}"#,
+        r#"{"utilization": -3.0}"#,
+        r#"{"utilization": 1.0, "resets_at": "tomorrow"}"#,
+        "7",
     ] {
+        let body = format!(
+            r#"{{"five_hour": {bad}, "seven_day": {{"utilization": 12.0}}, "extra_usage": 3}}"#
+        );
+        let server = MockServer::start().await;
+        mount_usage(&server, ResponseTemplate::new(200).set_body_string(body)).await;
+
+        let poll = quota(&server)?.poll(Some(&credentials()?)).await;
+
+        let QuotaOutcome::Ok(snapshot) = poll.outcome else {
+            return Err(format!("{bad}: expected Ok, got {:?}", poll.outcome).into());
+        };
+        let ids: Vec<&str> = snapshot.windows.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(ids, ["seven_day"], "{bad}");
+        assert!(poll.extra_usage.is_none());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn bad_bodies_are_malformed() -> TestResult {
+    for body in ["not json at all", "[]", "null", "42"] {
         let server = MockServer::start().await;
         mount_usage(&server, ResponseTemplate::new(200).set_body_string(body)).await;
 
@@ -149,8 +187,45 @@ async fn closed_port_is_network_down() -> TestResult {
 }
 
 #[tokio::test]
-async fn server_errors_and_rate_limits_are_network_down() -> TestResult {
-    for status in [429, 500, 503] {
+async fn http_403_is_forbidden() -> TestResult {
+    let server = MockServer::start().await;
+    mount_usage(&server, ResponseTemplate::new(403)).await;
+
+    let poll = quota(&server)?.poll(Some(&credentials()?)).await;
+
+    assert!(matches!(poll.outcome, QuotaOutcome::Forbidden));
+    Ok(())
+}
+
+#[tokio::test]
+async fn http_429_is_rate_limited_with_its_retry_after() -> TestResult {
+    let cases = [
+        (Some("120"), Some(Duration::from_secs(120))),
+        (Some("Thu, 01 Jan 1970 00:00:00 GMT"), Some(Duration::ZERO)),
+        (Some("soon"), None),
+        (None, None),
+    ];
+    for (header_value, expected) in cases {
+        let server = MockServer::start().await;
+        let mut response = ResponseTemplate::new(429);
+        if let Some(value) = header_value {
+            response = response.insert_header("retry-after", value);
+        }
+        mount_usage(&server, response).await;
+
+        let poll = quota(&server)?.poll(Some(&credentials()?)).await;
+
+        let QuotaOutcome::RateLimited { retry_after } = poll.outcome else {
+            return Err(format!("{header_value:?}: got {:?}", poll.outcome).into());
+        };
+        assert_eq!(retry_after, expected, "{header_value:?}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_errors_are_network_down() -> TestResult {
+    for status in [500, 503] {
         let server = MockServer::start().await;
         mount_usage(&server, ResponseTemplate::new(status)).await;
 
@@ -216,7 +291,7 @@ async fn account_errors_are_typed() -> TestResult {
 #[test]
 fn parse_function_never_panics_on_junk() {
     let at = jiff::Timestamp::UNIX_EPOCH;
-    for junk in [&b""[..], b"\xff\xfe", b"{", b"null", b"{\"five_hour\":1}"] {
+    for junk in [&b""[..], b"\xff\xfe", b"{", b"null", b"[1]"] {
         assert!(parse_quota_response(junk, at).is_err());
     }
 }

@@ -14,13 +14,15 @@ use crate::request::Route;
 /// How many alerts one delivery pass reads; older unseen ones are dropped, not queued.
 pub const BATCH: u32 = 20;
 
-/// The newest delivered alert. Alert rows have no id, so the watermark is the instant plus the
-/// dedup keys already delivered at exactly that instant.
+/// What was delivered. Alert rows have no id, and `fired_at` follows the wall clock, which may
+/// move backwards; so the mark is a fixed floor plus the identities of the newest delivered
+/// alerts, not a moving instant that would skip alerts fired after a clock change.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Delivered {
-    /// Microseconds since the epoch of the newest delivered alert.
+    /// Microseconds since the epoch: alerts fired at or before it are never delivered (the
+    /// history at first launch). Marks written before this scheme hold their newest alert here.
     pub at_us: i64,
-    /// Dedup keys delivered at `at_us`.
+    /// [`identity`] of every alert of the last batch (at most [`BATCH`]), newest first.
     pub keys: Vec<String>,
 }
 
@@ -35,33 +37,32 @@ impl Delivered {
     }
 }
 
-fn is_new(alert: &AlertView, mark: &Delivered) -> bool {
-    let at = alert.fired_at.as_microsecond();
-    at > mark.at_us || (at == mark.at_us && !mark.keys.contains(&alert.dedup_key))
+/// One alert row: its instant and dedup key.
+fn identity(alert: &AlertView) -> String {
+    format!("{}:{}", alert.fired_at.as_microsecond(), alert.dedup_key)
 }
 
-/// The alerts of `rows` (newest first) that `mark` has not seen, oldest first, and the
-/// watermark after delivering them.
+/// The alerts of `rows` (the newest [`BATCH`] after the floor, newest first) that `mark` has not
+/// seen, oldest first, and the mark after delivering them.
 #[must_use]
 pub fn select_undelivered<'a>(
     rows: &'a [AlertView],
     mark: &Delivered,
 ) -> (Vec<&'a AlertView>, Delivered) {
-    let mut fresh: Vec<&AlertView> = rows.iter().filter(|row| is_new(row, mark)).collect();
+    let batch: Vec<&AlertView> = rows
+        .iter()
+        .filter(|row| row.fired_at.as_microsecond() > mark.at_us)
+        .collect();
+    let keys: Vec<String> = batch.iter().map(|row| identity(row)).collect();
+    let mut fresh: Vec<&AlertView> = batch
+        .into_iter()
+        .filter(|row| !mark.keys.contains(&identity(row)))
+        .collect();
     fresh.reverse();
-    let mut next = mark.clone();
-    for alert in &fresh {
-        let at = alert.fired_at.as_microsecond();
-        if at > next.at_us {
-            next = Delivered {
-                at_us: at,
-                keys: Vec::new(),
-            };
-        }
-        if at == next.at_us {
-            next.keys.push(alert.dedup_key.clone());
-        }
-    }
+    let next = Delivered {
+        at_us: mark.at_us,
+        keys,
+    };
     (fresh, next)
 }
 
@@ -156,21 +157,12 @@ mod tests {
     }
 
     #[test]
-    fn delivers_new_alerts_oldest_first_and_advances() -> Result<(), jiff::Error> {
+    fn delivers_alerts_after_the_floor_oldest_first_once() -> Result<(), jiff::Error> {
         let rows = [row(30, "c")?, row(20, "b")?, row(10, "a")?];
-        let mark = Delivered {
-            at_us: 10_000_000,
-            keys: vec!["a".to_owned()],
-        };
-        let (fresh, next) = select_undelivered(&rows, &mark);
+        let (fresh, next) = select_undelivered(&rows, &Delivered::since(10_000_000));
         assert_eq!(keys(&fresh), ["b", "c"]);
-        assert_eq!(
-            next,
-            Delivered {
-                at_us: 30_000_000,
-                keys: vec!["c".to_owned()]
-            }
-        );
+        assert_eq!(next.at_us, 10_000_000);
+        assert_eq!(next.keys, ["30000000:c", "20000000:b"]);
         let (again, same) = select_undelivered(&rows, &next);
         assert_eq!(again.len(), 0);
         assert_eq!(same, next);
@@ -179,14 +171,23 @@ mod tests {
 
     #[test]
     fn same_instant_is_deduplicated_by_key() -> Result<(), jiff::Error> {
-        let rows = [row(20, "y")?, row(20, "x")?];
         let mark = Delivered {
-            at_us: 20_000_000,
-            keys: vec!["x".to_owned()],
+            at_us: 0,
+            keys: vec!["20000000:x".to_owned()],
         };
-        let (fresh, next) = select_undelivered(&rows, &mark);
+        let rows = [row(20, "y")?, row(20, "x")?];
+        let (fresh, _) = select_undelivered(&rows, &mark);
         assert_eq!(keys(&fresh), ["y"]);
-        assert_eq!(next.keys, ["x", "y"]);
+        Ok(())
+    }
+
+    #[test]
+    fn an_alert_fired_after_the_clock_went_back_is_delivered() -> Result<(), jiff::Error> {
+        let (_, mark) = select_undelivered(&[row(30, "c")?], &Delivered::since(0));
+        // The clock moved back: the next alert is stamped before the last delivered one.
+        let rows = [row(30, "c")?, row(25, "d")?];
+        let (fresh, _) = select_undelivered(&rows, &mark);
+        assert_eq!(keys(&fresh), ["d"]);
         Ok(())
     }
 

@@ -35,9 +35,12 @@ use crate::sink::{self, SinkRun};
 use crate::subscriptions;
 use crate::tool_calls::{self, ProfiledToolCall, ResultOutcome};
 use crate::types::{
-    Dataset, Page, PageCursor, Pending, RedactionKey, Revision, UpsertStats, Versioned,
+    Dataset, Page, PageCursor, Pending, RedactionKey, Revision, StoredEvent, StoredSubscription,
+    UpsertStats, Versioned,
 };
 use crate::versioned;
+
+mod pricing_api;
 
 /// How long a statement waits for another connection's lock (D6).
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -115,7 +118,7 @@ pub trait StoreRead: sealed::Sealed {
         self.identity().machine_id
     }
 
-    /// The key redaction hashes with (D33).
+    /// The key redaction hashes with (D40).
     fn redaction_key(&self) -> &RedactionKey {
         &self.identity().redaction_key
     }
@@ -160,7 +163,8 @@ pub trait StoreRead: sealed::Sealed {
         sink::cursor(self.connection(), sink, dataset)
     }
 
-    /// Up to `limit` events with a revision above `after`, in revision order.
+    /// Up to `limit` events with a revision above `after`, in revision order, superseded ones
+    /// included (see [`StoreRead::stored_events_after`] for the flag).
     ///
     /// # Errors
     /// `SQLite` failures or a corrupt row.
@@ -169,6 +173,26 @@ pub trait StoreRead: sealed::Sealed {
         after: Revision,
         limit: usize,
     ) -> Result<Vec<Versioned<UsageEvent>>, StoreError> {
+        Ok(self
+            .stored_events_after(after, limit)?
+            .into_iter()
+            .map(|v| Versioned {
+                revision: v.revision,
+                row: v.row.event,
+            })
+            .collect())
+    }
+
+    /// [`StoreRead::usage_events_after`] with the store-side state of each row: what sinks
+    /// export.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn stored_events_after(
+        &self,
+        after: Revision,
+        limit: usize,
+    ) -> Result<Vec<Versioned<StoredEvent>>, StoreError> {
         events::after(self.connection(), after, limit)
     }
 
@@ -192,8 +216,16 @@ pub trait StoreRead: sealed::Sealed {
         &self,
         after: Revision,
         limit: usize,
-    ) -> Result<Vec<Versioned<Subscription>>, StoreError> {
+    ) -> Result<Vec<Versioned<StoredSubscription>>, StoreError> {
         subscriptions::after(self.connection(), after, limit)
+    }
+
+    /// Every subscription still in the config (not removed), by id: what billing uses (D28).
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn active_subscriptions(&self) -> Result<Vec<Subscription>, StoreError> {
+        subscriptions::active(self.connection())
     }
 
     /// Up to `limit` quota rows with a revision above `after`, in revision order.
@@ -458,15 +490,17 @@ impl Store {
         self.in_transaction(|conn, now| tool_calls::upsert(conn, now, calls))
     }
 
-    /// Mirrors subscriptions by id (D28). Subscriptions missing from `subscriptions` are kept.
+    /// Mirrors the configured subscriptions by id (D28): `subscriptions` is the whole list.
+    /// Rows missing from it are kept with `removed_at` set (counted as updated); a removed id
+    /// that comes back is live again.
     ///
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back).
-    pub fn upsert_subscriptions(
+    pub fn mirror_subscriptions(
         &mut self,
         subscriptions: &[Subscription],
     ) -> Result<UpsertStats, StoreError> {
-        self.in_transaction(|conn, now| subscriptions::upsert(conn, now, subscriptions))
+        self.in_transaction(|conn, now| subscriptions::mirror(conn, now, subscriptions))
     }
 
     /// Stores quota polls, one row per reported window (D26).
@@ -544,31 +578,26 @@ impl Store {
         self.in_transaction(|conn, now| project::reassign(conn, now, resolutions))
     }
 
-    /// Deletes the stats-cache daily aggregates (D38) of `(agent, profile)` that transcript events
-    /// now cover: those on or after the local day (in `zone`, D8) of the profile's earliest
-    /// transcript event. Returns how many were deleted; none when the profile has no transcript
-    /// events yet.
-    ///
-    /// **Deletes are not propagated.** Sinks pull `revision > cursor` and upsert by key (D17), so
-    /// they never learn that a row is gone: a sink that already exported an aggregate keeps it.
-    /// The dataset counter does not advance, so revisions can have gaps afterwards. The days the
-    /// aggregates covered are in the sink as transcript events, which downstream queries must
-    /// prefer by `kind`.
+    /// Flags as superseded the stats-cache daily aggregates (D38) of `(agent, profile)` that
+    /// transcript events now cover: those on or after the local day (in `zone`, D8) of the
+    /// profile's earliest transcript event. Rows are kept (D14); each newly flagged row gets a new
+    /// revision, so sinks re-export it with `superseded = true`, and every query skips it.
+    /// Returns how many rows were newly flagged; none when the profile has no transcript events.
     ///
     /// # Errors
     /// `SQLite` failures or a day outside the supported range (the transaction is rolled back).
-    pub fn delete_daily_aggregates_covered_by_transcripts(
+    pub fn supersede_daily_aggregates_covered_by_transcripts(
         &mut self,
         agent: AgentId,
         profile: &ProfileId,
         zone: &jiff::tz::TimeZone,
     ) -> Result<u64, StoreError> {
-        self.in_transaction(|conn, _| {
+        self.in_transaction(|conn, now| {
             let Some(first) = events::earliest_transcript(conn, agent, profile)? else {
                 return Ok(0);
             };
             let from = first.to_zoned(zone.clone()).start_of_day()?.timestamp();
-            events::delete_aggregates_from(conn, agent, profile, from)
+            events::supersede_aggregates_from(conn, now, agent, profile, from)
         })
     }
 
@@ -580,12 +609,14 @@ impl Store {
         alert::save(&self.conn, alert)
     }
 
-    /// Appends one export attempt to the sink history (D41).
+    /// Appends one export attempt to the sink history (D41). The history keeps the newest 1000
+    /// runs per sink. Cursors and runs of a sink removed from the config stay, so a sink re-added
+    /// under the same id resumes where it stopped.
     ///
     /// # Errors
     /// `SQLite` failures.
     pub fn record_sink_run(&mut self, run: &SinkRun) -> Result<(), StoreError> {
-        sink::record_run(&self.conn, run)
+        self.in_transaction(|conn, _| sink::record_run(conn, run, sink::RUN_HISTORY))
     }
 
     /// Appends one backup attempt (D37).
@@ -649,7 +680,9 @@ impl Store {
         checkpoint::save(&self.conn, (self.clock)(), checkpoint)
     }
 
-    /// Sets the revision a sink has acknowledged. Moving it backwards re-exports rows (D17).
+    /// Sets the revision a sink has acknowledged. Moving it backwards re-delivers rows (D17), but
+    /// sinks drop rows they already hold (an append file skips revisions at or below its highest,
+    /// `SQLite` keeps the higher revision): to rebuild a sink, also delete its output.
     ///
     /// # Errors
     /// `SQLite` failures.

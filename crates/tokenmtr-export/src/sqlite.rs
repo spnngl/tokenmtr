@@ -12,7 +12,6 @@ use std::fs::{self, OpenOptions};
 use camino::Utf8Path;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, params_from_iter};
-use rust_decimal::prelude::ToPrimitive;
 use tokenmtr_core::SinkId;
 
 use crate::error::SinkError;
@@ -109,7 +108,7 @@ fn sql_value(value: &Value) -> SqlValue {
         Value::Integer(n) => SqlValue::Integer(*n),
         Value::Boolean(b) => SqlValue::Integer(i64::from(*b)),
         Value::Real(x) => SqlValue::Real(*x),
-        Value::Decimal(d) => d.to_f64().map_or(SqlValue::Null, SqlValue::Real),
+        Value::Decimal { units, .. } => SqlValue::Integer(*units),
     }
 }
 

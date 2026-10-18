@@ -226,7 +226,7 @@ pub fn agent_infos(
                         root: first_root(doctor, *id, &profile.id, &profile.location),
                         account: meters
                             .iter()
-                            .find(|m| m.agent == *id && m.profile == profile.id.as_str())
+                            .find(|m| m.agent == *id && m.profile == profile.id)
                             .and_then(|m| m.account.clone()),
                         retention_days: retention.map(|r| r.cleanup_period_days),
                         keeps_ten_years: retention.is_some_and(|r| {
@@ -537,14 +537,12 @@ pub struct SessionOrigin {
 ///
 /// # Errors
 ///
-/// An invalid agent or session, or SQL failures.
+/// SQL failures.
 pub fn session_origin(
     app: &AppContext,
-    agent: &str,
-    session: &str,
+    agent_id: AgentId,
+    session: &SessionId,
 ) -> Result<SessionOrigin, CommandError> {
-    let agent_id: AgentId = agent.parse().map_err(CommandError::invalid)?;
-    let session = SessionId::try_from(session.to_owned()).map_err(CommandError::invalid)?;
     let row: Option<(Option<String>, Option<String>)> = app
         .reader()
         .connection()
@@ -683,10 +681,10 @@ mod tests {
     fn session_origin_reads_the_latest_event() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = seeded(CONFIG)?;
         let app = fixture.backend.context()?;
-        let origin = session_origin(&app, "claude", "s1")?;
+        let origin = session_origin(&app, AgentId::CLAUDE, &SessionId::try_from("s1")?)?;
         assert_eq!(origin.cwd.as_deref(), Some("/work/acme"));
         assert!(!origin.transcript_exists);
-        let unknown = session_origin(&app, "claude", "nope")?;
+        let unknown = session_origin(&app, AgentId::CLAUDE, &SessionId::try_from("nope")?)?;
         assert_eq!(unknown.cwd, None);
         Ok(())
     }

@@ -152,7 +152,7 @@ pub fn seed(home: &Home) -> TestResult {
         dedup_key: "quota-80".to_owned(),
         at: now,
     })?;
-    store.upsert_subscriptions(&[Subscription::new(SubscriptionSpec {
+    store.mirror_subscriptions(&[Subscription::new(SubscriptionSpec {
         id: SubscriptionId::try_from("claude-max".to_owned())?,
         provider: ProviderId::try_from("anthropic".to_owned())?,
         plan: Plan::Pro,

@@ -4,17 +4,18 @@
 //! only writer of the store (D2): when it answers, scans, exports and backups go through the
 //! control socket; when it does not, they run in-process like the CLI does.
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use tokenmtr_app::{EraseScope, ReportRequest};
 use tokenmtr_config::RawProject;
 use tokenmtr_control::Client;
-use tokenmtr_core::{AgentId, ProfileId, ProjectKey, SubscriptionSpec};
+use tokenmtr_core::{AgentId, ProfileId, ProjectKey, SessionId, SubscriptionSpec};
 use tokenmtr_platform::{LaunchdService, SystemRunner};
 
 use super::Backend;
 use crate::daemon::{Sidecar, client_info, install_service};
 use crate::error::{CommandError, ErrorKind};
+use crate::request::RevealTarget;
 
 async fn connect(backend: &Backend) -> Result<Client, CommandError> {
     Ok(Client::connect(backend.transport(), client_info()).await?)
@@ -94,10 +95,36 @@ pub async fn reload_daemon(backend: &Backend) {
 ///
 /// The sidecar is missing, or launchd refused.
 pub fn install_daemon(backend: &Backend) -> Result<(), CommandError> {
-    let sidecar = Sidecar::locate().map_err(CommandError::internal)?;
+    let sidecar = Sidecar::locate()?;
     let service = LaunchdService::new(backend.paths(), SystemRunner);
-    install_service(&service, &sidecar)
-        .map_err(|message| CommandError::new(ErrorKind::Service, message))
+    Ok(install_service(&service, &sidecar)?)
+}
+
+/// The path `target` stands for, if it exists.
+///
+/// # Errors
+///
+/// The session has no transcript on disk, the path does not exist, or the store cannot be read.
+pub fn reveal_path(backend: &Backend, target: &RevealTarget) -> Result<Utf8PathBuf, CommandError> {
+    let transcript = |agent: AgentId, session: &SessionId| {
+        super::shell::session_origin(&backend.context()?, agent, session)?
+            .transcript_path
+            .map(Utf8PathBuf::from)
+            .ok_or_else(|| CommandError::invalid(format!("session {session} has no transcript")))
+    };
+    let path = match target {
+        RevealTarget::ConfigFile => backend.config_path().to_owned(),
+        RevealTarget::ExportsDir => backend.paths().exports_dir().clone(),
+        RevealTarget::Transcript { agent, session } => transcript(*agent, session)?,
+        RevealTarget::TranscriptFolder { agent, session } => {
+            let file = transcript(*agent, session)?;
+            file.parent().map_or(file.clone(), Utf8Path::to_owned)
+        }
+    };
+    if !path.exists() {
+        return Err(CommandError::invalid(format!("{path} does not exist")));
+    }
+    Ok(path)
 }
 
 /// The `[[projects]]` rule that names the working directory `cwd` after its last component.
@@ -158,33 +185,47 @@ pub fn add_subscription(backend: &Backend, spec: &SubscriptionSpec) -> Result<()
 /// # Errors
 ///
 /// The agent is not Claude, the profile is unknown, or `settings.json` cannot be edited.
-pub fn keep_ten_years(backend: &Backend, agent: &str, profile: &str) -> Result<(), CommandError> {
-    let agent: AgentId = agent.parse().map_err(CommandError::invalid)?;
+pub fn keep_ten_years(
+    backend: &Backend,
+    agent: AgentId,
+    profile: &ProfileId,
+) -> Result<(), CommandError> {
     if agent != AgentId::CLAUDE {
         return Err(CommandError::invalid(format!(
             "{agent} has no retention setting to raise"
         )));
     }
-    let profile = ProfileId::try_from(profile.to_owned()).map_err(CommandError::invalid)?;
-    backend.context()?.set_claude_retention(&profile)?;
+    backend.context()?.set_claude_retention(profile)?;
     Ok(())
 }
 
 /// Removes the store, the backups, the logs and the background service (D56). The config stays.
 ///
+/// The service is unloaded first; a daemon outside it (`tokenmtr run` in a terminal) is asked
+/// to shut down, and the erase waits for it to release the daemon lock.
+///
 /// # Errors
 ///
-/// A file or launchd operation failed, or a daemon still answers.
-pub fn erase_all_data(backend: &Backend) -> Result<(), CommandError> {
-    let service = LaunchdService::new(backend.paths(), SystemRunner);
-    backend.context()?.erase(
-        EraseScope {
-            config: false,
-            service: true,
-        },
-        &service as &dyn tokenmtr_platform::ServiceManager,
-    )?;
-    Ok(())
+/// A file or launchd operation failed, or a daemon still holds the lock.
+pub async fn erase_all_data(backend: &Backend) -> Result<(), CommandError> {
+    if let Ok(mut client) = connect(backend).await
+        && let Err(error) = client.shutdown().await
+    {
+        tracing::warn!(%error, "daemon refused to shut down before the erase");
+    }
+    let backend = backend.clone();
+    super::blocking(move || {
+        let service = LaunchdService::new(backend.paths(), SystemRunner);
+        backend.erase(
+            EraseScope {
+                config: false,
+                service: true,
+            },
+            &service,
+        )?;
+        Ok(())
+    })
+    .await
 }
 
 /// A rendered report as the UI shows it.
@@ -231,6 +272,25 @@ mod tests {
     }
 
     #[test]
+    fn reveal_resolves_known_places_only() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = seeded(CONFIG)?;
+        std::fs::write(fixture.backend.config_path(), CONFIG)?;
+        assert_eq!(
+            reveal_path(&fixture.backend, &RevealTarget::ConfigFile)?,
+            fixture.backend.config_path()
+        );
+        let ghost = RevealTarget::Transcript {
+            agent: AgentId::CLAUDE,
+            session: SessionId::try_from("ghost")?,
+        };
+        assert_eq!(
+            reveal_path(&fixture.backend, &ghost).map_err(|e| e.kind),
+            Err(ErrorKind::InvalidRequest)
+        );
+        Ok(())
+    }
+
+    #[test]
     fn add_project_rule_writes_the_config() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = seeded(CONFIG)?;
         add_project_rule(&fixture.backend, "/work/globex")?;
@@ -246,10 +306,22 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let fixture = seeded(CONFIG)?;
         assert_eq!(
-            keep_ten_years(&fixture.backend, "pi", "default").map_err(|e| e.kind),
+            keep_ten_years(
+                &fixture.backend,
+                AgentId::PI,
+                &ProfileId::try_from("default")?
+            )
+            .map_err(|e| e.kind),
             Err(ErrorKind::InvalidRequest)
         );
-        assert!(keep_ten_years(&fixture.backend, "claude", "ghost").is_err());
+        assert!(
+            keep_ten_years(
+                &fixture.backend,
+                AgentId::CLAUDE,
+                &ProfileId::try_from("ghost")?
+            )
+            .is_err()
+        );
         Ok(())
     }
 

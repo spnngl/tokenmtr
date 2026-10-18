@@ -4,14 +4,21 @@
 //! [`Pending`] rows past the sink's cursor from `StoreRead::pending`.
 
 use jiff::{SignedDuration, Timestamp};
+use serde::Serialize;
 use tokenmtr_store::{Pending, SinkRun};
 
 /// A sink is lagging when its oldest unexported row is older than this many intervals.
 pub const LAG_INTERVALS: i32 = 2;
 
+/// How many of a sink's newest runs to pass as [`HealthInput::runs`]: a failure streak longer
+/// than this reports the oldest run of the window as its start.
+pub const HEALTH_RUNS: usize = 200;
+
 /// How a sink is doing. Precedence: `Disabled`, then `Failing`, `Lagging`, `Healthy`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SinkHealth {
+/// Serialises as `{"state": "healthy" | "lagging" | "failing" | "disabled", ...}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum SinkState {
     /// Delivering on time.
     Healthy,
     /// Delivering, but the oldest pending row is older than [`LAG_INTERVALS`] intervals.
@@ -27,6 +34,18 @@ pub enum SinkHealth {
     Disabled,
 }
 
+impl SinkState {
+    /// Severity for "worst of" aggregation: higher is worse.
+    #[must_use]
+    pub const fn severity(&self) -> u8 {
+        match self {
+            Self::Disabled | Self::Healthy => 0,
+            Self::Lagging => 1,
+            Self::Failing { .. } => 2,
+        }
+    }
+}
+
 /// How far behind the store a sink is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SinkLag {
@@ -40,7 +59,7 @@ pub struct SinkLag {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SinkStatus {
     /// The state.
-    pub health: SinkHealth,
+    pub state: SinkState,
     /// Lag in rows and time.
     pub lag: SinkLag,
 }
@@ -90,18 +109,18 @@ pub fn sink_status(input: &HealthInput<'_>) -> SinkStatus {
         age,
     };
     let health = if !input.enabled {
-        SinkHealth::Disabled
+        SinkState::Disabled
     } else if let Some(failing) = failing(input.runs) {
         failing
     } else if age.is_some_and(|age| age > input.interval.saturating_mul(LAG_INTERVALS)) {
-        SinkHealth::Lagging
+        SinkState::Lagging
     } else {
-        SinkHealth::Healthy
+        SinkState::Healthy
     };
-    SinkStatus { health, lag }
+    SinkStatus { state: health, lag }
 }
 
-fn failing(runs: &[SinkRun]) -> Option<SinkHealth> {
+fn failing(runs: &[SinkRun]) -> Option<SinkState> {
     let mut sorted: Vec<&SinkRun> = runs.iter().collect();
     sorted.sort_by_key(|run| run.started);
     let latest = sorted.last()?;
@@ -112,5 +131,5 @@ fn failing(runs: &[SinkRun]) -> Option<SinkHealth> {
         .take_while(|run| run.error.is_some())
         .last()
         .map_or(latest.started, |run| run.started);
-    Some(SinkHealth::Failing { since, last_error })
+    Some(SinkState::Failing { since, last_error })
 }

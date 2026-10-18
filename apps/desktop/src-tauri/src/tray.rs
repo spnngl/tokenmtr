@@ -3,6 +3,8 @@
 //! The title text is computed by plain functions over [`TrayFigures`]; only [`install`] and
 //! [`refresh`] touch Tauri.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use jiff::Timestamp;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -108,12 +110,19 @@ pub fn current_title(shell: &Shell, now: Timestamp) -> Result<Option<String>, Co
     Ok(title_text(app.config().menubar.title, &figures(&app, now)?))
 }
 
+/// Numbers title refreshes, so a slow one never overwrites the title of a later one.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Recomputes the title off the main thread and applies it.
 pub fn refresh(app: &AppHandle<Wry>) {
     let handle = app.clone();
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         let shell = handle.state::<Shell>().inner().clone();
         let title = crate::backend::blocking(move || current_title(&shell, Timestamp::now())).await;
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            return;
+        }
         let Some(tray) = handle.tray_by_id(TRAY_ID) else {
             return;
         };

@@ -1,0 +1,45 @@
+---
+source: crates/tokenmtr-agents/tests/claude.rs
+expression: value
+---
+{
+  "events": [
+    {
+      "agent": "claude",
+      "approximate": false,
+      "at": "2026-05-20T09:00:03Z",
+      "cwd": "/home/demo/app",
+      "dedup_key": "msg_v287|req_v287",
+      "git_branch": "main",
+      "is_sidechain": false,
+      "kind": "message",
+      "model": "claude-opus-4-7",
+      "modifiers": {
+        "fast": false,
+        "inference_geo": "redacted",
+        "web_search_requests": 0
+      },
+      "parent_session": null,
+      "profile": "default",
+      "provider": "anthropic",
+      "reported_cost": null,
+      "service_tier": "standard",
+      "session": "sess-v2-1-287",
+      "source_file": null,
+      "subagent": null,
+      "tokens": {
+        "cache_read": 4000,
+        "cache_write_1h": 100,
+        "cache_write_5m": 200,
+        "input_uncached": 12,
+        "output": 42,
+        "reasoning": 0
+      }
+    }
+  ],
+  "issues": [],
+  "new_offset": 2172,
+  "orphan_tool_results": [],
+  "signals": [],
+  "tool_calls": []
+}

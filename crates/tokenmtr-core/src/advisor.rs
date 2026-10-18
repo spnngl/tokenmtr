@@ -101,7 +101,7 @@ pub fn advise(
     if span < MIN_ADVISOR_SPAN {
         let days = span.as_secs() / (24 * 3600);
         return Advice::NotEnoughData {
-            span_days: u32::try_from(days).unwrap_or(0),
+            span_days: u32::try_from(days).unwrap_or(u32::MAX),
         };
     }
 
@@ -120,7 +120,8 @@ pub fn advise(
     let fits: Vec<PlanFit> = specs
         .iter()
         .map(|spec| {
-            let scale = f64::from(current_spec.quota_multiplier) / f64::from(spec.quota_multiplier);
+            let scale = f64::from(current_spec.quota_multiplier.get())
+                / f64::from(spec.quota_multiplier.get());
             let (five_hour_peak, seven_day_peak) = (five * scale, seven * scale);
             let limit = f64::from(headroom);
             PlanFit {
@@ -133,7 +134,7 @@ pub fn advise(
         })
         .collect();
 
-    let Some(chosen) = fits.iter().find(|f| f.fits).or(fits.last()) else {
+    let Some(chosen) = fits.iter().find(|f| f.fits).or_else(|| fits.last()) else {
         return Advice::NotApplicable;
     };
     let verdict = if api_value < chosen.monthly_fee {

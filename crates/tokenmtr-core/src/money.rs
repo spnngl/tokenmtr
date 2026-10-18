@@ -188,6 +188,13 @@ impl From<EurPerUsd> for i64 {
     }
 }
 
+/// Narrows an `i128` intermediate (a product or sum of micro-units) to a stored amount. Out of
+/// range saturates toward the sign of `value`: an overflow never turns into zero or wraps.
+#[must_use]
+pub fn saturating_micros(value: i128) -> i64 {
+    i64::try_from(value).unwrap_or(if value < 0 { i64::MIN } else { i64::MAX })
+}
+
 /// An amount in a known currency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -230,19 +237,6 @@ impl Money {
             Self::Usd(v) => v.get(),
             Self::Eur(v) => v.get(),
         }
-    }
-
-    /// Saturating addition of two amounts in the same currency.
-    ///
-    /// # Errors
-    ///
-    /// [`MoneyError::CurrencyMismatch`] when the currencies differ.
-    pub fn checked_add(self, other: Self) -> Result<Self, MoneyError> {
-        self.same_currency(other)?;
-        Ok(Self::from_micros(
-            self.currency(),
-            self.micros().saturating_add(other.micros()),
-        ))
     }
 
     pub(crate) fn same_currency(self, other: Self) -> Result<(), MoneyError> {
@@ -303,10 +297,14 @@ mod tests {
     fn money_refuses_mixed_currencies() {
         let usd = Money::from_micros(Currency::Usd, 5);
         let eur = Money::from_micros(Currency::Eur, 5);
-        assert!(usd.checked_add(eur).is_err());
-        assert_eq!(
-            usd.checked_add(usd),
-            Ok(Money::from_micros(Currency::Usd, 10))
-        );
+        assert!(usd.same_currency(eur).is_err());
+        assert_eq!(usd.same_currency(usd), Ok(()));
+    }
+
+    #[test]
+    fn micros_saturate_instead_of_wrapping() {
+        assert_eq!(saturating_micros(i128::from(i64::MAX) + 1), i64::MAX);
+        assert_eq!(saturating_micros(i128::from(i64::MIN) - 1), i64::MIN);
+        assert_eq!(saturating_micros(-5), -5);
     }
 }

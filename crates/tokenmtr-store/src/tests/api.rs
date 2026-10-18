@@ -1,4 +1,4 @@
-//! The ingest write, point lookups, bulk project reassignment and the aggregate delete.
+//! The ingest write, point lookups, bulk project reassignment and superseding aggregates.
 
 use jiff::tz::TimeZone;
 use tokenmtr_core::ProjectKey;
@@ -470,7 +470,7 @@ fn reassigning_projects_rewrites_only_changed_events() {
 }
 
 #[test]
-fn deleting_covered_daily_aggregates_keeps_older_ones() {
+fn covered_daily_aggregates_are_superseded_not_deleted() {
     let mut f = fixture();
     let machine = f.store.machine_id();
     let day = 86_400;
@@ -494,19 +494,43 @@ fn deleting_covered_daily_aggregates_keeps_older_ones() {
     f.store.upsert_events(&before).unwrap();
     let profile = ProfileId::default_profile();
 
-    let deleted = f
+    let head_before = head(&f.store, Dataset::UsageEvents);
+    let flagged = f
         .store
-        .delete_daily_aggregates_covered_by_transcripts(AgentId::CLAUDE, &profile, &TimeZone::UTC)
+        .supersede_daily_aggregates_covered_by_transcripts(
+            AgentId::CLAUDE,
+            &profile,
+            &TimeZone::UTC,
+        )
         .unwrap();
-    assert_eq!(deleted, 2);
-    let left: Vec<_> = revisions(&f.store).into_iter().map(|(_, k)| k).collect();
-    assert_eq!(left, ["d1", "d2", "w5", "t"]);
+    assert_eq!(flagged, 2);
+    // Every row is kept; the two flagged rows got new revisions so sinks re-export them.
+    let rows = f.store.stored_events_after(head_before, 10).unwrap();
+    let superseded: Vec<_> = rows
+        .iter()
+        .map(|v| (v.row.event.dedup_key.as_str().to_owned(), v.row.superseded))
+        .collect();
+    assert_eq!(
+        superseded,
+        [("d3".to_owned(), true), ("d5".to_owned(), true)]
+    );
+    assert_eq!(
+        f.store
+            .usage_events_after(Revision::ZERO, 10)
+            .unwrap()
+            .len(),
+        6
+    );
+    assert_eq!(
+        head(&f.store, Dataset::UsageEvents).get(),
+        head_before.get() + 2
+    );
 
-    // Nothing left to delete; a profile without transcripts is untouched.
+    // Nothing left to flag; a profile without transcripts is untouched.
     let work = ProfileId::try_from("work".to_owned()).unwrap();
     assert_eq!(
         f.store
-            .delete_daily_aggregates_covered_by_transcripts(
+            .supersede_daily_aggregates_covered_by_transcripts(
                 AgentId::CLAUDE,
                 &profile,
                 &TimeZone::UTC
@@ -516,7 +540,11 @@ fn deleting_covered_daily_aggregates_keeps_older_ones() {
     );
     assert_eq!(
         f.store
-            .delete_daily_aggregates_covered_by_transcripts(AgentId::CLAUDE, &work, &TimeZone::UTC)
+            .supersede_daily_aggregates_covered_by_transcripts(
+                AgentId::CLAUDE,
+                &work,
+                &TimeZone::UTC
+            )
             .unwrap(),
         0
     );

@@ -9,13 +9,16 @@ use rusqlite_migration::{HookResult, M, Migrations};
 use uuid::Uuid;
 
 /// The schema version this build reads and writes: the number of migrations in `migrations()`.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// All migrations, oldest first.
 pub(crate) fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up_with_hook(include_str!("../migrations/0001_init.sql"), seed_meta),
         M::up(include_str!("../migrations/0002_usage_event_cwd.sql")),
+        M::up(include_str!(
+            "../migrations/0003_superseded_removed_quota_index.sql"
+        )),
     ])
 }
 

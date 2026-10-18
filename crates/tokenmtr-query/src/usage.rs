@@ -84,8 +84,8 @@ impl Usage {
     pub fn roi(&self) -> Option<f64> {
         (self.subscription_fee_micros > 0).then(|| {
             ratio(
-                u64::try_from(self.subscription_value_micros.max(0)).unwrap_or(0),
-                u64::try_from(self.subscription_fee_micros).unwrap_or(1),
+                self.subscription_value_micros.max(0).unsigned_abs(),
+                self.subscription_fee_micros.unsigned_abs(),
             )
         })
     }

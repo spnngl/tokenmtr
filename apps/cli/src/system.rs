@@ -23,7 +23,8 @@ pub struct DoctorArgs {
     json: bool,
 }
 
-/// `tokenmtr doctor`: what is wrong, and what is not.
+/// `tokenmtr doctor`: what is wrong, and what is not. Fails (exit 1) after printing the report
+/// when the config or the store is broken, so scripts can rely on the exit code.
 pub fn doctor(setup: &Setup, args: &DoctorArgs) -> anyhow::Result<()> {
     let diagnosis = diagnose(
         setup.paths(),
@@ -33,10 +34,15 @@ pub fn doctor(setup: &Setup, args: &DoctorArgs) -> anyhow::Result<()> {
         setup.platform().service(),
     );
     if args.json {
-        return print_json(&diagnosis);
+        print_json(&diagnosis)?;
+    } else {
+        render_diagnosis(&diagnosis);
     }
-    render_diagnosis(&diagnosis);
-    Ok(())
+    match (&diagnosis.config_error, &diagnosis.store_error) {
+        (None, None) => Ok(()),
+        (Some(_), _) => bail!("the config is invalid"),
+        (None, Some(_)) => bail!("the store cannot be read"),
+    }
 }
 
 fn render_diagnosis(diagnosis: &Diagnosis) {

@@ -25,7 +25,7 @@ const SONNET_V1: &str = r#"{"claude-sonnet-4-5": {"litellm_provider":"anthropic"
 
 const SONNET_AND_OPUS_V2: &str = r#"{"claude-sonnet-4-5": {"litellm_provider":"anthropic","mode":"chat",
     "input_cost_per_token":6e-06,"output_cost_per_token":3e-05},
-    "claude-opus-4-1": {"litellm_provider":"anthropic","mode":"chat",
+    "claude-test-newer": {"litellm_provider":"anthropic","mode":"chat",
     "input_cost_per_token":1.5e-05,"output_cost_per_token":7.5e-05}}"#;
 
 /// A temp machine: agent roots, a store, an ingestor.
@@ -523,7 +523,7 @@ fn stored_events_keep_their_pricing_when_a_newer_snapshot_arrives() {
         &path,
         &lines(&[
             claude_line(0, "s1", "/work/app", "claude-sonnet-4-5", 1000, 100),
-            claude_line(1, "s1", "/work/app", "claude-opus-4-1", 1000, 100),
+            claude_line(1, "s1", "/work/app", "claude-test-newer", 1000, 100),
         ]),
     );
     machine.scan();
@@ -543,7 +543,7 @@ fn stored_events_keep_their_pricing_when_a_newer_snapshot_arrives() {
             .collect()
     };
     let first = priced(&machine);
-    assert_eq!(first[1].0, "claude-opus-4-1");
+    assert_eq!(first[1].0, "claude-test-newer");
     assert_eq!(first[1].1, None, "the model has no rate in v1");
     assert_eq!(first[0].1, Some((4500, v1.as_str().to_owned())));
 
@@ -680,13 +680,26 @@ fn format_drift_merges_into_one_issue_per_file_and_closes_when_the_file_is_clean
             .filter(|i| i.kind == "format_drift")
             .collect()
     };
+    let subjects = |machine: &Machine| -> Vec<String> {
+        let mut subjects: Vec<_> = drift_issues(machine)
+            .into_iter()
+            .map(|i| i.subject)
+            .collect();
+        subjects.sort();
+        subjects
+    };
+    // The unmapped line is the file's issue; the failed usage lines are over the threshold of
+    // the whole scan (D42), whose issue has its own subject.
+    let expected = vec![path.to_string(), super::SCAN_ISSUE_SUBJECT.to_owned()];
     machine.scan();
-    assert_eq!(drift_issues(&machine).len(), 1);
+    assert_eq!(subjects(&machine), expected);
     machine.scan_with(&ScanRequest::full(ScanPriority::UserInitiated));
     machine.scan_with(&ScanRequest::full(ScanPriority::UserInitiated));
-    let open = drift_issues(&machine);
-    assert_eq!(open.len(), 1, "repeated scans merge into one open issue");
-    assert_eq!(open[0].subject, path.as_str());
+    assert_eq!(
+        subjects(&machine),
+        expected,
+        "repeated scans merge into the same open issues"
+    );
 
     write(&path, &lines(&[sonnet(0, "s1", "/work/app")]));
     machine.scan();
@@ -792,6 +805,149 @@ fn a_missing_cwd_raises_one_issue_however_often_it_is_seen() {
         .collect();
     assert_eq!(missing.len(), 1);
     assert_eq!(missing[0].occurrences, 1);
+}
+
+#[test]
+fn a_cwd_that_appears_later_is_retried_after_a_restart() {
+    let mut machine = Machine::new();
+    let cwd = machine.root.join("later");
+    session_file(&machine, "a", 0..2, cwd.as_str());
+    machine.scan();
+    let open = |machine: &Machine| {
+        let report = machine.ingestor.doctor(&machine.store, &[]).unwrap();
+        report
+            .open_issues
+            .iter()
+            .filter(|i| i.kind == "missing_cwd")
+            .count()
+    };
+    assert_eq!(open(&machine), 1);
+
+    fs::create_dir_all(&cwd).unwrap();
+    machine.scan();
+    assert_eq!(
+        open(&machine),
+        1,
+        "retried once per process, not every scan"
+    );
+    machine.reconfigure("");
+    machine.scan();
+    assert_eq!(open(&machine), 0);
+}
+
+#[test]
+fn a_cwd_under_a_protected_folder_is_not_read_and_raises_its_issue() {
+    let mut machine = Machine::new();
+    let cwd = machine.root.join("protected").join("app");
+    fs::create_dir_all(cwd.join(".git")).unwrap();
+    session_file(&machine, "a", 0..1, cwd.as_str());
+    machine.scan();
+    let report = machine.ingestor.doctor(&machine.store, &[]).unwrap();
+    assert!(
+        report
+            .open_issues
+            .iter()
+            .any(|i| i.kind == "protected_folder")
+    );
+}
+
+#[test]
+fn an_abandoned_half_line_is_skipped_so_the_next_line_parses_alone() {
+    let mut machine = Machine::new();
+    let path = session_file(&machine, "s1", 0..2, "/work/app");
+    let half = sonnet(2, "s1", "/work/app");
+    append(&path, &half[..half.len() / 2]);
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3_600);
+    fs::File::options()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(hour_ago)
+        .unwrap();
+    let report = machine.scan();
+    assert_eq!(claude_agent(&report).events.inserted, 2);
+    assert_eq!(
+        claude_agent(&report).files[0].to,
+        fs::metadata(&path).unwrap().len(),
+        "the crashed writer's tail is consumed"
+    );
+
+    append(&path, &lines(&[sonnet(3, "s1", "/work/app")]));
+    let report = machine.scan();
+    assert_eq!(claude_agent(&report).files[0].reason, ParseReason::Appended);
+    assert_eq!(claude_agent(&report).events.inserted, 1);
+    assert_eq!(machine.snapshot().len(), 3);
+}
+
+/// A pi fork copies its parent's entries with their ids and keys (M6): the copies keep the
+/// parent's attribution, in whatever order the files are scanned.
+#[test]
+fn a_fork_never_takes_its_parents_events() {
+    let message = |id: &str, response: &str| {
+        json!({"type": "message", "id": id, "parentId": null,
+            "timestamp": "2026-03-03T08:00:05.000Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "x"}],
+                "api": "anthropic-messages", "provider": "anthropic",
+                "model": "claude-sonnet-4-5", "responseId": response,
+                "usage": {"input": 10, "output": 1, "cacheRead": 0, "cacheWrite": 0,
+                    "totalTokens": 11, "cost": {"input": 0, "output": 0, "cacheRead": 0,
+                    "cacheWrite": 0, "total": 0.01}},
+                "stopReason": "stop", "timestamp": 1_772_524_805_000_i64}})
+        .to_string()
+    };
+    let header = |id: &str, parent: Option<&str>| {
+        let mut header = json!({"type": "session", "version": 3, "id": id,
+            "timestamp": "2026-03-03T08:00:00.000Z", "cwd": format!("/work/{id}")});
+        if let Some(parent) = parent {
+            header["parentSession"] = json!(parent);
+        }
+        header.to_string()
+    };
+    let sessions = |machine: &Machine| -> Vec<(String, String)> {
+        machine
+            .events()
+            .into_iter()
+            .map(|e| {
+                let cwd = e.row.cwd.map(|cwd| cwd.to_string()).unwrap_or_default();
+                (e.row.session.as_str().to_owned(), cwd)
+            })
+            .collect()
+    };
+    let expected = [
+        ("parent".to_owned(), "/work/parent".to_owned()),
+        ("fork".to_owned(), "/work/fork".to_owned()),
+    ];
+    for fork_first in [false, true] {
+        for one_scan in [false, true] {
+            let mut machine = Machine::new();
+            let parent = machine
+                .pi_dir()
+                .join("2026-03-03T08-00-00-000Z_parent.jsonl");
+            let fork = machine.pi_dir().join("2026-03-03T09-00-00-000Z_fork.jsonl");
+            let parent_body = lines(&[header("parent", None), message("m1", "resp_a")]);
+            let fork_body = lines(&[
+                header("fork", Some(parent.as_str())),
+                message("m1", "resp_a"),
+                message("m2", "resp_b"),
+            ]);
+            let (first, second) = if fork_first {
+                ((&fork, &fork_body), (&parent, &parent_body))
+            } else {
+                ((&parent, &parent_body), (&fork, &fork_body))
+            };
+            write(first.0, first.1);
+            if !one_scan {
+                machine.scan();
+            }
+            write(second.0, second.1);
+            machine.scan();
+            assert_eq!(
+                sessions(&machine),
+                expected,
+                "fork first: {fork_first}, one scan: {one_scan}"
+            );
+        }
+    }
 }
 
 #[test]

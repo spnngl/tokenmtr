@@ -10,10 +10,12 @@
 //! 3. Parse each line into the caller's [`ParseBatch`] with `push_event`, `push_tool_call`,
 //!    `push_tool_result` and `push_signal`. The batch deduplicates: events last-wins per dedup
 //!    key (D12), tool calls first-wins per tool-use id, signals as sets.
-//! 4. Classify every parsed line as a [`LineClass`] and feed it to [`DriftStats::record`]; set
-//!    `bytes_read`, `lines_read` and the `no_needle` / `oversized` counters from the scan. Turn
-//!    the counters into an issue with [`DriftStats::drift_issue`], passing a [`KeySkeleton`] of
-//!    the first unmappable line (D42). Parse issues never contain line content.
+//! 4. Classify every parsed line as a [`LineClass`] and feed it to [`DriftStats::record`] and the
+//!    reader's [`jsonl::LineScan`] to [`DriftStats::record_scan`]. Put the scan's
+//!    `new_offset` and `last_line_hash` in the [`ParseOutcome`]. Turn
+//!    the counters into an issue with [`DriftStats::unmapped_issue`], passing a [`KeySkeleton`] of
+//!    the first unmappable line (D42); the ingestor applies the skipped-line threshold to the
+//!    whole scan. Parse issues never contain line content.
 //! 5. Add a variant to [`AgentKind`] and an entry to `AgentId::KNOWN` in `tokenmtr-core`.
 //!
 //! Parsers return no `EventId`: it needs the machine id. [`ParsedEvent::into_usage_event`] and

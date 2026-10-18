@@ -11,8 +11,8 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 struct Echo;
 
 impl Handler for Echo {
-    fn handle(&self, request: Request) -> impl Future<Output = Response> + Send {
-        std::future::ready(match request {
+    async fn handle(&self, request: Request) -> Response {
+        match request {
             Request::Reload => Response::Error {
                 kind: ErrorKind::InvalidConfig,
                 message: "nope".to_owned(),
@@ -22,8 +22,10 @@ impl Handler for Echo {
                 size_bytes: 7,
             }),
             Request::Shutdown => Response::ShuttingDown,
+            // Never answers, like a wedged daemon.
+            Request::Issues => std::future::pending().await,
             _ => Response::Reloaded,
-        })
+        }
     }
 }
 
@@ -32,7 +34,7 @@ struct Fixture {
     transport: ControlTransport,
     bus: EventBus,
     stop: watch::Sender<bool>,
-    server: tokio::task::JoinHandle<()>,
+    server: tokio::task::JoinHandle<tokenmtr_platform::control::DaemonLock>,
 }
 
 async fn start() -> Result<Fixture, Box<dyn std::error::Error>> {
@@ -170,6 +172,45 @@ async fn shutdown_closes_connections_and_stops_serving() -> TestResult {
     fx.stop.send(true)?;
     tokio::time::timeout(Duration::from_secs(2), fx.server).await??;
     assert_eq!(subscription.next().await?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_pending_request_yields_to_shutdown() -> TestResult {
+    let fx = start().await?;
+    let mut client = Client::connect(&fx.transport, me()).await?;
+    let pending = tokio::spawn(async move { client.issues().await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    fx.stop.send(true)?;
+    tokio::time::timeout(Duration::from_secs(2), fx.server).await??;
+    let err = pending.await?.err().ok_or("expected an error")?;
+    assert!(
+        matches!(
+            err,
+            ClientError::Remote {
+                kind: ErrorKind::ShuttingDown,
+                ..
+            }
+        ),
+        "{err}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_daemon_that_never_greets_times_out() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = Utf8PathBuf::from_path_buf(dir.path().join("control.sock"))
+        .map_err(|p| format!("non-UTF-8 temp path {}", p.display()))?;
+    // Connections queue in the backlog but nobody ever reads them.
+    let _silent = std::os::unix::net::UnixListener::bind(&path)?;
+    let started = std::time::Instant::now();
+    let err = Client::connect(&ControlTransport::unix(path), me())
+        .await
+        .err()
+        .ok_or("expected a timeout")?;
+    assert!(matches!(err, ClientError::Timeout(_)), "{err}");
+    assert!(started.elapsed() < Duration::from_secs(4));
     Ok(())
 }
 

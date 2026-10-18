@@ -8,16 +8,21 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tokenmtr_platform::{ControlListener, ControlStream, LineReader, LineWriter};
-use tokio::sync::{broadcast, watch};
+use tokenmtr_platform::control::DaemonLock;
+use tokenmtr_platform::{ControlListener, ControlStream, LineReader, LineWriter, MAX_LINE_BYTES};
+use tokio::sync::{Semaphore, broadcast, watch};
 use tokio::task::JoinSet;
 
 use crate::protocol::{Dataset, ErrorKind, Event, PROTOCOL_VERSION, Request, Response};
 
 /// A client that has not completed the handshake after this long is dropped.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+/// A client that does not take a response within this long is dropped.
+const SEND_TIMEOUT: Duration = Duration::from_secs(1);
 /// Events buffered per subscriber before it is told to resynchronize.
 const EVENT_BACKLOG: usize = 64;
+/// Connections served at once; further clients are closed at once.
+const MAX_CONNECTIONS: usize = 16;
 
 /// Flips to `true` when the daemon shuts down. A dropped sender counts as shutdown.
 pub type Shutdown = watch::Receiver<bool>;
@@ -97,21 +102,32 @@ impl<H: Handler> Server<H> {
         }
     }
 
-    /// Accepts connections until `shutdown` flips, then closes every connection and returns.
-    pub async fn serve(self, mut shutdown: Shutdown) {
+    /// Accepts connections until `shutdown` flips, then removes the socket, closes every
+    /// connection and returns the daemon lock: the caller keeps the data directory to itself
+    /// until its own cleanup ends.
+    pub async fn serve(self, mut shutdown: Shutdown) -> DaemonLock {
         let mut connections = JoinSet::new();
+        let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
         loop {
             tokio::select! {
                 () = wait_shutdown(&mut shutdown) => break,
                 accepted = self.listener.accept() => match accepted {
-                    Ok((stream, _)) => {
-                        connections.spawn(connection(
+                    Ok(stream) => {
+                        let Ok(slot) = Arc::clone(&slots).try_acquire_owned() else {
+                            tracing::warn!("control: connection limit reached, closing a client");
+                            continue;
+                        };
+                        let connection = connection(
                             stream,
                             Arc::clone(&self.handler),
                             self.info.clone(),
                             self.bus.clone(),
                             shutdown.clone(),
-                        ));
+                        );
+                        connections.spawn(async move {
+                            connection.await;
+                            drop(slot);
+                        });
                     }
                     Err(error) => {
                         tracing::warn!(%error, "control accept failed");
@@ -121,8 +137,9 @@ impl<H: Handler> Server<H> {
                 Some(_) = connections.join_next(), if !connections.is_empty() => {}
             }
         }
-        drop(self.listener);
+        let lock = self.listener.close();
         while connections.join_next().await.is_some() {}
+        lock
     }
 }
 
@@ -143,18 +160,37 @@ struct Probe {
 type Reader = LineReader<tokio::net::unix::OwnedReadHalf>;
 type Writer = LineWriter<tokio::net::unix::OwnedWriteHalf>;
 
+/// Writes `response`, replacing one that exceeds the frame limit with an error so the client
+/// is never left waiting. `false` when the client is gone or too slow to read.
 async fn send(writer: &mut Writer, response: &Response) -> bool {
     let line = match serde_json::to_string(response) {
+        Ok(line) if line.len() > MAX_LINE_BYTES => {
+            tracing::error!(
+                bytes = line.len(),
+                "control response exceeds the frame limit"
+            );
+            match serde_json::to_string(&Response::Error {
+                kind: ErrorKind::Failed,
+                message: format!("the response exceeds {MAX_LINE_BYTES} bytes"),
+            }) {
+                Ok(line) => line,
+                Err(_) => return false,
+            }
+        }
         Ok(line) => line,
         Err(error) => {
             tracing::error!(%error, "control response is not serializable");
             return false;
         }
     };
-    match writer.write_line(&line).await {
-        Ok(()) => true,
-        Err(error) => {
+    match tokio::time::timeout(SEND_TIMEOUT, writer.write_line(&line)).await {
+        Ok(Ok(())) => true,
+        Ok(Err(error)) => {
             tracing::debug!(%error, "control client went away");
+            false
+        }
+        Err(_) => {
+            tracing::debug!("control client too slow to read, dropping it");
             false
         }
     }
@@ -282,7 +318,13 @@ async fn connection<H: Handler>(
                         }
                         Response::Subscribed
                     }
-                    Ok(request) => handler.handle(request).await,
+                    Ok(request) => tokio::select! {
+                        response = handler.handle(request) => response,
+                        () = wait_shutdown(&mut shutdown) => Response::Error {
+                            kind: ErrorKind::ShuttingDown,
+                            message: "the daemon is shutting down".to_owned(),
+                        },
+                    },
                     Err(_) => bad_request("not a valid request"),
                 };
                 if !send(&mut writer, &response).await {

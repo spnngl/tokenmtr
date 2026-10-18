@@ -1,23 +1,45 @@
 //! The daemon from the app's side: the bundled binary, the launchd plist, and the handshake.
 
+use std::path::PathBuf;
+
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
-use tokenmtr_control::{Client, ClientError, ClientInfo};
+use tokenmtr_control::{Client, ClientError, ClientInfo, DaemonInfo};
+use tokenmtr_platform::service::is_transient;
 use tokenmtr_platform::{
     CommandRunner, ControlTransport, LaunchdService, ServiceError, ServiceManager,
 };
 
 /// The name of the CLI binary the app bundles as its sidecar.
 const SIDECAR_NAME: &str = "tokenmtr";
+/// The app's version; the bundled daemon has the same one.
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Who the app says it is in the control handshake.
 #[must_use]
 pub fn client_info() -> ClientInfo {
     ClientInfo {
         name: "tokenmtr-app".to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
+        version: APP_VERSION.to_owned(),
         schema: Some(tokenmtr_store::SCHEMA_VERSION),
     }
+}
+
+/// Why the app cannot set up the background service.
+#[derive(Debug, thiserror::Error)]
+pub enum SidecarError {
+    /// The OS does not tell where the app executable is.
+    #[error("cannot locate the app executable: {0}")]
+    Executable(#[source] std::io::Error),
+    /// The app executable path is not UTF-8.
+    #[error("the app executable path {} is not UTF-8", .0.display())]
+    NotUtf8(PathBuf),
+    /// The bundled `tokenmtr` binary is not on disk.
+    #[error("the daemon binary {0} is missing")]
+    Missing(Utf8PathBuf),
+    /// launchd refused, or the app runs from a disk image ([`ServiceError::TransientBinary`]).
+    #[error(transparent)]
+    Service(#[from] ServiceError),
 }
 
 /// Where the `tokenmtr` binary the daemon runs lives.
@@ -52,11 +74,10 @@ impl Sidecar {
     ///
     /// # Errors
     ///
-    /// When the executable path is unknown or not UTF-8.
-    pub fn locate() -> Result<Self, String> {
-        let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-        let exe = Utf8PathBuf::from_path_buf(exe)
-            .map_err(|path| format!("executable path {} is not UTF-8", path.display()))?;
+    /// [`SidecarError::Executable`] or [`SidecarError::NotUtf8`].
+    pub fn locate() -> Result<Self, SidecarError> {
+        let exe = std::env::current_exe().map_err(SidecarError::Executable)?;
+        let exe = Utf8PathBuf::from_path_buf(exe).map_err(SidecarError::NotUtf8)?;
         Ok(Self::beside(&exe))
     }
 
@@ -76,7 +97,8 @@ impl Sidecar {
 /// What the launch-time plist check did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepairOutcome {
-    /// Not an app bundle, or no sidecar on disk: nothing to compare against.
+    /// Not an app bundle, a bundle on a disk image or in a translocated copy, or no sidecar on
+    /// disk: nothing to point the plist at.
     Skipped,
     /// No plist is installed (the daemon is installed from onboarding).
     NotInstalled,
@@ -95,7 +117,7 @@ pub fn repair_plist<R: CommandRunner>(
     service: &LaunchdService<R>,
     sidecar: &Sidecar,
 ) -> Result<RepairOutcome, ServiceError> {
-    if !sidecar.bundled() || !sidecar.path().is_file() {
+    if !sidecar.bundled() || is_transient(sidecar.path()) || !sidecar.path().is_file() {
         return Ok(RepairOutcome::Skipped);
     }
     if !service.plist_path().exists() {
@@ -112,17 +134,16 @@ pub fn repair_plist<R: CommandRunner>(
 ///
 /// # Errors
 ///
-/// The sidecar is missing, or launchd refused.
+/// [`SidecarError::Missing`], or [`SidecarError::Service`] when launchd refused or the app runs
+/// from a disk image or a translocated copy.
 pub fn install_service<R: CommandRunner>(
     service: &LaunchdService<R>,
     sidecar: &Sidecar,
-) -> Result<(), String> {
+) -> Result<(), SidecarError> {
     if !sidecar.path().is_file() {
-        return Err(format!("the daemon binary {} is missing", sidecar.path()));
+        return Err(SidecarError::Missing(sidecar.path().to_owned()));
     }
-    service
-        .install(sidecar.path())
-        .map_err(|error| error.to_string())
+    Ok(service.install(sidecar.path())?)
 }
 
 /// What the app knows about the daemon from one handshake.
@@ -154,15 +175,50 @@ impl Link {
             _ => Self::Offline,
         }
     }
+
+    /// The link a `Welcome` means: a daemon on a newer store schema than this app reads is
+    /// incompatible even though the protocol matches (D52).
+    #[must_use]
+    pub fn from_welcome(daemon: &DaemonInfo) -> Self {
+        let daemon_version = daemon.daemon_version.clone();
+        if daemon.store_schema > tokenmtr_store::SCHEMA_VERSION {
+            Self::Incompatible { daemon_version }
+        } else {
+            Self::Connected { daemon_version }
+        }
+    }
+}
+
+/// Whether a daemon that answered with `daemon_version` and `store_schema` should be replaced
+/// by the bundled one: it is another version, and this app can still read its store (a newer
+/// schema means the app is the old side, and its daemon could not open the store).
+#[must_use]
+pub fn needs_restart(daemon_version: &str, store_schema: u32) -> bool {
+    daemon_version != APP_VERSION && store_schema <= tokenmtr_store::SCHEMA_VERSION
 }
 
 /// Connects once and reports the link; the connection is dropped.
 pub async fn probe(transport: &ControlTransport) -> Link {
     match Client::connect(transport, client_info()).await {
-        Ok(client) => Link::Connected {
-            daemon_version: client.daemon().daemon_version.clone(),
-        },
+        Ok(client) => Link::from_welcome(client.daemon()),
         Err(error) => Link::from_error(&error),
+    }
+}
+
+/// Whether the daemon answering on `transport` runs another version than this app and should be
+/// restarted on the bundled binary ([`needs_restart`]). `false` when nobody answers.
+pub async fn outdated(transport: &ControlTransport) -> bool {
+    match Client::connect(transport, client_info()).await {
+        Ok(client) => needs_restart(
+            &client.daemon().daemon_version,
+            client.daemon().store_schema,
+        ),
+        Err(ClientError::Incompatible {
+            daemon_version,
+            store_schema,
+            ..
+        }) => needs_restart(&daemon_version, store_schema),
+        Err(_) => false,
     }
 }
 
@@ -187,8 +243,8 @@ mod tests {
                 calls.push(format!("{program} {}", args.join(" ")));
             }
             let (code, stdout) = match (program, args.first().copied()) {
-                ("id", _) => (0, "501"),
-                ("launchctl", Some("print")) => (1, ""),
+                ("/usr/bin/id", _) => (0, "501"),
+                ("/bin/launchctl", Some("print")) => (1, ""),
                 _ => (0, ""),
             };
             Ok(CommandOutput {
@@ -293,10 +349,54 @@ mod tests {
         let runner = FakeRunner::default();
         let service = LaunchdService::new(&fixture.paths, &runner);
         let missing = Sidecar::beside(Utf8Path::new("/nowhere/TokenMtr.app/Contents/MacOS/x"));
-        assert!(install_service(&service, &missing).is_err());
+        assert!(matches!(
+            install_service(&service, &missing),
+            Err(SidecarError::Missing(_))
+        ));
         let sidecar = bundle(&fixture.home)?;
         install_service(&service, &sidecar).map_err(io::Error::other)?;
         Ok(())
+    }
+
+    #[test]
+    fn a_bundle_on_a_disk_image_is_never_installed() -> io::Result<()> {
+        let fixture = fixture()?;
+        let runner = FakeRunner::default();
+        let service = LaunchdService::new(&fixture.paths, &runner);
+        let mounted = Sidecar::beside(Utf8Path::new(
+            "/Volumes/TokenMtr/TokenMtr.app/Contents/MacOS/tokenmtr-desktop",
+        ));
+        assert_eq!(
+            repair_plist(&service, &mounted).map_err(io::Error::other)?,
+            RepairOutcome::Skipped
+        );
+        let translocated = bundle(&fixture.home.join("AppTranslocation/X"))?;
+        assert!(matches!(
+            install_service(&service, &translocated),
+            Err(SidecarError::Service(ServiceError::TransientBinary(_)))
+        ));
+        assert!(!service.plist_path().exists());
+        Ok(())
+    }
+
+    #[test]
+    fn a_newer_store_schema_is_incompatible_and_never_restarted() {
+        let schema = tokenmtr_store::SCHEMA_VERSION;
+        let welcome = |store_schema| DaemonInfo {
+            daemon_version: APP_VERSION.to_owned(),
+            store_schema,
+        };
+        assert!(matches!(
+            Link::from_welcome(&welcome(schema)),
+            Link::Connected { .. }
+        ));
+        assert!(matches!(
+            Link::from_welcome(&welcome(schema + 1)),
+            Link::Incompatible { .. }
+        ));
+        assert!(!needs_restart(APP_VERSION, schema));
+        assert!(needs_restart("0.0.0-old", schema));
+        assert!(!needs_restart("0.0.0-old", schema + 1));
     }
 
     #[test]

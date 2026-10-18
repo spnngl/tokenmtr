@@ -33,7 +33,7 @@ mod tests;
 pub use doctor::{
     AgentReport, DoctorReport, LastRun, OpenIssue, ProfileReport, Retention, RootReport,
 };
-pub use engine::{Ingestor, ScanMode, ScanPriority, ScanRequest};
+pub use engine::{Ingestor, SCAN_ISSUE_SUBJECT, ScanMode, ScanPriority, ScanRequest};
 pub use error::IngestError;
 pub use fingerprint::ParseReason;
 pub use report::{AgentScan, AggregateScan, FileScan, ScanReport, Upserts};

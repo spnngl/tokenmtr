@@ -34,7 +34,8 @@ pub struct Timing {
     pub network_retry: Duration,
     /// When the first backup runs if none exists yet.
     pub first_backup_delay: Duration,
-    /// How long shutdown waits for running jobs before giving up on them.
+    /// How long shutdown waits for running jobs and the last export before giving up on them.
+    /// With the CLI's runtime grace it must stay under the 2 s stop budget.
     pub shutdown_grace: Duration,
 }
 
@@ -51,7 +52,7 @@ impl Default for Timing {
             fx_interval: Duration::from_hours(24),
             network_retry: Duration::from_hours(1),
             first_backup_delay: Duration::from_secs(60),
-            shutdown_grace: Duration::from_millis(1500),
+            shutdown_grace: Duration::from_millis(1200),
         }
     }
 }

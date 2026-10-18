@@ -127,13 +127,11 @@ impl AgentSource for PiSource {
                 sample = Some(KeySkeleton::from_json(bytes));
             }
         })?;
-        stats.bytes_read = scan.new_offset.get().saturating_sub(start.get());
-        stats.lines_read = scan.lines;
-        stats.skipped.no_needle = scan.filtered;
-        stats.skipped.oversized = scan.oversized;
-        issues.extend(stats.drift_issue(sample));
+        stats.record_scan(start, &scan);
+        issues.extend(stats.unmapped_issue(sample));
         Ok(ParseOutcome {
             new_offset: scan.new_offset,
+            last_line_hash: scan.last_line_hash,
             issues,
             drift: stats,
         })

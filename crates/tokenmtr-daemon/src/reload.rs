@@ -30,6 +30,20 @@ pub(crate) fn watch_plan(
     }
 }
 
+/// Why the config is reloaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReloadCause {
+    /// A client sent `Request::Reload`: always reload.
+    Requested,
+    /// The watcher saw the file change: reload only if its bytes did.
+    FileEvent,
+}
+
+/// The config file's bytes; `None` when it cannot be read (a missing file means defaults).
+pub(crate) fn config_bytes(path: &Utf8Path) -> Option<Vec<u8>> {
+    std::fs::read(path).ok()
+}
+
 /// Whether some agent of `settings` owns `path` (the same test as `Ingestor::owns`).
 pub(crate) fn owns(settings: &IngestSettings, path: &Utf8Path) -> bool {
     settings
@@ -40,14 +54,18 @@ pub(crate) fn owns(settings: &IngestSettings, path: &Utf8Path) -> bool {
 
 impl Ctx {
     /// Reloads the config file (D22). An invalid file keeps the config in force and is recorded
-    /// as the `config_error` of status and issues; a valid one replaces it everywhere.
+    /// as the `config_error` of status and issues; a valid one replaces it everywhere. On
+    /// [`ReloadCause::FileEvent`] a file whose bytes did not change since the last load is left
+    /// alone, so an explicit reload followed by the watcher's does the work once.
     ///
     /// # Errors
     /// [`DaemonError::Config`] when the new config is invalid, [`DaemonError::Ingest`] when the
     /// new ingestor cannot start.
-    pub(crate) async fn reload(self: &Arc<Self>) -> Result<(), DaemonError> {
+    pub(crate) async fn reload(self: &Arc<Self>, cause: ReloadCause) -> Result<(), DaemonError> {
         let result = self
-            .blocking(ThreadPriority::UserInitiated, Self::reload_blocking)
+            .blocking(ThreadPriority::UserInitiated, move |ctx| {
+                ctx.reload_blocking(cause)
+            })
             .await?;
         if let Err(error) = &result {
             tracing::warn!(%error, "keeping the previous configuration");
@@ -56,7 +74,15 @@ impl Ctx {
         result
     }
 
-    fn reload_blocking(&self) -> Result<(), DaemonError> {
+    fn reload_blocking(&self, cause: ReloadCause) -> Result<(), DaemonError> {
+        let bytes = config_bytes(&self.settings.config_path);
+        {
+            let mut run = lock(&self.run);
+            if cause == ReloadCause::FileEvent && run.config_bytes == bytes {
+                return Ok(());
+            }
+            run.config_bytes = bytes;
+        }
         let config = load_config(&self.settings.config_path, &*self.settings.env)?;
         let ingest =
             IngestSettings::from_config(&config, &self.settings.paths, &*self.settings.env);
@@ -77,7 +103,12 @@ impl Ctx {
         }
         lock(&self.run).config_error = None;
         self.sync_subscriptions(&new.config);
-        self.watch_plan.send_replace(plan);
+        // Only new roots need a new OS watch and a rescan; ownership rules apply at once.
+        self.watch_plan.send_if_modified(|current| {
+            let moved = current.roots != plan.roots;
+            *current = plan;
+            moved
+        });
         self.rearm(Some(&old), &new);
         tracing::info!("configuration reloaded");
         Ok(())
@@ -85,7 +116,7 @@ impl Ctx {
 
     /// Writes the configured subscriptions (D35) into the store.
     pub(crate) fn sync_subscriptions(&self, config: &Config) {
-        if let Err(error) = lock(&self.store).upsert_subscriptions(&config.subscriptions) {
+        if let Err(error) = lock(&self.store).mirror_subscriptions(&config.subscriptions) {
             tracing::warn!(%error, "cannot store the subscriptions");
         }
         self.after_write(false);

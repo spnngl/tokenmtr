@@ -4,15 +4,11 @@ use std::io::IsTerminal;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, ensure};
+use anyhow::Context;
 use camino::Utf8Path;
-use secrecy::SecretString;
 use tokenmtr_config::{LogFormat, LogLevel};
-use tokenmtr_daemon::{Daemon, Settings};
-use tokenmtr_platform::{
-    Paths, Platform, PlatformKind, SecretError, SecretStore, ThreadPriority, set_thread_priority,
-};
-use tokenmtr_remote::Endpoints;
+use tokenmtr_daemon::{Daemon, DaemonError, Settings};
+use tokenmtr_platform::{Paths, Platform, PlatformKind, ThreadPriority, set_thread_priority};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -22,50 +18,65 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 /// Worker threads of the daemon runtime: the work is I/O waits and short transactions (D47).
 const WORKER_THREADS: usize = 2;
-/// How long the runtime waits for blocking threads after the daemon stopped.
-const RUNTIME_GRACE: Duration = Duration::from_secs(1);
+/// How long the runtime waits for blocking threads after the daemon stopped. With
+/// `Timing::shutdown_grace` (1.2 s) a stop stays under 2 s.
+const RUNTIME_GRACE: Duration = Duration::from_millis(500);
+/// Daily log files kept in the log directory.
+const LOG_FILES_KEPT: usize = 14;
 
 #[cfg(target_os = "macos")]
 fn secrets() -> Arc<dyn tokenmtr_platform::SecretStore + Send + Sync> {
     Arc::new(tokenmtr_platform::KeychainSecrets)
 }
 
-/// Test hook (`tests/e2e`): a loopback base URL that replaces the three production hosts. While it
-/// is set the Keychain is not read either, so a test never touches the real one. Anything but an
-/// `http` URL on a loopback host is refused, so a credential can never be sent off the machine
-/// through this variable.
-const TEST_ENDPOINT_BASE: &str = "TOKENMTR_TEST_ENDPOINT_BASE";
+/// Test hook for `tests/e2e`, compiled into debug builds only: release binaries ignore the
+/// variable.
+#[cfg(debug_assertions)]
+mod test_endpoint {
+    use std::sync::Arc;
 
-/// A secret store that holds nothing: credentials then come from files only.
-struct NoSecrets;
+    use anyhow::{Context, ensure};
+    use secrecy::SecretString;
+    use tokenmtr_daemon::Settings;
+    use tokenmtr_platform::{SecretError, SecretStore};
+    use tokenmtr_remote::Endpoints;
 
-impl SecretStore for NoSecrets {
-    fn get(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
-        Ok(None)
+    /// A loopback base URL that replaces the three production hosts. While it is set the
+    /// Keychain is not read either, so a test never touches the real one. Anything but an `http`
+    /// URL on a loopback host is refused for every endpoint, so a credential can never be sent
+    /// off the machine through this variable.
+    const TEST_ENDPOINT_BASE: &str = "TOKENMTR_TEST_ENDPOINT_BASE";
+
+    /// A secret store that holds nothing: credentials then come from files only.
+    struct NoSecrets;
+
+    impl SecretStore for NoSecrets {
+        fn get(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
+            Ok(None)
+        }
     }
-}
 
-/// Applies [`TEST_ENDPOINT_BASE`] to `settings` when it is set.
-fn apply_test_endpoint(settings: &mut Settings) -> anyhow::Result<()> {
-    let Some(base) = std::env::var_os(TEST_ENDPOINT_BASE) else {
-        return Ok(());
-    };
-    let base = base
-        .to_str()
-        .with_context(|| format!("{TEST_ENDPOINT_BASE} is not UTF-8"))?;
-    let endpoints =
-        Endpoints::at(base).with_context(|| format!("{TEST_ENDPOINT_BASE} is not a valid URL"))?;
-    ensure!(
-        endpoints.anthropic.scheme() == "http"
-            && matches!(
-                endpoints.anthropic.host_str(),
-                Some("127.0.0.1" | "localhost" | "[::1]")
-            ),
-        "{TEST_ENDPOINT_BASE} must be an http URL on a loopback host"
-    );
-    settings.endpoints = Some(endpoints);
-    settings.secrets = Arc::new(NoSecrets);
-    Ok(())
+    /// Applies [`TEST_ENDPOINT_BASE`] to `settings` when it is set.
+    pub(super) fn apply(settings: &mut Settings) -> anyhow::Result<()> {
+        let Some(base) = std::env::var_os(TEST_ENDPOINT_BASE) else {
+            return Ok(());
+        };
+        let base = base
+            .to_str()
+            .with_context(|| format!("{TEST_ENDPOINT_BASE} is not UTF-8"))?;
+        let endpoints = Endpoints::at(base)
+            .with_context(|| format!("{TEST_ENDPOINT_BASE} is not a valid URL"))?;
+        ensure!(
+            [&endpoints.anthropic, &endpoints.ecb, &endpoints.github_raw]
+                .into_iter()
+                .all(|url| url.scheme() == "http"
+                    && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))),
+            "{TEST_ENDPOINT_BASE} must be an http URL on a loopback host"
+        );
+        settings.endpoints = Some(endpoints);
+        settings.secrets = Arc::new(NoSecrets);
+        Ok(())
+    }
 }
 
 /// Runs the daemon until SIGTERM, SIGINT or a control `shutdown` request.
@@ -74,6 +85,10 @@ pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
     let paths = platform.paths().clone();
     let config_path = config.map_or_else(|| paths.config_file().to_owned(), Utf8Path::to_owned);
     let _log_guard = init_tracing(&paths, &config_path)?;
+    // launchd appends the daemon's stdout and stderr forever; keep those files bounded.
+    if let Err(error) = tokenmtr_platform::service::trim_launchd_logs(paths.logs_dir()) {
+        tracing::warn!(%error, "cannot trim the launchd logs");
+    }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(WORKER_THREADS)
@@ -84,17 +99,41 @@ pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
         })
         .build()
         .context("cannot start the async runtime")?;
+    #[cfg_attr(
+        not(debug_assertions),
+        expect(unused_mut, reason = "the test hook mutates")
+    )]
     let mut settings = Settings::new(paths, config_path, platform.control_transport(), secrets());
-    apply_test_endpoint(&mut settings)?;
+    #[cfg(debug_assertions)]
+    test_endpoint::apply(&mut settings)?;
     let outcome = runtime.block_on(serve(settings));
     runtime.shutdown_timeout(RUNTIME_GRACE);
     outcome
 }
 
+/// Serves until a signal or a `shutdown` request, then stops; both exit 0, so launchd
+/// (`KeepAlive.SuccessfulExit = false`) does not restart a daemon that was asked to stop.
+/// Another daemon already serving also exits 0: there is nothing to restart.
 async fn serve(settings: Settings) -> anyhow::Result<()> {
-    let daemon = Daemon::start(settings).await?;
+    // Installed before the slow start (migrations), so SIGTERM never kills mid-write.
+    let mut signals = Signals::install()?;
+    let start = Daemon::start(settings);
+    let daemon = tokio::select! {
+        started = start => match started {
+            Ok(daemon) => daemon,
+            Err(error @ DaemonError::AlreadyRunning(_)) => {
+                tracing::info!(%error, "not starting");
+                return Ok(());
+            }
+            Err(error) => return Err(error.into()),
+        },
+        () = signals.next() => {
+            tracing::info!("stopped while starting");
+            return Ok(());
+        }
+    };
     tokio::select! {
-        signal = wait_for_signal() => signal?,
+        () = signals.next() => {}
         () = daemon.stop_requested() => {}
     }
     tracing::info!("stopping");
@@ -102,15 +141,27 @@ async fn serve(settings: Settings) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn wait_for_signal() -> anyhow::Result<()> {
-    use tokio::signal::unix::{SignalKind, signal};
-    let mut term = signal(SignalKind::terminate()).context("cannot listen for SIGTERM")?;
-    let mut int = signal(SignalKind::interrupt()).context("cannot listen for SIGINT")?;
-    tokio::select! {
-        _ = term.recv() => {}
-        _ = int.recv() => {}
+/// SIGTERM and SIGINT, listened to from installation on.
+struct Signals {
+    term: tokio::signal::unix::Signal,
+    int: tokio::signal::unix::Signal,
+}
+
+impl Signals {
+    fn install() -> anyhow::Result<Self> {
+        use tokio::signal::unix::{SignalKind, signal};
+        Ok(Self {
+            term: signal(SignalKind::terminate()).context("cannot listen for SIGTERM")?,
+            int: signal(SignalKind::interrupt()).context("cannot listen for SIGINT")?,
+        })
     }
-    Ok(())
+
+    async fn next(&mut self) {
+        tokio::select! {
+            _ = self.term.recv() => {}
+            _ = self.int.recv() => {}
+        }
+    }
 }
 
 /// A log layer writing `format` lines to `writer`.
@@ -139,6 +190,7 @@ fn init_tracing(paths: &Paths, config_path: &Utf8Path) -> anyhow::Result<WorkerG
         .rotation(tracing_appender::rolling::Rotation::DAILY)
         .filename_prefix("tokenmtr")
         .filename_suffix("log")
+        .max_log_files(LOG_FILES_KEPT)
         .build(paths.logs_dir())
         .context("cannot open the log directory")?;
     let (file, guard) = tracing_appender::non_blocking(appender);

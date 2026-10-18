@@ -20,7 +20,7 @@ pub enum IngestError {
     /// An identifier was rejected by the core types.
     #[error("invalid identifier: {0}")]
     Id(#[from] IdError),
-    /// A file or directory could not be read outside a parse (watcher setup, stat, doctor).
+    /// A file or directory could not be read outside a parse (stat, doctor).
     #[error("cannot read {path}: {source}")]
     Io {
         /// What failed.
@@ -32,9 +32,6 @@ pub enum IngestError {
     /// The worker pool could not start.
     #[error("cannot start the parse pool: {0}")]
     Pool(#[from] rayon::ThreadPoolBuildError),
-    /// The file watcher could not start.
-    #[error("file watcher: {0}")]
-    Watch(#[from] notify::Error),
     /// A stored value is outside what this build understands (a schema drift).
     #[error("unexpected stored value: {0}")]
     Corrupt(String),

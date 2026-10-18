@@ -1,18 +1,13 @@
 //! File watching for the daemon (D16): raw `notify` events, our own debounce, a startup rescan.
 //!
 //! [`WatchCore`] holds all decisions and takes explicit instants, so tests drive it without a
-//! clock or a file system. [`Watch`] is the thin OS part: it feeds `notify` events into a core
-//! and waits for the next [`WatchBatch`]. A missing root is skipped; the periodic sweep
-//! (`daemon.scan_interval`) picks up files in roots that appear later.
+//! clock or a file system. The daemon's watcher task owns the OS watcher and feeds it.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
-
-use super::error::IngestError;
+use notify::EventKind;
 
 /// A path is scanned this long after its last event (D16).
 pub const QUIET: Duration = Duration::from_secs(2);
@@ -198,96 +193,6 @@ impl WatchCore {
     }
 }
 
-/// A recursive watch on the agent roots.
-pub struct Watch {
-    // Dropping the watcher stops the events.
-    _watcher: RecommendedWatcher,
-    events: mpsc::Receiver<notify::Result<notify::Event>>,
-    core: WatchCore,
-    missing: Vec<Utf8PathBuf>,
-}
-
-impl Watch {
-    /// Watches every existing root recursively with the default debounce.
-    pub fn start(roots: &[Utf8PathBuf]) -> Result<Self, IngestError> {
-        Self::start_with(roots, Debounce::default())
-    }
-
-    /// Like [`start`](Self::start) with explicit timing.
-    pub fn start_with(roots: &[Utf8PathBuf], timing: Debounce) -> Result<Self, IngestError> {
-        let (tx, events) = mpsc::channel();
-        let mut watcher = notify::recommended_watcher(move |event| {
-            // The receiver is gone only when the watch is being dropped.
-            let _ = tx.send(event);
-        })?;
-        let mut missing = Vec::new();
-        for root in roots {
-            if root.is_dir() {
-                watcher.watch(root.as_std_path(), RecursiveMode::Recursive)?;
-            } else {
-                missing.push(root.clone());
-            }
-        }
-        Ok(Self {
-            _watcher: watcher,
-            events,
-            core: WatchCore::new(timing),
-            missing,
-        })
-    }
-
-    /// Roots that did not exist at start. Only the periodic sweep sees files in them.
-    #[must_use]
-    pub fn missing_roots(&self) -> &[Utf8PathBuf] {
-        &self.missing
-    }
-
-    /// Blocks up to `timeout` for the next batch. The first batch is [`WatchBatch::Rescan`].
-    /// A watcher error asks for a rescan too: after an error events may have been lost.
-    pub fn next_batch(
-        &mut self,
-        timeout: Duration,
-        owns: &dyn Fn(&Utf8Path) -> bool,
-    ) -> Option<WatchBatch> {
-        let give_up = Instant::now() + timeout;
-        loop {
-            while let Ok(event) = self.events.try_recv() {
-                self.feed(event, owns);
-            }
-            let now = Instant::now();
-            if let Some(batch) = self.core.poll(now) {
-                return Some(batch);
-            }
-            let remaining = give_up.saturating_duration_since(now);
-            if remaining.is_zero() {
-                return None;
-            }
-            let wait = self
-                .core
-                .sleep_hint(now)
-                .map_or(remaining, |hint| hint.min(remaining));
-            match self.events.recv_timeout(wait) {
-                Ok(event) => self.feed(event, owns),
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => return None,
-            }
-        }
-    }
-
-    fn feed(&mut self, event: notify::Result<notify::Event>, owns: &dyn Fn(&Utf8Path) -> bool) {
-        let raw = match event {
-            Ok(event) => RawEvent::from_notify(&event),
-            Err(err) => {
-                tracing::warn!(%err, "file watcher error, scheduling a rescan");
-                Some(RawEvent::Rescan)
-            }
-        };
-        if let Some(raw) = raw {
-            self.core.feed(raw, Instant::now(), owns);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,44 +310,5 @@ mod tests {
         );
         let lost = notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan);
         assert_eq!(RawEvent::from_notify(&lost), Some(RawEvent::Rescan));
-    }
-
-    #[test]
-    fn the_os_watcher_reports_a_rescan_then_the_changed_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = crate::testkit::utf8_dir(&dir);
-        let mut watch = Watch::start_with(
-            std::slice::from_ref(&root),
-            Debounce {
-                quiet: Duration::from_millis(50),
-                max_wait: Duration::from_millis(500),
-            },
-        )
-        .unwrap();
-        let owns = |p: &Utf8Path| p.extension() == Some("jsonl");
-        assert_eq!(
-            watch.next_batch(Duration::from_secs(5), &owns),
-            Some(WatchBatch::Rescan)
-        );
-        let file = root.join("s.jsonl");
-        std::fs::write(&file, "{}\n").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let mut seen = false;
-        while Instant::now() < deadline && !seen {
-            if let Some(WatchBatch::Paths(paths)) = watch.next_batch(Duration::from_secs(1), &owns)
-            {
-                seen = paths.iter().any(|p| p.file_name() == Some("s.jsonl"));
-            }
-        }
-        assert!(seen, "no event for {file}");
-        assert_eq!(watch.missing_roots().len(), 0);
-    }
-
-    #[test]
-    fn a_missing_root_is_skipped_and_listed() {
-        let dir = tempfile::tempdir().unwrap();
-        let gone = crate::testkit::utf8_dir(&dir).join("absent");
-        let watch = Watch::start(std::slice::from_ref(&gone)).unwrap();
-        assert_eq!(watch.missing_roots(), [gone]);
     }
 }

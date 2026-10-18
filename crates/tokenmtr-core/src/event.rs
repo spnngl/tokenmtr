@@ -46,12 +46,24 @@ impl TokenCounts {
     }
 }
 
-/// An estimated API cost and the pricing snapshot that produced it (D10).
+/// Per-request billing modifiers Anthropic reports in `usage` (D11): `speed`, `inference_geo` and
+/// `server_tool_use.web_search_requests`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub struct PriceModifiers {
+    /// `speed == "fast"`: fast mode, billed at the entry's `fast` multiplier.
+    pub fast: bool,
+    /// Region the request ran in, lowercase. `None` for global routing or when not reported.
+    pub inference_geo: Option<String>,
+    /// Server-side web searches, billed per query.
+    pub web_search_requests: u64,
+}
+
+/// An estimated API cost and the price that produced it (D10).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Estimate {
     /// Estimated pay-as-you-go cost.
     pub usd: UsdMicros,
-    /// Snapshot the estimate was computed from.
+    /// Snapshot the estimate was computed from, or the hash of the override that priced it.
     pub pricing_version: PricingVersion,
 }
 
@@ -317,6 +329,10 @@ pub struct ParsedEvent {
     pub reported_cost: Option<UsdMicros>,
     /// Service tier.
     pub service_tier: Option<String>,
+    /// Billing modifiers; `None` when the agent does not report them. They are not stored, so
+    /// only the estimate made at ingest can use them.
+    #[serde(default)]
+    pub modifiers: Option<PriceModifiers>,
 }
 
 impl ParsedEvent {

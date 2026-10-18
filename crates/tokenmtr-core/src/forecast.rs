@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::event::{EventKind, UsageEvent};
 use crate::ids::{AgentId, SessionId};
-use crate::money::{Money, MoneyError, UsdMicros};
+use crate::money::{Money, MoneyError, UsdMicros, saturating_micros};
 use crate::quota::{QuotaSnapshot, WindowId};
 
 /// Minimum snapshots a quota forecast needs.
@@ -15,7 +15,7 @@ pub const MIN_ETA_SAMPLES: usize = 3;
 /// Minimum time the snapshots must span for a quota forecast.
 pub const MIN_ETA_SPAN: SignedDuration = SignedDuration::from_mins(15);
 /// How far two reported `resets_at` values may differ and still be the same window instance.
-const RESET_TOLERANCE: SignedDuration = SignedDuration::from_mins(5);
+pub const RESET_TOLERANCE: SignedDuration = SignedDuration::from_mins(5);
 /// Days of history averaged by [`project_period`].
 pub const PROJECTION_DAYS: usize = 7;
 
@@ -116,11 +116,13 @@ pub fn project_period(
     if count == 0 {
         return Ok(spent);
     }
-    let future = total / count * i128::from(remaining_days);
+    // Multiply before dividing so the mean's remainder is not scaled by the remaining days.
+    let future = total.saturating_mul(i128::from(remaining_days)) / count;
     let projected = i128::from(spent.micros()).saturating_add(future);
-    let clamped =
-        i64::try_from(projected).unwrap_or(if projected < 0 { i64::MIN } else { i64::MAX });
-    Ok(Money::from_micros(spent.currency(), clamped))
+    Ok(Money::from_micros(
+        spent.currency(),
+        saturating_micros(projected),
+    ))
 }
 
 /// Recent burn rate of one agent (D58).
@@ -155,6 +157,7 @@ pub fn live_rate(events: &[UsageEvent], now: Timestamp, window: SignedDuration) 
     if window_secs == 0 {
         return Vec::new();
     }
+    let window_micros_divisor = i128::from(window.as_secs());
     let Ok(since) = now.checked_sub(window) else {
         return Vec::new();
     };
@@ -175,13 +178,12 @@ pub fn live_rate(events: &[UsageEvent], now: Timestamp, window: SignedDuration) 
             agent,
             tokens_per_minute: u64::try_from(div_round(acc.tokens.saturating_mul(60), window_secs))
                 .unwrap_or(u64::MAX),
-            api_value_per_hour: UsdMicros::new(
-                i64::try_from(
-                    (acc.micros * 3600 + i128::try_from(window_secs / 2).unwrap_or(0))
-                        / i128::try_from(window_secs).unwrap_or(1),
-                )
-                .unwrap_or(i64::MAX),
-            ),
+            api_value_per_hour: UsdMicros::new(saturating_micros(
+                acc.micros
+                    .saturating_mul(3600)
+                    .saturating_add(window_micros_divisor / 2)
+                    / window_micros_divisor,
+            )),
             active_sessions: u32::try_from(acc.sessions.len()).unwrap_or(u32::MAX),
         })
         .collect()

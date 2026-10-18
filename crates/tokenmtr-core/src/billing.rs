@@ -1,14 +1,16 @@
 //! Subscriptions, billing mode and fee proration (D28), plus the plan catalog.
 
+use std::num::NonZeroU32;
+
 use jiff::Span;
 use jiff::civil::Date;
+use jiff::tz::TimeZone;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::event::UsageEvent;
-use crate::fx::utc_date;
 use crate::ids::{AgentId, ProfileId, ProviderId, SubscriptionId};
-use crate::money::{Currency, Money, UsdMicros};
+use crate::money::{Currency, Money, UsdMicros, saturating_micros};
 
 /// The embedded plan catalog (`pricing/plans.toml`).
 pub const EMBEDDED_PLANS: &str = include_str!("../../../pricing/plans.toml");
@@ -216,16 +218,17 @@ impl Subscription {
     }
 
     /// Whether this subscription covers the event: agent, profile (when narrowed), provider and
-    /// date (`start ≤ at < end`, by UTC date).
+    /// date (`start ≤ day < end`, by the event's calendar date in `tz`, the display time zone
+    /// that buckets days and prorates fees, D8).
     #[must_use]
-    pub fn covers(&self, event: &UsageEvent) -> bool {
+    pub fn covers(&self, event: &UsageEvent, tz: &TimeZone) -> bool {
         self.agents.contains(&event.agent)
             && self
                 .profiles
                 .as_ref()
                 .is_none_or(|p| p.contains(&event.profile))
             && event.provider.as_ref() == Some(&self.provider)
-            && self.is_active_on(utc_date(event.at))
+            && self.is_active_on(event.at.to_zoned(tz.clone()).date())
     }
 
     /// Whether two subscriptions would both cover some event (a config error, D28).
@@ -260,13 +263,17 @@ pub fn find_overlap(subscriptions: &[Subscription]) -> Option<(&SubscriptionId, 
     })
 }
 
-/// `subscription` when one covers the event (by UTC date), otherwise `api` (D28). With
-/// overlapping subscriptions, which is a config error, the first match wins.
+/// `subscription` when one covers the event (by its calendar date in `tz`), otherwise `api`
+/// (D28). With overlapping subscriptions, which is a config error, the first match wins.
 #[must_use]
-pub fn billing_mode(event: &UsageEvent, subscriptions: &[Subscription]) -> BillingMode {
+pub fn billing_mode(
+    event: &UsageEvent,
+    tz: &TimeZone,
+    subscriptions: &[Subscription],
+) -> BillingMode {
     subscriptions
         .iter()
-        .find(|s| s.covers(event))
+        .find(|s| s.covers(event, tz))
         .map_or(BillingMode::Api, |s| {
             BillingMode::Subscription(s.id.clone())
         })
@@ -323,7 +330,7 @@ pub fn prorated_fee(subscription: &Subscription, day: Date) -> Money {
     } else {
         (micros - days / 2) / days
     };
-    Money::from_micros(fee.currency(), i64::try_from(rounded).unwrap_or(0))
+    Money::from_micros(fee.currency(), saturating_micros(rounded))
 }
 
 /// Why the plan catalog was rejected.
@@ -375,8 +382,8 @@ pub struct PlanSpec {
     pub monthly_fee: UsdMicros,
     /// Yearly list price, when Anthropic sells it.
     pub yearly_fee: Option<UsdMicros>,
-    /// Quota relative to Pro (Pro 1, Max 5x 5, Max 20x 20); always positive.
-    pub quota_multiplier: u32,
+    /// Quota relative to Pro (Pro 1, Max 5x 5, Max 20x 20).
+    pub quota_multiplier: NonZeroU32,
 }
 
 /// The plan catalog (`pricing/plans.toml`): USD list prices and quota ratios (D28, D35).
@@ -398,9 +405,9 @@ impl PlanCatalog {
             if plans.iter().any(|q| q.plan == p.id) {
                 return Err(PlanCatalogError::Duplicate(p.id));
             }
-            if p.quota_multiplier == 0 {
+            let Some(quota_multiplier) = NonZeroU32::new(p.quota_multiplier) else {
                 return Err(PlanCatalogError::ZeroMultiplier(p.id));
-            }
+            };
             let fee = |value: &str| {
                 value
                     .parse::<Decimal>()
@@ -417,7 +424,7 @@ impl PlanCatalog {
                 display_name: p.display_name.clone(),
                 monthly_fee: fee(&p.monthly_fee_usd)?,
                 yearly_fee: p.yearly_fee_usd.as_deref().map(fee).transpose()?,
-                quota_multiplier: p.quota_multiplier,
+                quota_multiplier,
             });
         }
         Ok(Self { plans })
@@ -576,7 +583,11 @@ mod tests {
         )?;
         let subs = [s];
         let mode = |agent, at: &str| -> Result<BillingMode, Box<dyn std::error::Error>> {
-            Ok(billing_mode(&usage_event(agent, "s", at)?, &subs))
+            Ok(billing_mode(
+                &usage_event(agent, "s", at)?,
+                &TimeZone::UTC,
+                &subs,
+            ))
         };
         let covered = BillingMode::Subscription(SubscriptionId::try_from("s1")?);
         assert_eq!(mode(AgentId::CLAUDE, "2026-01-15T10:00:00Z")?, covered);
@@ -590,13 +601,23 @@ mod tests {
             mode(AgentId::CLAUDE, "2026-02-01T00:00:00Z")?,
             BillingMode::Api
         );
+        // Coverage follows the display-zone date: 23:30 UTC on Dec 31 is Jan 1 at UTC+1.
+        let paris = TimeZone::fixed(jiff::tz::offset(1));
+        let new_year = usage_event(AgentId::CLAUDE, "s", "2025-12-31T23:30:00Z")?;
+        assert_eq!(billing_mode(&new_year, &paris, &subs), covered);
         // pi is not covered.
         assert_eq!(mode(AgentId::PI, "2026-01-15T10:00:00Z")?, BillingMode::Api);
         let mut other_provider = usage_event(AgentId::CLAUDE, "s", "2026-01-15T10:00:00Z")?;
         other_provider.provider = Some(ProviderId::try_from("openai")?);
-        assert_eq!(billing_mode(&other_provider, &subs), BillingMode::Api);
+        assert_eq!(
+            billing_mode(&other_provider, &TimeZone::UTC, &subs),
+            BillingMode::Api
+        );
         other_provider.provider = None;
-        assert_eq!(billing_mode(&other_provider, &subs), BillingMode::Api);
+        assert_eq!(
+            billing_mode(&other_provider, &TimeZone::UTC, &subs),
+            BillingMode::Api
+        );
         Ok(())
     }
 
@@ -616,12 +637,12 @@ mod tests {
         let team = Subscription::new(spec.clone())?;
         let mut event = usage_event(AgentId::CLAUDE, "s", "2026-01-15T10:00:00Z")?;
         assert_eq!(
-            billing_mode(&event, std::slice::from_ref(&team)),
+            billing_mode(&event, &TimeZone::UTC, std::slice::from_ref(&team)),
             BillingMode::Api
         );
         event.profile = ProfileId::try_from("work")?;
         assert_eq!(
-            billing_mode(&event, std::slice::from_ref(&team)),
+            billing_mode(&event, &TimeZone::UTC, std::slice::from_ref(&team)),
             BillingMode::Subscription(team.id().clone())
         );
         spec.profiles = Some(Vec::new());
@@ -678,7 +699,7 @@ mod tests {
     #[test]
     fn embedded_plan_catalog_parses() -> TestResult {
         let catalog = PlanCatalog::embedded()?;
-        let multiplier = |p| catalog.get(p).map(|s| s.quota_multiplier);
+        let multiplier = |p| catalog.get(p).map(|s| s.quota_multiplier.get());
         assert_eq!(multiplier(Plan::Pro), Some(1));
         assert_eq!(multiplier(Plan::Max5x), Some(5));
         assert_eq!(multiplier(Plan::Max20x), Some(20));

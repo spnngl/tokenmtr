@@ -184,7 +184,7 @@ impl Ingestor {
         self.settings
             .protected
             .iter()
-            .any(|folder| path.starts_with(folder))
+            .any(|folder| tokenmtr_platform::paths::is_under(path, folder))
     }
 
     fn profile_reports(source: &AgentKind, now: Timestamp) -> Vec<ProfileReport> {

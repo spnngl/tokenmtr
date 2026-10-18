@@ -7,7 +7,7 @@ use std::time::Duration;
 use camino::Utf8PathBuf;
 use secrecy::SecretString;
 use tokenmtr_platform::{ControlTransport, Paths, SecretError, SecretStore};
-use tokenmtr_store::{StoreRead as _, StoreReader};
+use tokenmtr_store::StoreReader;
 
 use super::*;
 

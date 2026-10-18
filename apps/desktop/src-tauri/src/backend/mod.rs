@@ -11,11 +11,18 @@ pub mod shell;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use camino::Utf8PathBuf;
-use tokenmtr_app::AppContext;
+use tokenmtr_app::{AppContext, EraseReport, EraseScope, load_config};
 use tokenmtr_config::ProcessEnv;
-use tokenmtr_platform::{ControlTransport, Paths, Platform, PlatformKind, ThreadPriority};
+use tokenmtr_platform::{
+    ControlTransport, Paths, Platform, PlatformKind, ServiceManager, ThreadPriority,
+};
 
 use crate::error::CommandError;
+
+/// Held while a context loads (loading creates a missing store; two tasks doing that at once,
+/// as on the first launch, would both run the schema and one would fail) and while an erase
+/// deletes it, so no load recreates the store halfway.
+static LOAD: Mutex<()> = Mutex::new(());
 
 /// Where the config, the store and the control socket are.
 #[derive(Debug, Clone)]
@@ -74,15 +81,39 @@ impl Backend {
     ///
     /// An invalid config, or a store that cannot be opened (newer or older schema).
     pub fn context(&self) -> Result<AppContext, CommandError> {
-        // Loading creates a missing store; two tasks doing that at once (the first launch starts
-        // several) would both run the schema and one would fail.
-        static LOAD: Mutex<()> = Mutex::new(());
         let _loading = LOAD.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(AppContext::load(
             self.paths.clone(),
             self.transport.clone(),
             self.config_path.clone(),
             Arc::new(ProcessEnv),
+        )?)
+    }
+
+    /// Erases with `scope` (D56) without opening the store, so a broken config or store can be
+    /// erased too: an unloadable config means the default locations.
+    ///
+    /// # Errors
+    ///
+    /// As [`tokenmtr_app::erase`].
+    pub fn erase(
+        &self,
+        scope: EraseScope,
+        service: &dyn ServiceManager,
+    ) -> Result<EraseReport, CommandError> {
+        let _erasing = LOAD.lock().unwrap_or_else(PoisonError::into_inner);
+        let config = load_config(&self.config_path, &ProcessEnv)
+            .inspect_err(|error| {
+                tracing::warn!(%error, "cannot load the config; erasing the default locations");
+            })
+            .ok();
+        Ok(tokenmtr_app::erase(
+            &self.paths,
+            &self.transport,
+            &self.config_path,
+            config.as_ref(),
+            scope,
+            service,
         )?)
     }
 }

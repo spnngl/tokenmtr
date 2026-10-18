@@ -4,7 +4,8 @@
   "description": "The main window: every data source command; native work (dialogs, Finder, notifications) goes through them, so no plugin permission is granted to the webview.",
   "windows": ["main"],
   "permissions": [
-    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "allow-app-state",
     "allow-filter-options",
     "allow-settings",

@@ -2,6 +2,7 @@
 //! actions the CLI and the desktop shell share.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
@@ -14,7 +15,7 @@ use tokenmtr_agents::{AgentKind, AgentSource, claude};
 use tokenmtr_config::{Config, Env, RawProject};
 use tokenmtr_core::{AgentId, Plan, ProfileId, SubscriptionSpec};
 use tokenmtr_export::Target;
-use tokenmtr_platform::{ControlTransport, Paths, ServiceManager};
+use tokenmtr_platform::{ControlTransport, Paths};
 use tokenmtr_query::{
     AlertView, BackupView, BudgetSpec, DateRange, Filters, FxRateView, Period, QueryContext,
     QuotaMeter, Recap, RecapConfig, Selection, SinkSpec, Status,
@@ -22,9 +23,8 @@ use tokenmtr_query::{
 use tokenmtr_store::{BackupRun, Store, StoreRead, StoreReader};
 
 use crate::backup::{BackupFile, backup_path, list_backups, prune_backups};
-use crate::erase::{EraseReport, EraseScope, erase};
 use crate::error::AppError;
-use crate::guard::{daemon_running, ensure_daemon_stopped, restore_backup};
+use crate::guard::{daemon_running, lock_daemon};
 use crate::report::{RenderedReport, ReportRequest, generate_report};
 use crate::retention::set_claude_retention;
 use crate::settings::{
@@ -99,7 +99,8 @@ pub struct PricingSummary {
 /// The loaded config, the file locations and a read-only store.
 ///
 /// Queries take `&self`. Actions that write the store (`scan_direct`, `backup_direct`) refuse
-/// while a daemon runs: it is the only writer (D1).
+/// while a daemon runs, and hold the daemon lock so none starts meanwhile: it is the only
+/// writer (D1).
 pub struct AppContext {
     paths: Paths,
     transport: ControlTransport,
@@ -364,7 +365,7 @@ impl AppContext {
     /// [`AppError::DaemonRunning`] (ask the daemon instead); [`AppError::Store`] when the
     /// backup fails (the failed attempt is recorded too).
     pub fn backup_direct(&self, now: Timestamp) -> Result<BackupFile, AppError> {
-        ensure_daemon_stopped(&self.transport)?;
+        let _lock = lock_daemon(&self.transport, Duration::ZERO)?;
         let dir = backup_dir(&self.paths, &self.config);
         let dest = backup_path(&dir, now);
         let result = StoreReader::open(&self.store_path).and_then(|reader| reader.backup(&dest));
@@ -393,36 +394,6 @@ impl AppContext {
             path: dest,
             size_bytes: info.compressed_bytes,
         })
-    }
-
-    /// Replaces the store with `backup` (D37).
-    ///
-    /// # Errors
-    ///
-    /// As [`restore_backup`].
-    pub fn restore(&self, backup: &Utf8Path) -> Result<(), AppError> {
-        restore_backup(&self.transport, &self.store_path, backup)
-    }
-
-    /// Deletes all data (D56). `service` is asked to remove the background service when
-    /// `scope.service` is set.
-    ///
-    /// # Errors
-    ///
-    /// As [`erase`].
-    pub fn erase(
-        &self,
-        scope: EraseScope,
-        service: &dyn ServiceManager,
-    ) -> Result<EraseReport, AppError> {
-        erase(
-            &self.paths,
-            &self.transport,
-            &self.config_path,
-            &self.config,
-            scope,
-            service,
-        )
     }
 
     /// Builds and renders a client report (D46).
@@ -509,7 +480,7 @@ impl AppContext {
     ///
     /// [`AppError::DaemonRunning`] (ask the daemon instead); store and ingest errors.
     pub fn scan_direct(&self, agent: Option<AgentId>, full: bool) -> Result<ScanReport, AppError> {
-        ensure_daemon_stopped(&self.transport)?;
+        let _lock = lock_daemon(&self.transport, Duration::ZERO)?;
         let mut store = Store::open(&self.store_path)?;
         let mut ingestor = Ingestor::open(self.ingest_settings(), &self.store_path)?;
         let priority = ScanPriority::UserInitiated;

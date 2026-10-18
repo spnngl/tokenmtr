@@ -15,10 +15,26 @@ use tokenmtr_core::{
 };
 use tokenmtr_store::{
     FxRateRow, FxSource, ProfiledToolCall, QuotaOutcome, QuotaPoll, QuotaReading, QuotaSample,
-    Store,
+    Store, StoredEvent, StoredSubscription,
 };
 
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+/// `event` as the store holds it when nothing supersedes it.
+pub const fn live(event: UsageEvent) -> StoredEvent {
+    StoredEvent {
+        event,
+        superseded: false,
+    }
+}
+
+/// `subscription` as the store holds it while it is configured.
+pub const fn configured(subscription: Subscription) -> StoredSubscription {
+    StoredSubscription {
+        subscription,
+        removed_at: None,
+    }
+}
 
 pub fn machine() -> TestResult<MachineId> {
     Ok(MachineId::from_str("00000000-0000-0000-0000-000000000001")?)

@@ -13,7 +13,7 @@ use tokenmtr_export::{
 };
 use tokenmtr_store::{Dataset, Revision, Versioned};
 
-use crate::fixtures::{TestResult, machine, path_in, subscription, usage};
+use crate::fixtures::{TestResult, configured, live, machine, path_in, subscription, usage};
 
 fn sink(
     dir: &Utf8Path,
@@ -40,7 +40,7 @@ fn usage_row(session: &str, at: &str, revision: u64, output: u64) -> TestResult<
         &machine,
         &Versioned {
             revision: Revision::new(revision),
-            row: event,
+            row: live(event),
         },
     ))
 }
@@ -223,7 +223,7 @@ fn subscriptions_use_one_file_whatever_the_partition() -> TestResult {
         &machine,
         &Versioned {
             revision: Revision::new(1),
-            row: subscription()?,
+            row: configured(subscription()?),
         },
     );
     sink(&dir, FileFormat::Csv, FileMode::Append, Partition::Day)?.write(&ExportBatch {

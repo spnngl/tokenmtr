@@ -9,7 +9,7 @@ use std::time::Instant;
 use camino::{Utf8Path, Utf8PathBuf};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tokenmtr_agents::ingest::watch::{RawEvent, WatchBatch, WatchCore};
-use tokenmtr_agents::ingest::{IngestSettings, ScanPriority, ScanRequest};
+use tokenmtr_agents::ingest::{ScanPriority, ScanRequest};
 use tokenmtr_control::{Shutdown, wait_shutdown};
 use tokio::sync::mpsc;
 
@@ -25,8 +25,8 @@ struct Live {
     /// Maps the real path the OS reports back to the configured root (they differ behind a
     /// symlink, e.g. `/var` → `/private/var` on macOS).
     remap: Vec<(Utf8PathBuf, Utf8PathBuf)>,
-    owner: Option<IngestSettings>,
-    config_name: Option<String>,
+    /// The config file as configured and as the OS reports it (behind a symlinked parent).
+    config_paths: Vec<Utf8PathBuf>,
 }
 
 impl Live {
@@ -43,8 +43,7 @@ impl Live {
                 return Self {
                     _watcher: None,
                     remap: Vec::new(),
-                    owner: plan.owner.clone(),
-                    config_name: None,
+                    config_paths: Vec::new(),
                 };
             }
         };
@@ -64,29 +63,19 @@ impl Live {
                 remap.push((real, root.clone()));
             }
         }
-        let config = &ctx.settings.config_path;
-        let config_name = config.file_name().map(str::to_owned);
-        if let Some(dir) = config.parent().filter(|dir| dir.is_dir())
-            && let Err(error) = watcher.watch(dir.as_std_path(), RecursiveMode::NonRecursive)
-        {
-            tracing::warn!(%error, "cannot watch the config file");
-        }
         Self {
+            config_paths: watch_config(&mut watcher, &ctx.settings.config_path),
             _watcher: Some(watcher),
             remap,
-            owner: plan.owner.clone(),
-            config_name,
         }
     }
 
     fn touches_config(&self, event: &notify::Event) -> bool {
-        let Some(name) = &self.config_name else {
-            return false;
-        };
-        event
-            .paths
-            .iter()
-            .any(|path| path.file_name().is_some_and(|file| file == name.as_str()))
+        event.paths.iter().any(|path| {
+            self.config_paths
+                .iter()
+                .any(|config| config.as_std_path() == path)
+        })
     }
 
     fn remapped(&self, path: Utf8PathBuf) -> Utf8PathBuf {
@@ -97,12 +86,37 @@ impl Live {
         }
         path
     }
+}
 
-    fn owns(&self, path: &Utf8Path) -> bool {
-        self.owner
-            .as_ref()
-            .is_some_and(|settings| owns(settings, path))
+/// Watches the directory of the config file, creating it so a config written later is seen;
+/// returns the paths events may report for the file.
+fn watch_config(watcher: &mut RecommendedWatcher, config: &Utf8Path) -> Vec<Utf8PathBuf> {
+    let (Some(dir), Some(name)) = (config.parent(), config.file_name()) else {
+        return Vec::new();
+    };
+    if let Err(error) = std::fs::create_dir_all(dir) {
+        tracing::warn!(%error, %dir, "cannot create the config directory");
     }
+    if let Err(error) = watcher.watch(dir.as_std_path(), RecursiveMode::NonRecursive) {
+        tracing::warn!(%error, "cannot watch the config file");
+    }
+    let mut paths = vec![config.to_owned()];
+    if let Ok(real) = dir.canonicalize_utf8()
+        && real != *dir
+    {
+        paths.push(real.join(name));
+    }
+    paths
+}
+
+/// Whether an agent of the current watch plan owns `path`. Read live: a reload that keeps the
+/// roots updates ownership without notifying the watcher.
+fn owned(ctx: &Ctx, path: &Utf8Path) -> bool {
+    ctx.watch_plan
+        .borrow()
+        .owner
+        .as_ref()
+        .is_some_and(|settings| owns(settings, path))
 }
 
 /// Runs until `shutdown`.
@@ -180,5 +194,5 @@ fn feed(ctx: &Ctx, live: &Live, core: &mut WatchCore, event: Raw) {
         Some(other) => other,
         None => return,
     };
-    core.feed(raw, Instant::now(), &|path| live.owns(path));
+    core.feed(raw, Instant::now(), &|path| owned(ctx, path));
 }

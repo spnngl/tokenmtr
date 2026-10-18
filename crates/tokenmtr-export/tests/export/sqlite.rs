@@ -1,19 +1,21 @@
 //! `SQLite` sink: upsert-by-revision, `_schema`, generated DDL and refused paths.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use camino::Utf8Path;
 use rusqlite::Connection;
 use tempfile::TempDir;
+use tokenmtr_config::{RedactColumn, RedactMode};
 use tokenmtr_core::SinkId;
 use tokenmtr_export::{
-    EXPORT_SCHEMA_VERSION, ExportBatch, ExportRow, Sink, SinkError, SqliteSink, SqliteTarget,
-    project, schema,
+    EXPORT_SCHEMA_VERSION, ExportBatch, ExportRow, Redactor, Sink, SinkError, SqliteSink,
+    SqliteTarget, project, schema,
 };
-use tokenmtr_store::{Dataset, Revision, Versioned};
+use tokenmtr_store::{Dataset, RedactionKey, Revision, Versioned};
 
-use crate::fixtures::{TestResult, machine, path_in, quota_sample, usage};
+use crate::fixtures::{TestResult, live, machine, path_in, quota_sample, usage};
 
 fn sink(path: &Utf8Path) -> TestResult<SqliteSink> {
     Ok(SqliteSink::new(
@@ -37,7 +39,7 @@ fn usage_row(session: &str, revision: u64, output: u64) -> TestResult<ExportRow>
         &machine,
         &Versioned {
             revision: Revision::new(revision),
-            row: event,
+            row: live(event),
         },
     ))
 }
@@ -115,7 +117,7 @@ fn schema_table_and_ddl_follow_the_export_schema() -> TestResult {
         let expected = schema(dataset);
         assert_eq!(columns.len(), expected.columns.len());
         for ((name, ty, not_null, pk), column) in columns.iter().zip(expected.columns) {
-            assert_eq!(name, column.name);
+            assert_eq!(name, &column.sql_name());
             assert_eq!(ty, column.ty.sql());
             assert_eq!(*not_null == 1, !column.nullable || *pk == 1, "{name}");
             assert_eq!(*pk == 1, name == expected.key().name);
@@ -124,13 +126,30 @@ fn schema_table_and_ddl_follow_the_export_schema() -> TestResult {
 
     let used: f64 = conn.query_row("SELECT used_percent FROM quota_snapshots", [], |r| r.get(0))?;
     assert!((used - 42.5).abs() < f64::EPSILON);
-    let (approx, cost): (i64, f64) = conn.query_row(
-        "SELECT approximate, cost_reported_usd FROM usage_events",
+    // Money is exact integer micros in SQL.
+    let (approx, cost): (i64, i64) = conn.query_row(
+        "SELECT approximate, cost_reported_usd_micros FROM usage_events",
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     assert_eq!(approx, 0);
-    assert!((cost - 1.5).abs() < 1e-9);
+    assert_eq!(cost, 1_500_000);
+    Ok(())
+}
+
+#[test]
+fn dropped_session_ids_are_stored_as_null() -> TestResult {
+    let tmp = TempDir::new()?;
+    let path = path_in(&tmp, "export.db")?;
+    let key = RedactionKey::new([1; 32]);
+    let rules = BTreeMap::from([(RedactColumn::SessionId, RedactMode::Drop)]);
+    let mut redacted = batch(vec![usage_row("a", 1, 5)?]);
+    Redactor::new(&key, &rules).apply(&mut redacted);
+    sink(&path)?.write(&redacted)?;
+    let conn = Connection::open(&path)?;
+    let session: Option<String> =
+        conn.query_row("SELECT session_id FROM usage_events", [], |r| r.get(0))?;
+    assert_eq!(session, None);
     Ok(())
 }
 

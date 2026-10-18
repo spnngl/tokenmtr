@@ -11,6 +11,7 @@ use globset::GlobMatcher;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
+pub use tokenmtr_core::Dataset;
 use tokenmtr_core::{
     AgentId, AlertConfig, Budget, Currency, EurPerUsd, Override, ProfileId, ProjectKey, SinkId,
     Subscription,
@@ -79,51 +80,6 @@ impl From<ClientName> for String {
 impl fmt::Display for ClientName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-/// A table a sink exports (glossary: dataset).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Dataset {
-    /// `usage_events`.
-    UsageEvents,
-    /// `tool_calls`.
-    ToolCalls,
-    /// `quota_snapshots`.
-    QuotaSnapshots,
-    /// `fx_rates`.
-    FxRates,
-    /// `subscriptions`.
-    Subscriptions,
-}
-
-impl Dataset {
-    /// Every dataset, the default for a sink (D17).
-    pub const ALL: [Self; 5] = [
-        Self::UsageEvents,
-        Self::ToolCalls,
-        Self::QuotaSnapshots,
-        Self::FxRates,
-        Self::Subscriptions,
-    ];
-
-    /// The dataset name as written in config.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::UsageEvents => "usage_events",
-            Self::ToolCalls => "tool_calls",
-            Self::QuotaSnapshots => "quota_snapshots",
-            Self::FxRates => "fx_rates",
-            Self::Subscriptions => "subscriptions",
-        }
-    }
-}
-
-impl fmt::Display for Dataset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
     }
 }
 

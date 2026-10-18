@@ -51,6 +51,7 @@ pub fn parsed_event(key: &str, at: &str, input: u64, output: u64) -> ParsedEvent
         },
         reported_cost: None,
         service_tier: None,
+        modifiers: None,
     }
 }
 

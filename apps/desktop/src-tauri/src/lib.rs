@@ -28,34 +28,58 @@ use tokenmtr_platform::{LaunchdService, SystemRunner};
 
 use crate::app_store::AppStore;
 use crate::backend::Backend;
-use crate::daemon::{RepairOutcome, Sidecar, repair_plist};
+use crate::daemon::{RepairOutcome, Sidecar, install_service, repair_plist};
 use crate::request::DashboardTarget;
 use crate::state::Shell;
 
-/// Points an installed plist at this app's sidecar when the `.app` moved (D23).
-fn repair_service(backend: &Backend) {
+/// Points an installed plist at this app's sidecar when the `.app` moved (D23), and restarts a
+/// daemon that still runs another version than this app (after an update) on the bundled one.
+/// Runs off the main thread: launchctl may take seconds.
+async fn repair_service(backend: Backend) {
     let Ok(sidecar) = Sidecar::locate() else {
         return;
     };
-    let service = LaunchdService::new(backend.paths(), SystemRunner);
-    match repair_plist(&service, &sidecar) {
+    let repaired = backend::blocking({
+        let (backend, sidecar) = (backend.clone(), sidecar.clone());
+        move || {
+            let service = LaunchdService::new(backend.paths(), SystemRunner);
+            Ok(repair_plist(&service, &sidecar)?)
+        }
+    })
+    .await;
+    match repaired {
         Ok(RepairOutcome::Repaired) => tracing::info!("daemon plist repaired after the app moved"),
+        Ok(RepairOutcome::Current) if daemon::outdated(backend.transport()).await => {
+            let restarted = backend::blocking(move || {
+                let service = LaunchdService::new(backend.paths(), SystemRunner);
+                Ok(install_service(&service, &sidecar)?)
+            })
+            .await;
+            match restarted {
+                Ok(()) => tracing::info!("daemon restarted on this app's version"),
+                Err(error) => tracing::warn!(%error, "could not restart the outdated daemon"),
+            }
+        }
         Ok(_) => {}
         Err(error) => tracing::warn!(%error, "could not verify the daemon plist"),
     }
 }
 
-/// Reacts to what the daemon pushed: title, notifications, config-driven registrations.
+/// Reacts to what the daemon pushed: title and config-driven registrations on every change,
+/// notifications only when an alert fired.
 fn react_to_pushes(app: &AppHandle<Wry>) {
     for event in [push::STORE_CHANGED, push::ALERT_FIRED] {
         let handle = app.clone();
         app.listen(event, move |_| {
             tray::refresh(&handle);
             shortcut::sync(&handle);
-            let handle = handle.clone();
-            tauri::async_runtime::spawn(async move { notify::deliver_alerts(&handle).await });
         });
     }
+    let handle = app.clone();
+    app.listen(push::ALERT_FIRED, move |_| {
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move { notify::deliver_alerts(&handle).await });
+    });
 }
 
 fn setup(app: &mut tauri::App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
@@ -67,7 +91,7 @@ fn setup(app: &mut tauri::App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(shell);
     // A tray-only app: no Dock icon until the main window opens (D29).
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    repair_service(&backend);
+    tauri::async_runtime::spawn(repair_service(backend.clone()));
     windows::create_recap(&handle, gate)?;
     tray::install(&handle)?;
     tray::refresh(&handle);

@@ -26,19 +26,27 @@ async fn serve(server: &MockServer, response: ResponseTemplate) {
         .await;
 }
 
+/// Prices the three anchors and nothing else.
+const ANCHORED: &str = r#"{
+  "claude-opus-4-7": {"mode": "chat", "input_cost_per_token": 5e-06, "output_cost_per_token": 2.5e-05},
+  "claude-sonnet-4-5": {"mode": "chat", "input_cost_per_token": 3e-06, "output_cost_per_token": 1.5e-05},
+  "gpt-5": {"mode": "responses", "input_cost_per_token": 1.25e-06, "output_cost_per_token": 1e-05}
+}"#;
+
 #[tokio::test]
 async fn ok_returns_catalog_body_and_etag() -> TestResult {
-    let body = fixture("litellm_small.json")?;
     let server = MockServer::start().await;
     serve(
         &server,
         ResponseTemplate::new(200)
             .insert_header("etag", "W/\"v1\"")
-            .set_body_bytes(body.clone()),
+            .set_body_bytes(EMBEDDED_LITELLM),
     )
     .await;
 
-    let outcome = client(&server)?.refresh(None).await?;
+    let outcome = client(&server)?
+        .refresh(None, Some(EMBEDDED_LITELLM))
+        .await?;
 
     let RefreshOutcome::New {
         catalog,
@@ -48,15 +56,19 @@ async fn ok_returns_catalog_body_and_etag() -> TestResult {
     else {
         return Err(format!("expected New, got {outcome:?}").into());
     };
-    assert_eq!(got, body);
+    assert_eq!(got, EMBEDDED_LITELLM);
     assert_eq!(etag.as_deref(), Some("W/\"v1\""));
-    assert_eq!(catalog.version(), &PricingVersion::of_body(&body));
-    assert!(!catalog.is_empty());
+    assert_eq!(
+        catalog.version(),
+        &PricingVersion::of_body(EMBEDDED_LITELLM)
+    );
+    assert_eq!(catalog.carried(), 0);
     Ok(())
 }
 
 #[tokio::test]
-async fn the_vendored_snapshot_is_accepted() -> TestResult {
+async fn models_the_download_dropped_are_carried_forward() -> TestResult {
+    let active = fixture("litellm_small.json")?;
     let server = MockServer::start().await;
     serve(
         &server,
@@ -64,9 +76,54 @@ async fn the_vendored_snapshot_is_accepted() -> TestResult {
     )
     .await;
 
-    let outcome = client(&server)?.refresh(None).await?;
+    let outcome = client(&server)?.refresh(None, Some(&active)).await?;
 
-    assert!(matches!(outcome, RefreshOutcome::New { .. }));
+    let RefreshOutcome::New { catalog, body, .. } = outcome else {
+        return Err(format!("expected New, got {outcome:?}").into());
+    };
+    assert_eq!(catalog.carried(), 1);
+    assert_eq!(catalog.version(), &PricingVersion::of_body(&body));
+    assert_ne!(body, EMBEDDED_LITELLM);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_catalog_without_the_anchor_models_is_rejected() -> TestResult {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        ResponseTemplate::new(200).set_body_bytes(fixture("litellm_small.json")?),
+    )
+    .await;
+
+    let outcome = client(&server)?.refresh(None, None).await?;
+
+    assert!(matches!(
+        outcome,
+        RefreshOutcome::Rejected(PricingError::MissingAnchor { .. })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_catalog_with_half_the_models_gone_is_rejected() -> TestResult {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        ResponseTemplate::new(200).set_body_string(ANCHORED),
+    )
+    .await;
+
+    let shrunk = client(&server)?
+        .refresh(None, Some(EMBEDDED_LITELLM))
+        .await?;
+    let first = client(&server)?.refresh(None, None).await?;
+
+    assert!(matches!(
+        shrunk,
+        RefreshOutcome::Rejected(PricingError::Shrunk { models: 3, .. })
+    ));
+    assert!(matches!(first, RefreshOutcome::New { .. }));
     Ok(())
 }
 
@@ -81,7 +138,7 @@ async fn etag_is_replayed_and_304_is_not_modified() -> TestResult {
         .mount(&server)
         .await;
 
-    let outcome = client(&server)?.refresh(Some("\"v1\"")).await?;
+    let outcome = client(&server)?.refresh(Some("\"v1\""), None).await?;
 
     assert!(matches!(outcome, RefreshOutcome::NotModified));
     Ok(())
@@ -96,7 +153,7 @@ async fn garbage_body_is_rejected() -> TestResult {
     )
     .await;
 
-    let outcome = client(&server)?.refresh(None).await?;
+    let outcome = client(&server)?.refresh(None, None).await?;
 
     assert!(matches!(
         outcome,
@@ -110,7 +167,7 @@ async fn valid_json_without_chat_models_is_rejected() -> TestResult {
     let server = MockServer::start().await;
     serve(&server, ResponseTemplate::new(200).set_body_string("{}")).await;
 
-    let outcome = client(&server)?.refresh(None).await?;
+    let outcome = client(&server)?.refresh(None, None).await?;
 
     assert!(matches!(
         outcome,
@@ -124,7 +181,7 @@ async fn http_errors_are_errors_not_rejections() -> TestResult {
     let server = MockServer::start().await;
     serve(&server, ResponseTemplate::new(503)).await;
 
-    let result = client(&server)?.refresh(None).await;
+    let result = client(&server)?.refresh(None, None).await;
 
     assert!(matches!(result, Err(RemoteError::Status(503))));
     Ok(())

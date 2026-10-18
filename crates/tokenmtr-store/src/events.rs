@@ -12,7 +12,7 @@ use tokenmtr_core::{
 
 use crate::codec::{RowExt, enum_text, from_us, to_count, to_i64, to_limit, to_us};
 use crate::error::{CodecError, StoreError};
-use crate::types::{Revision, UpsertStats, Versioned};
+use crate::types::{Dataset, Revision, StoredEvent, UpsertStats, Versioned};
 use crate::versioned::{self, Merge, UpsertSql};
 
 /// Columns the upsert compares and overwrites. The identity (`event_id`, `agent`, `dedup_key`)
@@ -62,7 +62,8 @@ macro_rules! select {
              parent_session, subagent, is_sidechain, cwd, git_branch, project, client, \
              source_file_id, approximate, provider, model, kind, input_uncached, cache_read, \
              cache_write_5m, cache_write_1h, output, reasoning, cost_reported_usd_micros, \
-             cost_estimated_usd_micros, pricing_version, service_tier FROM usage_event ",
+             cost_estimated_usd_micros, pricing_version, service_tier, superseded \
+             FROM usage_event ",
             $tail
         )
     };
@@ -82,7 +83,7 @@ pub(crate) fn upsert(
     let rows = versioned::last_wins(events, |e| (e.agent, e.dedup_key.clone()));
     versioned::run(
         conn,
-        crate::Dataset::UsageEvents,
+        Dataset::UsageEvents,
         &UPSERT,
         now,
         &rows,
@@ -186,38 +187,74 @@ pub(crate) fn earliest_transcript(
     Ok(at.map(from_us).transpose()?)
 }
 
-/// Deletes the stats-cache aggregates of `(agent, profile)` at or after `from`; returns how many.
-pub(crate) fn delete_aggregates_from(
+/// Flags the stats-cache aggregates of `(agent, profile)` at or after `from` as superseded. Each
+/// newly flagged row gets its own revision (D17) and the dataset counter moves once. Returns how
+/// many rows changed.
+pub(crate) fn supersede_aggregates_from(
     conn: &Connection,
+    now: Timestamp,
     agent: AgentId,
     profile: &ProfileId,
     from: Timestamp,
 ) -> Result<u64, StoreError> {
-    let deleted = conn
+    let ids = conn
         .prepare_cached(
-            "DELETE FROM usage_event \
-             WHERE agent = ?1 AND profile = ?2 AND kind = ?3 AND at_us >= ?4",
+            "SELECT id FROM usage_event WHERE agent = ?1 AND profile = ?2 AND kind = ?3 \
+             AND at_us >= ?4 AND superseded = 0 ORDER BY id",
         )?
-        .execute(params![
-            agent.as_str(),
-            profile.as_str(),
-            enum_text(&EventKind::DailyAggregate)?,
-            to_us(from)
-        ])?;
-    Ok(to_count(deleted))
+        .query_map(
+            params![
+                agent.as_str(),
+                profile.as_str(),
+                enum_text(&EventKind::DailyAggregate)?,
+                to_us(from)
+            ],
+            |row| row.get::<_, i64>(0),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let mut revision = versioned::head(conn, Dataset::UsageEvents)?;
+    let mut flag = conn.prepare_cached(
+        "UPDATE usage_event SET superseded = 1, revision = ?1, updated_at_us = ?2 WHERE id = ?3",
+    )?;
+    for id in &ids {
+        revision = revision.next();
+        flag.execute(params![revision, to_us(now), id])?;
+    }
+    conn.execute(
+        "UPDATE dataset_revision SET revision = ?1 WHERE dataset = ?2",
+        params![revision, Dataset::UsageEvents.as_str()],
+    )?;
+    Ok(to_count(ids.len()))
 }
 
-/// Events with a revision above `after`, oldest revision first.
+/// Events with a revision above `after`, oldest revision first, superseded ones included.
 pub(crate) fn after(
     conn: &Connection,
     after: Revision,
     limit: usize,
-) -> Result<Vec<Versioned<UsageEvent>>, StoreError> {
+) -> Result<Vec<Versioned<StoredEvent>>, StoreError> {
     let limit = to_limit(limit)?;
     let mut statement = conn.prepare_cached(AFTER)?;
     statement
-        .query_and_then(params![after, limit], decode)?
+        .query_and_then(params![after, limit], decode_stored)?
         .collect()
+}
+
+fn decode_stored(row: &Row<'_>) -> Result<Versioned<StoredEvent>, StoreError> {
+    let Versioned {
+        revision,
+        row: event,
+    } = decode(row)?;
+    Ok(Versioned {
+        revision,
+        row: StoredEvent {
+            event,
+            superseded: row.flag("superseded")?,
+        },
+    })
 }
 
 fn decode(row: &Row<'_>) -> Result<Versioned<UsageEvent>, StoreError> {

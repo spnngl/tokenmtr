@@ -65,9 +65,11 @@ pub fn stats_cache(data: &[u8]) {
     let _ = claude::stats_cache::parse(data, &profile, &TimeZone::fixed(offset(-8)));
 }
 
-/// A `LiteLLM` price catalog body.
+/// A `LiteLLM` price catalog body: validated alone, then as the active snapshot an empty-ish
+/// download carries forward.
 pub fn litellm_catalog(data: &[u8]) {
-    let _ = tokenmtr_remote::parse_catalog(data);
+    let _ = tokenmtr_remote::parse_catalog(data.to_vec(), None);
+    let _ = tokenmtr_core::pricing::carry_forward(br#"{"gpt-5":{}}"#, data);
 }
 
 /// The Claude usage, profile and credentials documents (all fetched or read from outside).

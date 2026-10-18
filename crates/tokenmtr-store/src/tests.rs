@@ -536,20 +536,43 @@ fn fx_rates_and_subscriptions_mirror_by_key() {
     .unwrap();
     assert_eq!(
         f.store
-            .upsert_subscriptions(std::slice::from_ref(&sub))
+            .mirror_subscriptions(std::slice::from_ref(&sub))
             .unwrap()
             .inserted,
         1
     );
     assert_eq!(
         f.store
-            .upsert_subscriptions(std::slice::from_ref(&sub))
+            .mirror_subscriptions(std::slice::from_ref(&sub))
             .unwrap()
             .changed(),
         0
     );
     let rows = f.store.subscriptions_after(Revision::ZERO, 10).unwrap();
-    assert_eq!(rows[0].row, sub);
+    assert_eq!(rows[0].row.subscription, sub);
+    assert_eq!(rows[0].row.removed_at, None);
+    assert_eq!(
+        f.store.active_subscriptions().unwrap(),
+        std::slice::from_ref(&sub)
+    );
+
+    // Removed from the config: kept, tombstoned with a new revision, no longer active.
+    let head_before = head(&f.store, Dataset::Subscriptions);
+    assert_eq!(f.store.mirror_subscriptions(&[]).unwrap().updated, 1);
+    let rows = f.store.subscriptions_after(head_before, 10).unwrap();
+    assert!(rows[0].row.removed_at.is_some());
+    assert_eq!(f.store.active_subscriptions().unwrap(), []);
+    assert_eq!(f.store.mirror_subscriptions(&[]).unwrap().changed(), 0);
+
+    // Back in the config: live again.
+    assert_eq!(
+        f.store
+            .mirror_subscriptions(std::slice::from_ref(&sub))
+            .unwrap()
+            .updated,
+        1
+    );
+    assert_eq!(f.store.active_subscriptions().unwrap(), [sub]);
 }
 
 #[test]

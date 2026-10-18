@@ -344,7 +344,7 @@ Every agent has a `default` profile, added with discovery paths when the file om
 | `partition` | `month`, `day`, `all` | `"month"` | `csv`, `jsonl` only (D18). |
 | `path` | path | platform | `sqlite` only: database file. |
 
-A key that does not apply to the sink's `kind` is an error.
+A key that does not apply to the sink's `kind` is an error. Two sinks that would write the same files are an error: same `kind`, same `dir` or `path`, and a dataset in common. An unset `dir` or `path` means the exports directory, so two such sinks of one kind clash; give one of them its own `dir` or `path`, or disjoint `datasets`.
 
 ## Editing the file
 

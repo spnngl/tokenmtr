@@ -1,6 +1,7 @@
 //! Errors of the control client.
 
 use std::io;
+use std::time::Duration;
 
 use tokenmtr_platform::FrameError;
 
@@ -36,6 +37,9 @@ pub enum ClientError {
     /// The daemon closed the connection.
     #[error("the daemon closed the connection")]
     Closed,
+    /// The daemon did not answer in time. The connection is unusable afterwards.
+    #[error("the daemon did not answer within {} s", .0.as_secs())]
+    Timeout(Duration),
     /// The daemon answered with a message that does not fit the request.
     #[error("unexpected `{0}` message from the daemon")]
     Unexpected(&'static str),

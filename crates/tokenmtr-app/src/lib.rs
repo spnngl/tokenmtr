@@ -23,7 +23,7 @@ pub use context::{
 pub use diagnose::{Diagnosis, diagnose};
 pub use erase::{EraseReport, EraseScope, erase};
 pub use error::AppError;
-pub use guard::{daemon_running, ensure_daemon_stopped, restore_backup};
+pub use guard::{STOP_GRACE, daemon_running, lock_daemon, restore_backup, with_daemon_stopped};
 pub use report::{RenderedReport, ReportFormat, ReportRange, ReportRequest, generate_report};
 pub use retention::{RETENTION_DAYS, set_claude_retention};
 pub use settings::{

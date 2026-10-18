@@ -1,17 +1,20 @@
 //! Finding an agent's source files under its profile roots.
 
+use std::collections::HashSet;
 use std::io;
 
 use camino::Utf8PathBuf;
 
 use crate::AgentSource;
 use crate::drift::ParseIssue;
+use crate::ingest::fingerprint::file_identity;
 use crate::source::SourceFile;
 
 /// The files found under every profile root, and what could not be listed.
 #[derive(Debug, Default)]
 pub struct Discovery {
-    /// Files the source [`owns`](AgentSource::owns), sorted by path, each once.
+    /// Files the source [`owns`](AgentSource::owns), sorted by path, each once: a file reached
+    /// by two paths (overlapping roots, a symlinked root, a hard link) keeps its first path.
     pub files: Vec<SourceFile>,
     /// Directories that could not be read. A missing root is not one.
     pub issues: Vec<ParseIssue>,
@@ -32,6 +35,10 @@ pub fn discover(source: &impl AgentSource) -> Discovery {
     }
     found.files.sort_by(|a, b| a.path.cmp(&b.path));
     found.files.dedup_by(|a, b| a.path == b.path);
+    let mut seen = HashSet::new();
+    found
+        .files
+        .retain(|file| file_identity(&file.path).is_none_or(|identity| seen.insert(identity)));
     found
 }
 

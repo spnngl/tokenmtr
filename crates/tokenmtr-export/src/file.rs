@@ -81,25 +81,31 @@ impl FileSink {
             .join(format!("{dataset}-{partition}.{extension}"))
     }
 
+    /// Streams the file once (constant memory) for its highest revision, cutting a torn tail.
     fn scan(path: &Utf8Path, encoder: &RowEncoder) -> Result<FileState, SinkError> {
-        let bytes = match fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        let file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(FileState {
+                    max_revision: Revision::ZERO,
+                    len: 0,
+                    has_header: false,
+                });
+            }
             Err(e) => return Err(SinkError::io("read", path, e)),
         };
-        let decoded = encoder.decode(path, &bytes)?;
-        if decoded.valid_len < bytes.len() {
-            truncate(path, decoded.valid_len)?;
+        let on_disk = file
+            .metadata()
+            .map_err(|e| SinkError::io("read", path, e))?
+            .len();
+        let scanned = encoder.scan(path, file)?;
+        if scanned.valid_len < on_disk {
+            truncate(path, scanned.valid_len)?;
         }
         Ok(FileState {
-            max_revision: decoded
-                .rows
-                .iter()
-                .map(|r| Revision::new(r.revision))
-                .max()
-                .unwrap_or(Revision::ZERO),
-            len: to_len(decoded.valid_len),
-            has_header: decoded.valid_len > 0,
+            max_revision: Revision::new(scanned.max_revision),
+            len: scanned.valid_len,
+            has_header: scanned.valid_len > 0,
         })
     }
 
@@ -201,12 +207,12 @@ fn to_len(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)
 }
 
-fn truncate(path: &Utf8Path, len: usize) -> Result<(), SinkError> {
+fn truncate(path: &Utf8Path, len: u64) -> Result<(), SinkError> {
     let file = OpenOptions::new()
         .write(true)
         .open(path)
         .map_err(|e| SinkError::io("open", path, e))?;
-    file.set_len(to_len(len))
+    file.set_len(len)
         .and_then(|()| file.sync_all())
         .map_err(|e| SinkError::io("truncate", path, e))
 }

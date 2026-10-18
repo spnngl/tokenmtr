@@ -111,24 +111,25 @@ fn every_usage_bearing_entry_kind_maps_to_its_event_kind() -> TestResult {
         [
             ("msg_main_1".to_owned(), EventKind::Message),
             (
-                "e0000003|2026-03-02T09:00:06.000Z".to_owned(),
+                "2026-03-02T09:00:06.000Z|tool_result|||50|0|0|0|20|0|200".to_owned(),
                 EventKind::ToolResult
             ),
             (
-                "e0000004|2026-03-02T09:00:10.000Z".to_owned(),
+                "2026-03-02T09:00:10.000Z|message|openai|gpt-5|200|1000|0|0|200|64|2400".to_owned(),
                 EventKind::Message
             ),
             (
-                "e0000005|2026-03-02T09:00:11.000Z".to_owned(),
+                "2026-03-02T09:00:11.000Z|auxiliary|anthropic|claude-haiku-4-5|30|0|0|0|8|0|70"
+                    .to_owned(),
                 EventKind::Auxiliary
             ),
             (
-                "e0000008|2026-03-02T09:05:01.000Z".to_owned(),
+                "2026-03-02T09:05:01.000Z|branch_summary|||400|0|0|0|90|0|1300".to_owned(),
                 EventKind::BranchSummary
             ),
             ("msg_main_2".to_owned(), EventKind::Message),
             (
-                "e000000a|2026-03-02T09:10:00.000Z".to_owned(),
+                "2026-03-02T09:10:00.000Z|compaction|||900|0|0|0|150|0|2400".to_owned(),
                 EventKind::Compaction
             ),
         ]
@@ -182,11 +183,11 @@ fn old_versions_lack_optional_fields_without_drift() -> TestResult {
     let (batch, outcome) = parse_fixture(V1)?;
     assert_eq!(outcome.issues.len(), 0);
     let events = batch.events();
-    // No entry ids: the session id and the timestamp key each message.
+    // No response id: the entry's immutable content keys it, never its session or entry id.
     assert_eq!(events.len(), 2);
     assert_eq!(
         events[0].dedup_key.as_str(),
-        "sess-v1|2025-11-01T08:00:04.000Z"
+        "2025-11-01T08:00:04.000Z|message|anthropic|claude-3-7-sonnet|70|0|0|0|20|0|500"
     );
     assert_eq!(events[0].session.as_str(), "sess-v1");
     Ok(())
@@ -242,6 +243,32 @@ fn fork_and_parent_in_one_batch_count_each_entry_once() -> TestResult {
     assert!(keys.contains("msg_fork_1"));
     // The copied `read` call and the fork's own `bash` call.
     assert_eq!(batch.tool_calls().len(), 2);
+    Ok(())
+}
+
+/// pi rewrites a v1 file in place when it opens it: every entry gets a random `id` and a
+/// `parentId`, the header `version: 3` (pi-mono `migrateV1ToV2`, `migrateV2ToV3`).
+#[test]
+fn a_v1_file_migrated_to_v3_keeps_its_dedup_keys() -> TestResult {
+    let (v1, _) = parse_fixture(V1)?;
+    let source = source_for(&agent_dir());
+    let mut migrated = ParseBatch::new();
+    let outcome = parse_into(
+        &source,
+        &agent_dir().join("migrated").join(V1),
+        ByteOffset::ZERO,
+        &mut migrated,
+    )?;
+    assert!(outcome.issues.is_empty(), "{:?}", outcome.issues);
+    let keys = |batch: &ParseBatch| -> Vec<String> {
+        batch
+            .events()
+            .iter()
+            .map(|event| event.dedup_key.as_str().to_owned())
+            .collect()
+    };
+    assert_eq!(keys(&v1).len(), 2);
+    assert_eq!(keys(&migrated), keys(&v1));
     Ok(())
 }
 

@@ -20,5 +20,3 @@ pub const APP_SUPPORT_DIR_NAME: &str = BUNDLE_ID;
 pub const LOG_DIR_NAME: &str = "tokenmtr";
 /// Environment variable overriding the config path.
 pub const ENV_CONFIG: &str = "TOKENMTR_CONFIG";
-/// Environment variable holding the Postgres sink URL.
-pub const ENV_PG_URL: &str = "TOKENMTR_PG_URL";

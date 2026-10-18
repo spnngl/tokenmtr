@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokenmtr_core::{
     Currency, EurPerUsd, FxRate, FxTable, PricingCatalog, SelectedRate, Subscription,
 };
-use tokenmtr_store::{Revision, StoreRead, StoreReader};
+use tokenmtr_store::{StoreRead, StoreReader};
 
 use crate::error::QueryError;
 
@@ -230,16 +230,13 @@ pub fn load_fx_rates(reader: &StoreReader) -> Result<Vec<FxRate>, QueryError> {
     .collect()
 }
 
-/// The subscriptions mirrored into the store (D28). The daemon mirrors the config, so this is the
-/// config's view as of the last reload; callers holding the config may pass its list instead.
+/// The subscriptions mirrored into the store (D28), removed ones excluded. The daemon mirrors the
+/// config, so this is the config's view as of the last reload; callers holding the config may
+/// pass its list instead.
 ///
 /// # Errors
 ///
 /// Store failures.
 pub fn load_subscriptions(reader: &StoreReader) -> Result<Vec<Subscription>, QueryError> {
-    Ok(reader
-        .subscriptions_after(Revision::ZERO, 10_000)?
-        .into_iter()
-        .map(|v| v.row)
-        .collect())
+    Ok(reader.active_subscriptions()?)
 }

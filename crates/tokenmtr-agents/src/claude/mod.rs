@@ -29,7 +29,7 @@ const LINE_NEEDLES: &[&[u8]] = &[
 
 /// The newest Claude Code `version` present in `fixtures/claude`. A line declaring a newer one is
 /// recorded in [`DriftStats::unknown_versions`] (D42, info only).
-pub const NEWEST_KNOWN_VERSION: &str = "2.1.0";
+pub const NEWEST_KNOWN_VERSION: &str = "2.1.287";
 
 /// The Claude Code collector.
 #[derive(Debug, Clone)]
@@ -127,13 +127,11 @@ impl AgentSource for ClaudeSource {
                 }
             }
         })?;
-        stats.bytes_read = scan.new_offset.get().saturating_sub(start.get());
-        stats.lines_read = scan.lines;
-        stats.skipped.no_needle = scan.filtered;
-        stats.skipped.oversized = scan.oversized;
+        stats.record_scan(start, &scan);
         Ok(ParseOutcome {
             new_offset: scan.new_offset,
-            issues: stats.drift_issue(sample).into_iter().collect(),
+            last_line_hash: scan.last_line_hash,
+            issues: stats.unmapped_issue(sample).into_iter().collect(),
             drift: stats,
         })
     }

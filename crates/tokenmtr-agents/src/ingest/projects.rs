@@ -11,7 +11,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use tokenmtr_core::{AgentId, ProjectKey, UsageEvent};
 use tokenmtr_store::{
-    IssueKind, ParseIssue, ProjectResolution, ProjectSource, RedactionKey, Store, StoreRead as _,
+    IssueKind, IssueUpdate, ParseIssue, ProjectResolution, ProjectSource, RedactionKey, Store,
+    StoreRead as _,
 };
 
 use super::error::IngestError;
@@ -19,6 +20,18 @@ use crate::project::{CwdProblem, ProjectResolver};
 
 /// A cwd's project and client, as stored on events.
 pub type Assignment = (ProjectKey, Option<String>);
+
+/// Which stored resolutions [`ProjectCache::reresolve`] re-resolves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reresolve {
+    /// Those a rule change invalidated.
+    Stale,
+    /// Those, and every cwd that fell back to itself: a cwd that was missing or refused may be
+    /// readable now (D50). Once per process, so a daemon restart retries them.
+    StaleAndFallbacks,
+    /// Every one (`scan --full`, "Retry").
+    All,
+}
 
 /// Resolutions loaded from the store, extended as new cwds appear.
 pub struct ProjectCache {
@@ -64,8 +77,9 @@ impl ProjectCache {
     }
 
     /// The project and client of `cwd`: from the cache, else resolved now and stored. A cwd that
-    /// cannot be inspected raises one issue (`missing_cwd` or `protected_folder`), only the
-    /// first time it is seen. `None` for a blank cwd.
+    /// cannot be inspected adds one issue (`missing_cwd` or `protected_folder`) to `issues`,
+    /// which the caller commits with the events, only the first time it is seen. `None` for a
+    /// blank cwd.
     pub fn assign(
         &mut self,
         store: &mut Store,
@@ -73,6 +87,7 @@ impl ProjectCache {
         agent: AgentId,
         cwd: &Utf8Path,
         now: Timestamp,
+        issues: &mut Vec<IssueUpdate>,
     ) -> Result<Option<Assignment>, IngestError> {
         let stored_cwd = self.stored_cwd(cwd);
         if let Some(known) = self.map.get(&*stored_cwd) {
@@ -85,9 +100,16 @@ impl ProjectCache {
         let Some(resolution) = self.redacted(found.resolution) else {
             return Ok(None);
         };
+        // Saved at once, outside the event transaction: a cached resolution without events is
+        // harmless, and a fallback is retried on the next start (`Reresolve::StaleAndFallbacks`).
         store.save_project(&resolution)?;
         if let Some(problem) = found.problem {
-            store.record_parse_issue(&cwd_issue(agent, &stored_cwd, problem, now))?;
+            issues.push(IssueUpdate::Record(cwd_issue(
+                agent,
+                &stored_cwd,
+                problem,
+                now,
+            )));
         }
         let assignment = (resolution.project.clone(), resolution.client.clone());
         self.map.insert(stored_cwd.into_owned(), resolution);
@@ -113,16 +135,18 @@ impl ProjectCache {
         Some(resolution)
     }
 
-    /// Re-resolves the cwds whose stored resolution a rule change invalidated (all of them when
-    /// `all`), saves the new answers and rewrites the events of cwds whose project or client
-    /// moved. Returns the number of cwds that changed project or client and the number of events
-    /// rewritten. Does nothing under redaction: the store no longer holds the real cwds, so a
-    /// rule change applies to cwds first seen afterwards.
+    /// Re-resolves the cwds `scope` selects, saves the new answers and rewrites the events of
+    /// cwds whose project or client moved. A fallback cwd that is readable now gets its
+    /// `missing_cwd` and `protected_folder` issues of `agents` closed. Returns the number of cwds
+    /// that changed project or client and the number of events rewritten. Does nothing under
+    /// redaction: the store no longer holds the real cwds, so a rule change applies to cwds first
+    /// seen afterwards.
     pub fn reresolve(
         &mut self,
         store: &mut Store,
         resolver: &ProjectResolver,
-        all: bool,
+        scope: Reresolve,
+        agents: &[AgentId],
         now: Timestamp,
     ) -> Result<(u64, u64), IngestError> {
         if self.redaction.is_some() {
@@ -131,7 +155,13 @@ impl ProjectCache {
         let candidates: Vec<Utf8PathBuf> = self
             .map
             .iter()
-            .filter(|(cwd, stored)| all || is_stale(resolver, cwd, stored))
+            .filter(|(cwd, stored)| match scope {
+                Reresolve::All => true,
+                Reresolve::StaleAndFallbacks => {
+                    stored.source == ProjectSource::Cwd || is_stale(resolver, cwd, stored)
+                }
+                Reresolve::Stale => is_stale(resolver, cwd, stored),
+            })
             .map(|(cwd, _)| cwd.clone())
             .collect();
         let mut changed: Vec<ProjectResolution> = Vec::new();
@@ -143,6 +173,13 @@ impl ProjectCache {
             let Some(old) = self.map.get(&cwd) else {
                 continue;
             };
+            if old.source == ProjectSource::Cwd && found.problem.is_none() {
+                for agent in agents {
+                    for kind in [IssueKind::MissingCwd, IssueKind::ProtectedFolder] {
+                        store.close_parse_issue(*agent, kind, cwd.as_str(), now)?;
+                    }
+                }
+            }
             if same_answer(old, &found.resolution) {
                 continue;
             }
@@ -190,7 +227,12 @@ fn cwd_issue(agent: AgentId, cwd: &Utf8Path, problem: CwdProblem, at: Timestamp)
         ),
         CwdProblem::Protected => (
             IssueKind::ProtectedFolder,
-            "access denied (protected folder); grant access or add a [[projects]] rule",
+            "protected folder (not read, to avoid a macOS prompt) or access denied; add a [[projects]] rule",
+        ),
+        // The store has no finer kind: like a missing cwd, only a rule can name its project.
+        CwdProblem::Unreadable => (
+            IssueKind::MissingCwd,
+            "not a readable directory; add a [[projects]] rule to name its project",
         ),
     };
     ParseIssue {

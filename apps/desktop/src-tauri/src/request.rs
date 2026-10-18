@@ -3,7 +3,7 @@
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use tokenmtr_app::{ReportFormat, ReportRange, ReportRequest};
-use tokenmtr_core::Currency;
+use tokenmtr_core::{AgentId, Currency, SessionId};
 use tokenmtr_query::FilterSpec;
 use tokenmtr_report::Scope;
 
@@ -75,30 +75,45 @@ impl Route {
 pub struct DashboardTarget {
     /// The page.
     pub route: Route,
-    /// Agent filter (`agent=` search param); must be a known agent id.
-    pub agent: Option<String>,
+    /// Agent filter (`agent=` search param); a known agent id, so it cannot inject anything
+    /// into the URL.
+    pub agent: Option<AgentId>,
 }
 
 impl DashboardTarget {
     /// The `#/route?agent=…` fragment of the main window URL.
-    ///
-    /// # Errors
-    ///
-    /// Returns the offending text when `agent` is not a valid agent id (so it cannot inject
-    /// anything into the URL).
-    pub fn fragment(&self) -> Result<String, String> {
-        let Some(agent) = &self.agent else {
-            return Ok(format!("#{}", self.route.path()));
-        };
-        let valid = !agent.is_empty()
-            && agent
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
-        if !valid {
-            return Err(format!("invalid agent id {agent:?}"));
+    #[must_use]
+    pub fn fragment(&self) -> String {
+        match self.agent {
+            Some(agent) => format!("#{}?agent={agent}", self.route.path()),
+            None => format!("#{}", self.route.path()),
         }
-        Ok(format!("#{}?agent={agent}", self.route.path()))
     }
+}
+
+/// What `reveal_path` shows in Finder: one of the places the app knows, never a path the
+/// webview chose.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RevealTarget {
+    /// The config file.
+    ConfigFile,
+    /// The export sinks' default directory.
+    ExportsDir,
+    /// The transcript file of a session.
+    Transcript {
+        /// The session's agent.
+        agent: AgentId,
+        /// The session.
+        session: SessionId,
+    },
+    /// The directory holding the transcript of a session.
+    TranscriptFolder {
+        /// The session's agent.
+        agent: AgentId,
+        /// The session.
+        session: SessionId,
+    },
 }
 
 /// The days of a report as the UI sends them.
@@ -199,22 +214,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fragment_carries_a_validated_agent() {
+    fn reveal_targets_parse_the_ui_shape() -> Result<(), serde_json::Error> {
+        let target: RevealTarget = serde_json::from_str(r#"{"kind":"exports_dir"}"#)?;
+        assert_eq!(target, RevealTarget::ExportsDir);
+        let target: RevealTarget = serde_json::from_str(
+            r#"{"kind":"transcript_folder","agent":"claude","session":"s1"}"#,
+        )?;
+        assert!(matches!(
+            target,
+            RevealTarget::TranscriptFolder { agent, .. } if agent == AgentId::CLAUDE
+        ));
+        assert!(serde_json::from_str::<RevealTarget>(r#"{"kind":"path","path":"/"}"#).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn fragment_carries_a_known_agent() {
         let target = DashboardTarget {
             route: Route::Quota,
-            agent: Some("claude".to_owned()),
+            agent: Some(AgentId::CLAUDE),
         };
-        assert_eq!(target.fragment().as_deref(), Ok("#/quota?agent=claude"));
-        let bad = DashboardTarget {
-            route: Route::Overview,
-            agent: Some("a&b".to_owned()),
-        };
-        assert!(bad.fragment().is_err());
+        assert_eq!(target.fragment(), "#/quota?agent=claude");
+        let bad = serde_json::from_str::<DashboardTarget>(r#"{"route":"/","agent":"a&b"}"#);
+        assert!(bad.is_err());
         let none = DashboardTarget {
             route: Route::Settings,
             agent: None,
         };
-        assert_eq!(none.fragment().as_deref(), Ok("#/settings"));
+        assert_eq!(none.fragment(), "#/settings");
     }
 
     #[test]

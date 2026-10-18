@@ -69,5 +69,6 @@ export const ERROR_KINDS = [
   "config",
   "io",
   "service",
+  "app_not_installed",
   "internal",
 ] as const;

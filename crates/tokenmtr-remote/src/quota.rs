@@ -1,6 +1,9 @@
 //! Claude quota polling (D26): `GET /api/oauth/usage` with the user's OAuth token.
 
+use std::time::Duration;
+
 use jiff::Timestamp;
+use reqwest::header::RETRY_AFTER;
 use reqwest::{Client, StatusCode, Url};
 use secrecy::ExposeSecret;
 use serde::Deserialize;
@@ -9,8 +12,8 @@ use tokenmtr_core::{QuotaSnapshot, QuotaWindow, Utilization, WindowId};
 
 use crate::account::{AccountInfo, parse_profile_response};
 use crate::credentials::ClaudeCredentials;
-use crate::error::{NetworkKind, RemoteError};
-use crate::http::{join, read_capped};
+use crate::error::{JsonPosition, NetworkKind, RemoteError};
+use crate::http::{API_TIMEOUT, join, read_capped};
 
 const USAGE_PATH: &str = "/api/oauth/usage";
 const PROFILE_PATH: &str = "/api/oauth/profile";
@@ -18,19 +21,26 @@ const PROFILE_PATH: &str = "/api/oauth/profile";
 const BETA_HEADER: &str = "oauth-2025-04-20";
 const MAX_BODY_BYTES: usize = 1 << 20;
 
-/// What one quota poll found: exactly the five cases a caller must tell apart.
+/// What one quota poll found: exactly the cases a caller must tell apart.
 #[derive(Debug)]
 pub enum QuotaOutcome {
     /// HTTP 200 with a body that parsed.
     Ok(QuotaSnapshot),
-    /// HTTP 401: Claude Code must refresh or re-login. This crate never refreshes (D26).
+    /// The credentials' `expiresAt` has passed (no request sent), or HTTP 401: Claude Code must
+    /// refresh or re-login. This crate never refreshes (D26).
     TokenExpired,
+    /// HTTP 403: the token is valid but may not read the usage (revoked scope, account type).
+    Forbidden,
+    /// HTTP 429. `retry_after` is the server's `Retry-After`, when it sent a usable one.
+    RateLimited {
+        /// How long the server asked to wait.
+        retry_after: Option<Duration>,
+    },
     /// No credentials were found for the profile.
     SignedOut,
-    /// HTTP 200 whose body is not the expected JSON, or whose body could not be read in full.
+    /// HTTP 200 whose body is not a JSON object, or whose body could not be read in full.
     Malformed,
-    /// No usable answer: transport failure, timeout, or any status other than 200 and 401
-    /// (429 and 5xx included). Retry on the next interval.
+    /// No usable answer: transport failure, timeout, or any other status (5xx included).
     NetworkDown,
 }
 
@@ -77,14 +87,15 @@ pub struct ParsedQuota {
     pub extra_usage: Option<ExtraUsage>,
 }
 
-/// `/api/oauth/usage` response. Unknown fields are ignored; every window is optional.
+/// `/api/oauth/usage` response. Unknown fields are ignored; every window is optional. Each part
+/// is kept raw and parsed on its own, so one bad window does not hide the others.
 #[derive(Debug, Deserialize)]
 struct UsageResponse {
-    five_hour: Option<RawWindow>,
-    seven_day: Option<RawWindow>,
-    seven_day_sonnet: Option<RawWindow>,
-    seven_day_opus: Option<RawWindow>,
-    extra_usage: Option<ExtraUsage>,
+    five_hour: Option<serde_json::Value>,
+    seven_day: Option<serde_json::Value>,
+    seven_day_sonnet: Option<serde_json::Value>,
+    seven_day_opus: Option<serde_json::Value>,
+    extra_usage: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,34 +107,35 @@ struct RawWindow {
 /// Why a usage body was rejected. Carries the position and category only: serde messages quote
 /// the offending value, which must not be echoed (D55).
 #[derive(Debug, thiserror::Error)]
-#[error("quota response is not the expected JSON ({category:?} at line {line}, column {column})")]
-pub struct QuotaParseError {
-    category: serde_json::error::Category,
-    line: usize,
-    column: usize,
-}
+#[error("quota response is not the expected JSON ({0})")]
+pub struct QuotaParseError(JsonPosition);
 
-impl From<serde_json::Error> for QuotaParseError {
-    fn from(error: serde_json::Error) -> Self {
-        Self {
-            category: error.classify(),
-            line: error.line(),
-            column: error.column(),
+/// Parses one part of the response; a part of the wrong shape is logged (category only, D55)
+/// and dropped.
+fn part<T: serde::de::DeserializeOwned>(name: &str, raw: Option<serde_json::Value>) -> Option<T> {
+    match serde_json::from_value(raw?) {
+        Ok(value) => value,
+        Err(error) => {
+            let error = JsonPosition::from(error);
+            tracing::warn!(part = name, %error, "skipping a malformed part of the quota response");
+            None
         }
     }
 }
 
 /// Parses an `/api/oauth/usage` body into windows stamped `fetched_at`. A window that is
-/// absent, `null` or has a `null` utilization is skipped.
+/// absent, `null`, has a `null` utilization, or is malformed (wrong types, a negative or
+/// non-finite utilization, an unparsable `resets_at`) is skipped; so is a malformed
+/// `extra_usage`.
 ///
 /// # Errors
-/// [`QuotaParseError`] when the body is not a JSON object, or a present field has the wrong
-/// type (including a negative or non-finite utilization).
+/// [`QuotaParseError`] when the body is not a JSON object.
 pub fn parse_quota_response(
     body: &[u8],
     fetched_at: Timestamp,
 ) -> Result<ParsedQuota, QuotaParseError> {
-    let response: UsageResponse = serde_json::from_slice(body)?;
+    let response: UsageResponse =
+        serde_json::from_slice(body).map_err(|e| QuotaParseError(e.into()))?;
     let windows = [
         (WindowId::FIVE_HOUR, response.five_hour),
         (WindowId::SEVEN_DAY, response.seven_day),
@@ -132,7 +144,7 @@ pub fn parse_quota_response(
     ]
     .into_iter()
     .filter_map(|(name, raw)| {
-        let raw = raw?;
+        let raw: RawWindow = part(name, raw)?;
         Some(QuotaWindow {
             id: WindowId::new(name).ok()?,
             state: QuotaWindowState {
@@ -147,8 +159,19 @@ pub fn parse_quota_response(
             fetched_at,
             windows,
         },
-        extra_usage: response.extra_usage,
+        extra_usage: part("extra_usage", response.extra_usage),
     })
+}
+
+/// The wait a `Retry-After` value asks for: delay-seconds, or an HTTP-date (a date in the past
+/// is no wait).
+fn parse_retry_after(value: &str, now: Timestamp) -> Option<Duration> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let at = jiff::fmt::rfc2822::parse(value).ok()?.timestamp();
+    Some(Duration::try_from(at.duration_since(now)).unwrap_or(Duration::ZERO))
 }
 
 /// The Claude quota source: one instance serves every profile; the credentials select the
@@ -167,12 +190,15 @@ impl ClaudeQuota {
         Self { client, base }
     }
 
-    /// Polls the usage endpoint once. `None` credentials mean the profile is signed out and no
-    /// request is made.
+    /// Polls the usage endpoint once. No request is made when the profile is signed out
+    /// (`None` credentials) or the token is past its `expiresAt`.
     pub async fn poll(&self, credentials: Option<&ClaudeCredentials>) -> QuotaPoll {
         let Some(credentials) = credentials else {
             return QuotaPoll::of(QuotaOutcome::SignedOut);
         };
+        if credentials.is_expired(Timestamp::now()) {
+            return QuotaPoll::of(QuotaOutcome::TokenExpired);
+        }
         let response = match self.get(USAGE_PATH, credentials).await {
             Ok(response) => response,
             Err(error) => {
@@ -182,11 +208,19 @@ impl ClaudeQuota {
         };
         let status = response.status();
         tracing::debug!(status = status.as_u16(), "quota response");
-        if status == StatusCode::UNAUTHORIZED {
-            return QuotaPoll::of(QuotaOutcome::TokenExpired);
-        }
-        if status != StatusCode::OK {
-            return QuotaPoll::of(QuotaOutcome::NetworkDown);
+        match status {
+            StatusCode::OK => {}
+            StatusCode::UNAUTHORIZED => return QuotaPoll::of(QuotaOutcome::TokenExpired),
+            StatusCode::FORBIDDEN => return QuotaPoll::of(QuotaOutcome::Forbidden),
+            StatusCode::TOO_MANY_REQUESTS => {
+                let retry_after = response
+                    .headers()
+                    .get(RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| parse_retry_after(value, Timestamp::now()));
+                return QuotaPoll::of(QuotaOutcome::RateLimited { retry_after });
+            }
+            _ => return QuotaPoll::of(QuotaOutcome::NetworkDown),
         }
         let body = match read_capped(response, MAX_BODY_BYTES).await {
             Ok(body) => body,
@@ -238,6 +272,7 @@ impl ClaudeQuota {
         let url = join(&self.base, path)?;
         self.client
             .get(url)
+            .timeout(API_TIMEOUT)
             .bearer_auth(credentials.access_token().expose_secret())
             .header("anthropic-beta", BETA_HEADER)
             .send()

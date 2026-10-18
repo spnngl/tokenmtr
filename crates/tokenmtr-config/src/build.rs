@@ -709,15 +709,34 @@ fn build_sinks(raw: &[RawSink], env: &dyn Env) -> Checked<Vec<SinkConfig>> {
             }
             None => Dataset::ALL.to_vec(),
         };
-        sinks.push(SinkConfig {
+        let built = SinkConfig {
             id: sink.id.clone(),
             interval: duration_or(sink.interval, SignedDuration::from_mins(5)),
             datasets,
             redact: sink.redact.clone().unwrap_or_default(),
             target: build_target(sink, &at, env)?,
-        });
+        };
+        if let Some(other) = sinks.iter().find(|s| same_files(s, &built)) {
+            return Err(reject(
+                &at.key("kind"),
+                Violation::SinkTargetClash(other.id.clone()),
+            ));
+        }
+        sinks.push(built);
     }
     Ok(sinks)
+}
+
+/// Whether two sinks would write the same files: same location and a dataset in common. An unset
+/// `dir` or `path` is the exports directory, which the config does not know, so a path spelled
+/// out to that directory is not compared with an unset one.
+fn same_files(a: &SinkConfig, b: &SinkConfig) -> bool {
+    let same_place = match (&a.target, &b.target) {
+        (SinkTarget::File(x), SinkTarget::File(y)) => x.format == y.format && x.dir == y.dir,
+        (SinkTarget::Sqlite(x), SinkTarget::Sqlite(y)) => x.path == y.path,
+        _ => false,
+    };
+    same_place && a.datasets.iter().any(|d| b.datasets.contains(d))
 }
 
 fn build_target(sink: &RawSink, at: &ConfigPath, env: &dyn Env) -> Checked<SinkTarget> {

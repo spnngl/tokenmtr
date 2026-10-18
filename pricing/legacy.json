@@ -1,0 +1,123 @@
+{
+  "tokenmtr_legacy_source": {
+    "note": "Claude models LiteLLM no longer lists. Rates copied from BerriAI/litellm model_prices_and_context_window.json: Claude 4 / 4.1 / 3.7 at 989d7b87b2d30982a6300dde227ec45d8f60f4ce (parent of 075536eca1), Claude 3.5 Haiku at the parent of 1be6b31e2fa8baaaa909bfa5ba2168a910c5781e. Aliases repeat their dated entry. Claude 3.5 Haiku 1h write is Anthropic's published 1.6e-06 (2x input); LiteLLM listed 6e-06."
+  },
+  "claude-sonnet-4-20250514": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 1000000,
+    "input_cost_per_token": 3e-06,
+    "output_cost_per_token": 1.5e-05,
+    "cache_read_input_token_cost": 3e-07,
+    "cache_creation_input_token_cost": 3.75e-06,
+    "cache_creation_input_token_cost_above_1hr": 6e-06,
+    "input_cost_per_token_above_200k_tokens": 6e-06,
+    "output_cost_per_token_above_200k_tokens": 2.25e-05,
+    "cache_read_input_token_cost_above_200k_tokens": 6e-07,
+    "cache_creation_input_token_cost_above_200k_tokens": 7.5e-06,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-sonnet-4-0": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 1000000,
+    "input_cost_per_token": 3e-06,
+    "output_cost_per_token": 1.5e-05,
+    "cache_read_input_token_cost": 3e-07,
+    "cache_creation_input_token_cost": 3.75e-06,
+    "cache_creation_input_token_cost_above_1hr": 6e-06,
+    "input_cost_per_token_above_200k_tokens": 6e-06,
+    "output_cost_per_token_above_200k_tokens": 2.25e-05,
+    "cache_read_input_token_cost_above_200k_tokens": 6e-07,
+    "cache_creation_input_token_cost_above_200k_tokens": 7.5e-06,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-opus-4-20250514": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 1.5e-05,
+    "output_cost_per_token": 7.5e-05,
+    "cache_read_input_token_cost": 1.5e-06,
+    "cache_creation_input_token_cost": 1.875e-05,
+    "cache_creation_input_token_cost_above_1hr": 3e-05,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-opus-4-0": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 1.5e-05,
+    "output_cost_per_token": 7.5e-05,
+    "cache_read_input_token_cost": 1.5e-06,
+    "cache_creation_input_token_cost": 1.875e-05,
+    "cache_creation_input_token_cost_above_1hr": 3e-05,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-opus-4-1-20250805": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 1.5e-05,
+    "output_cost_per_token": 7.5e-05,
+    "cache_read_input_token_cost": 1.5e-06,
+    "cache_creation_input_token_cost": 1.875e-05,
+    "cache_creation_input_token_cost_above_1hr": 3e-05,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-opus-4-1": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 1.5e-05,
+    "output_cost_per_token": 7.5e-05,
+    "cache_read_input_token_cost": 1.5e-06,
+    "cache_creation_input_token_cost": 1.875e-05,
+    "cache_creation_input_token_cost_above_1hr": 3e-05,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-3-7-sonnet-20250219": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 3e-06,
+    "output_cost_per_token": 1.5e-05,
+    "cache_read_input_token_cost": 3e-07,
+    "cache_creation_input_token_cost": 3.75e-06,
+    "cache_creation_input_token_cost_above_1hr": 6e-06,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-3-7-sonnet-latest": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 3e-06,
+    "output_cost_per_token": 1.5e-05,
+    "cache_read_input_token_cost": 3e-07,
+    "cache_creation_input_token_cost": 3.75e-06,
+    "cache_creation_input_token_cost_above_1hr": 6e-06,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-3-5-haiku-20241022": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 8e-07,
+    "output_cost_per_token": 4e-06,
+    "cache_read_input_token_cost": 8e-08,
+    "cache_creation_input_token_cost": 1e-06,
+    "cache_creation_input_token_cost_above_1hr": 1.6e-06,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  },
+  "claude-3-5-haiku-latest": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 8e-07,
+    "output_cost_per_token": 4e-06,
+    "cache_read_input_token_cost": 8e-08,
+    "cache_creation_input_token_cost": 1e-06,
+    "cache_creation_input_token_cost_above_1hr": 1.6e-06,
+    "search_context_cost_per_query": {"search_context_size_low": 0.01, "search_context_size_medium": 0.01, "search_context_size_high": 0.01}
+  }
+}

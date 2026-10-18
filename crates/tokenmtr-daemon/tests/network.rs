@@ -191,13 +191,20 @@ async fn pricing_refresh_accepts_a_catalog_and_prices_unpriced_events() -> TestR
     let env = Env::new()?;
     std::fs::write(env.claude_log(), claude_line_for(1, "claude-test-sonnet"))?;
     env.write_config_with(&["pricing"], "")?;
+    // The embedded list plus the test model: a download must keep the anchors and the models
+    // of the active snapshot to be accepted.
+    let mut catalog: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(tokenmtr_core::pricing::EMBEDDED_LITELLM)?;
+    let small: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&fixture("litellm_small.json")?)?;
+    catalog.extend(small);
     let server = MockServer::start().await;
     serve(
         &server,
         CATALOG,
         ResponseTemplate::new(200)
             .insert_header("etag", "\"v1\"")
-            .set_body_bytes(fixture("litellm_small.json")?),
+            .set_body_bytes(serde_json::to_vec(&catalog)?),
     )
     .await;
     let daemon = tokenmtr_daemon::Daemon::start(settings_for(&env, &server.uri())?).await?;
@@ -221,6 +228,11 @@ async fn pricing_refresh_accepts_a_catalog_and_prices_unpriced_events() -> TestR
         .active_pricing_snapshot()?
         .ok_or("no snapshot")?;
     assert_eq!(snapshot.source.as_deref(), Some("litellm"));
+    assert_eq!(
+        snapshot.etag.as_deref(),
+        Some("\"v1\""),
+        "the ETag is stored"
+    );
     daemon.shutdown().await?;
     Ok(())
 }

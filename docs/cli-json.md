@@ -156,4 +156,4 @@ The example omits `totals` fields for brevity; real output carries all of them.
 
 ## Exit codes
 
-`0` success, `1` failure (message on stderr), `2` usage error. A store written by a newer TokenMtr than the running binary fails with exit code `1` and a message naming both schema versions.
+`0` success, `1` failure (message on stderr), `2` usage error. A store written by a newer TokenMtr than the running binary fails with exit code `1` and a message naming both schema versions. `doctor` prints its full report, then exits `1` when `config_error` or `store_error` is set.

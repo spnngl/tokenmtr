@@ -80,14 +80,22 @@ impl Cube {
     }
 }
 
-fn collect_usd(cube: &Cube, date: Option<Date>, rates: &mut Vec<FxRate>) {
-    if !cube.is_usd() {
-        return;
-    }
-    if let Some(rate) = cube.rate(date) {
-        rates.push(rate);
-    } else {
-        tracing::warn!("skipping an unusable USD rate in the ECB document");
+/// The USD rates found so far and how many USD entries were unusable.
+#[derive(Default)]
+struct UsdRates {
+    rates: Vec<FxRate>,
+    unusable: usize,
+}
+
+impl UsdRates {
+    fn collect(&mut self, cube: &Cube, date: Option<Date>) {
+        if !cube.is_usd() {
+            return;
+        }
+        match cube.rate(date) {
+            Some(rate) => self.rates.push(rate),
+            None => self.unusable = self.unusable.saturating_add(1),
+        }
     }
 }
 
@@ -104,7 +112,7 @@ pub fn parse_ecb_xml(xml: &[u8]) -> Result<Vec<FxRate>, EcbParseError> {
     // A date applies to the rate elements nested in the `Cube` that declares it: track the
     // nesting depth so a stray rate outside any dated `Cube` is not given a stale date.
     let (mut depth, mut dated_depth, mut date) = (0_usize, 0_usize, None);
-    let mut rates = Vec::new();
+    let mut usd = UsdRates::default();
     loop {
         match reader.read_event_into(&mut buffer)? {
             Event::Eof => break,
@@ -115,10 +123,10 @@ pub fn parse_ecb_xml(xml: &[u8]) -> Result<Vec<FxRate>, EcbParseError> {
                     date = time.parse::<Date>().ok();
                     dated_depth = depth;
                 }
-                collect_usd(&cube, date, &mut rates);
+                usd.collect(&cube, date);
             }
             Event::Empty(e) if e.local_name().as_ref() == "Cube" => {
-                collect_usd(&Cube::read(&e), date, &mut rates);
+                usd.collect(&Cube::read(&e), date);
             }
             Event::End(e) if e.local_name().as_ref() == "Cube" => {
                 if depth == dated_depth {
@@ -130,10 +138,16 @@ pub fn parse_ecb_xml(xml: &[u8]) -> Result<Vec<FxRate>, EcbParseError> {
         }
         buffer.clear();
     }
-    if rates.is_empty() {
+    if usd.unusable > 0 {
+        tracing::warn!(
+            unusable = usd.unusable,
+            "skipped unusable USD rates in the ECB document"
+        );
+    }
+    if usd.rates.is_empty() {
         return Err(EcbParseError::NoUsdRates);
     }
-    Ok(rates)
+    Ok(usd.rates)
 }
 
 /// The result of [`EcbFx::fetch_daily`].
@@ -187,7 +201,7 @@ impl EcbFx {
     pub async fn fetch_history(&self) -> Result<Vec<FxRate>, FxError> {
         let url = join(&self.base, HIST_PATH)?;
         match get_conditional(&self.client, url, &Validators::default(), HIST_LIMIT).await? {
-            Fetched::NotModified => Err(RemoteError::Status(304).into()),
+            Fetched::NotModified => Err(RemoteError::NotModified.into()),
             Fetched::Body { body, .. } => Ok(parse_ecb_xml(&body)?),
         }
     }

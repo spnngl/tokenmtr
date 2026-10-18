@@ -5,23 +5,18 @@
 
 use jiff::Timestamp;
 use jiff::civil::Date;
-use rust_decimal::Decimal;
 use tokenmtr_core::CostSource;
 use tokenmtr_core::{
-    BillingPeriod, Currency, EventId, EventKind, MachineId, Plan, Subscription, UsageEvent,
-    UsdMicros, fx::utc_date,
+    BillingPeriod, Currency, EventId, EventKind, MachineId, Plan, UsdMicros, fx::utc_date,
 };
 use tokenmtr_store::{
     Dataset, FxRateRow, FxSource, ProfiledToolCall, QuotaSample, QuotaStatus, Revision, StoreRead,
-    Versioned,
+    StoredEvent, StoredSubscription, Versioned,
 };
 
 use crate::error::ExportError;
-use crate::schema::{ExportRow, Value, schema};
+use crate::schema::{ExportRow, Scale, Value, schema};
 use crate::sink::ExportBatch;
-
-const USD_SCALE: u32 = 6;
-const EUR_PER_USD_SCALE_DIGITS: u32 = 9;
 
 /// Reads the next batch of `dataset` after `after` (at most `limit` rows, revision order) and maps
 /// it to export rows. Redaction is not applied here.
@@ -37,7 +32,7 @@ pub fn fetch_batch(
     let machine = store.machine_id();
     let rows = match dataset {
         Dataset::UsageEvents => store
-            .usage_events_after(after, limit)?
+            .stored_events_after(after, limit)?
             .iter()
             .map(|r| usage_event(&machine, r))
             .collect(),
@@ -82,7 +77,10 @@ fn revision(revision: Revision) -> Value {
 }
 
 fn usd(micros: UsdMicros) -> Value {
-    Value::Decimal(Decimal::new(micros.get(), USD_SCALE))
+    Value::Decimal {
+        units: micros.get(),
+        scale: Scale::Micros,
+    }
 }
 
 fn instant(at: Timestamp) -> Value {
@@ -153,8 +151,8 @@ fn checked(dataset: Dataset, row: ExportRow) -> ExportRow {
 
 /// Maps one `usage_events` row.
 #[must_use]
-pub fn usage_event(machine: &MachineId, versioned: &Versioned<UsageEvent>) -> ExportRow {
-    let e = &versioned.row;
+pub fn usage_event(machine: &MachineId, versioned: &Versioned<StoredEvent>) -> ExportRow {
+    let e = &versioned.row.event;
     let t = &e.tokens;
     let values = vec![
         text(e.id.to_string()),
@@ -189,6 +187,7 @@ pub fn usage_event(machine: &MachineId, versioned: &Versioned<UsageEvent>) -> Ex
         e.cost.estimated().map_or(Value::Null, |c| usd(c.usd)),
         text(cost_source_name(e.cost.api_cost().source())),
         opt_text(e.cost.estimated().map(|c| c.pricing_version.as_str())),
+        Value::Boolean(versioned.row.superseded),
     ];
     checked(
         Dataset::UsageEvents,
@@ -235,8 +234,8 @@ pub fn tool_call(
 /// Maps one `subscriptions` row. The partition date is the start date, but the dataset is never
 /// partitioned (see [`crate::schema::DatasetSchema::partition_column`]).
 #[must_use]
-pub fn subscription(machine: &MachineId, versioned: &Versioned<Subscription>) -> ExportRow {
-    let s = &versioned.row;
+pub fn subscription(machine: &MachineId, versioned: &Versioned<StoredSubscription>) -> ExportRow {
+    let s = &versioned.row.subscription;
     let join = |names: Vec<&str>| names.join(",");
     let profiles = s
         .profiles()
@@ -249,11 +248,15 @@ pub fn subscription(machine: &MachineId, versioned: &Versioned<Subscription>) ->
         text(plan_name(s.plan())),
         text(join(s.agents().iter().map(|a| a.as_str()).collect())),
         opt_text(profiles),
-        Value::Decimal(Decimal::new(s.fee().micros(), USD_SCALE)),
+        Value::Decimal {
+            units: s.fee().micros(),
+            scale: Scale::Micros,
+        },
         text(currency_name(s.fee().currency())),
         text(period_name(s.period())),
         date_text(s.start()),
         s.end().map_or(Value::Null, date_text),
+        versioned.row.removed_at.map_or(Value::Null, instant),
     ];
     checked(
         Dataset::Subscriptions,
@@ -311,10 +314,10 @@ pub fn fx_rate(versioned: &Versioned<FxRateRow>) -> ExportRow {
     let values = vec![
         date_text(r.rate.date),
         revision(versioned.revision),
-        Value::Decimal(Decimal::new(
-            r.rate.eur_per_usd.scaled(),
-            EUR_PER_USD_SCALE_DIGITS,
-        )),
+        Value::Decimal {
+            units: r.rate.eur_per_usd.scaled(),
+            scale: Scale::Nanos,
+        },
         text(source),
     ];
     checked(

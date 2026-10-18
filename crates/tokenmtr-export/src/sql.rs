@@ -1,6 +1,7 @@
 //! SQL generated from the export schema (D39). Pure text; the Postgres sink reuses it.
 //!
 //! Identifiers are double-quoted because some column names (`end`, `plan`) are SQL keywords.
+//! Decimal columns are exact integers named with their unit ([`crate::schema::Column::sql_name`]).
 
 use crate::schema::{DatasetSchema, EXPORT_SCHEMA_VERSION};
 
@@ -23,7 +24,7 @@ pub fn create_table(schema: &DatasetSchema) -> String {
         .iter()
         .enumerate()
         .map(|(index, column)| {
-            let mut definition = format!("\"{}\" {}", column.name, column.ty.sql());
+            let mut definition = format!("\"{}\" {}", column.sql_name(), column.ty.sql());
             if index == 0 {
                 definition.push_str(" PRIMARY KEY");
             }
@@ -45,7 +46,11 @@ pub fn create_table(schema: &DatasetSchema) -> String {
 #[must_use]
 pub fn upsert(schema: &DatasetSchema) -> String {
     let table = schema.dataset;
-    let names: Vec<String> = schema.names().map(|n| format!("\"{n}\"")).collect();
+    let names: Vec<String> = schema
+        .columns
+        .iter()
+        .map(|c| format!("\"{}\"", c.sql_name()))
+        .collect();
     let placeholders: Vec<String> = (1..=names.len()).map(|n| format!("?{n}")).collect();
     let assignments: Vec<String> = names
         .iter()

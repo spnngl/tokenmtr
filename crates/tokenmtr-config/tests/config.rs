@@ -227,6 +227,28 @@ fn duplicate_sink_id_is_rejected() {
 }
 
 #[test]
+fn sinks_writing_the_same_files_are_rejected() {
+    let source =
+        "[[sinks]]\nid = \"a\"\nkind = \"sqlite\"\n\n[[sinks]]\nid = \"b\"\nkind = \"sqlite\"\n";
+    let (path, violation, position) = invalid(source);
+    assert_eq!(path, "sinks[1].kind");
+    assert!(matches!(violation, Violation::SinkTargetClash(id) if id.as_str() == "a"));
+    assert_eq!(position, at(7, 8));
+
+    let source = "[[sinks]]\nid = \"a\"\nkind = \"csv\"\ndatasets = [\"fx_rates\"]\n\n\
+                  [[sinks]]\nid = \"b\"\nkind = \"csv\"\ndatasets = [\"usage_events\"]\n\n\
+                  [[sinks]]\nid = \"c\"\nkind = \"jsonl\"\n";
+    assert!(
+        parse(source).is_ok(),
+        "disjoint datasets or formats share a directory"
+    );
+    let (_, violation, _) = invalid(&format!(
+        "{source}\n[[sinks]]\nid = \"d\"\nkind = \"csv\"\n"
+    ));
+    assert!(matches!(violation, Violation::SinkTargetClash(id) if id.as_str() == "a"));
+}
+
+#[test]
 fn unknown_sink_kind_is_rejected() {
     let (message, position) = syntax("[[sinks]]\nid = \"w\"\nkind = \"postgres\"\n");
     assert!(message.contains("unknown variant `postgres`"), "{message}");

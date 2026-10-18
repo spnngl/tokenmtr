@@ -14,32 +14,8 @@ use tokenmtr_core::{AgentId, Alert, SinkId};
 /// daemon answers a [`Request::Hello`] with another version with [`Response::Incompatible`].
 pub const PROTOCOL_VERSION: u32 = 1;
 
-/// A dataset whose rows changed. Mirrors the store's datasets without depending on its types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Dataset {
-    /// `usage_events`.
-    UsageEvents,
-    /// `tool_calls`.
-    ToolCalls,
-    /// `subscriptions`.
-    Subscriptions,
-    /// `quota_snapshots`.
-    QuotaSnapshots,
-    /// `fx_rates`.
-    FxRates,
-}
-
-impl Dataset {
-    /// Every dataset.
-    pub const ALL: [Self; 5] = [
-        Self::UsageEvents,
-        Self::ToolCalls,
-        Self::Subscriptions,
-        Self::QuotaSnapshots,
-        Self::FxRates,
-    ];
-}
+/// A dataset whose rows changed.
+pub use tokenmtr_core::Dataset;
 
 /// Who is connecting; sent in [`Request::Hello`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,13 +283,29 @@ pub struct IssueList {
     pub config_error: Option<String>,
 }
 
+/// Class of a parse issue; the wire copy of the store's issue kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IssueKind {
+    /// A line shape the parser does not know (D42).
+    FormatDrift,
+    /// A log format version the parser does not know.
+    UnknownVersion,
+    /// A folder the OS refuses to let us read.
+    ProtectedFolder,
+    /// Events without a working directory.
+    MissingCwd,
+    /// A line that failed to parse.
+    ParseError,
+}
+
 /// One unresolved parse issue.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IssueSummary {
     /// The agent whose logs were read.
     pub agent: AgentId,
-    /// Issue class in snake case, e.g. `format_drift`.
-    pub kind: String,
+    /// Issue class.
+    pub kind: IssueKind,
     /// What it is about.
     pub subject: String,
     /// Occurrences since it opened.

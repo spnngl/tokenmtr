@@ -8,7 +8,7 @@ use camino::Utf8PathBuf;
 use jiff::Timestamp;
 use tokenmtr_agents::ingest::{IngestSettings, Ingestor};
 use tokenmtr_config::Config;
-use tokenmtr_control::{Dataset as WireDataset, EventBus};
+use tokenmtr_control::EventBus;
 use tokenmtr_core::{AgentId, ProfileId, SinkId, WindowId};
 use tokenmtr_export::{ConfiguredSink, SinkSpec};
 use tokenmtr_platform::{Paths, ThreadPriority, set_thread_priority};
@@ -79,26 +79,32 @@ pub(crate) struct SinkRuntime {
     pub failing_since: Option<Timestamp>,
 }
 
+/// The last `resets_at` seen per Claude quota window, to detect resets.
+pub(crate) type QuotaResets = HashMap<(ProfileId, WindowId), Option<Timestamp>>;
+
 /// Mutable facts that live only as long as the process.
 #[derive(Debug, Default)]
 pub(crate) struct Runtime {
     pub heads: HashMap<Dataset, Revision>,
-    pub pending_changed: BTreeSet<WireDataset>,
+    pub pending_changed: BTreeSet<Dataset>,
     pub last_publish: Option<Instant>,
     pub last_scan_at: Option<Timestamp>,
     pub config_error: Option<String>,
+    /// The config file as last loaded; a file event with the same bytes needs no reload.
+    pub config_bytes: Option<Vec<u8>>,
     pub sinks: HashMap<SinkId, SinkRuntime>,
-    pub quota_resets: HashMap<(ProfileId, WindowId), Option<Timestamp>>,
+    pub quota_resets: QuotaResets,
+    pub quota: crate::quota::QuotaRuntime,
     pub account_checked: HashMap<(AgentId, ProfileId), Timestamp>,
-    pub pricing_etag: Option<String>,
     pub fx_validators: Validators,
     pub backup_failed_at: Option<Timestamp>,
 }
 
 /// Shared by every task; always behind an [`Arc`].
 ///
-/// Lock order, outermost first: `ingestor`, `sinks`, `store`. `reader`, `beat`, `run` and
-/// `active` are leaf locks: never hold one while taking another lock.
+/// Lock order, outermost first: `ingestor`, `sinks`, `store`, and `sinks`, `exports`.
+/// `reader`, `beat`, `run` and `active` are leaf locks: never hold one while taking another
+/// lock.
 pub(crate) struct Ctx {
     pub settings: Settings,
     pub store_path: Utf8PathBuf,
@@ -109,6 +115,9 @@ pub(crate) struct Ctx {
     /// A third connection that only writes the heartbeat: a scan, export or backup holding
     /// `store` for minutes never delays it, so the app does not see a stale daemon (D36).
     pub beat: Mutex<Store>,
+    /// A fourth connection for sink exports: cursors and run history are written in short
+    /// transactions, and the slow sink I/O between them never holds `store`.
+    pub exports: Mutex<Store>,
     pub ingestor: Mutex<Ingestor>,
     pub sinks: Mutex<Vec<ConfiguredSink>>,
     pub active: RwLock<Arc<Active>>,

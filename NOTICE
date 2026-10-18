@@ -8,5 +8,8 @@ Third-party data bundled with this product:
 - pricing/litellm.json is a snapshot of model_prices_and_context_window.json from
   BerriAI/litellm (https://github.com/BerriAI/litellm), licensed under the MIT license
   (see pricing/LICENSE-litellm). The snapshot commit is recorded in pricing/litellm.lock.
+- pricing/legacy.json holds entries of the same file for Claude models LiteLLM has since
+  removed, copied from earlier BerriAI/litellm commits (named in the file), under the same
+  MIT license.
 
 Exchange rates are published by the European Central Bank (https://www.ecb.europa.eu).

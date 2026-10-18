@@ -39,6 +39,9 @@ impl<R: Runtime> Emit for AppHandle<R> {
 const BACKOFF_START: Duration = Duration::from_secs(1);
 /// The longest wait between two attempts.
 const BACKOFF_CAP: Duration = Duration::from_secs(30);
+/// How long a subscription must last before the backoff starts over, so a daemon that keeps
+/// restarting is not reconnected every second.
+const STABLE: Duration = Duration::from_secs(10);
 
 /// Doubling delay between reconnect attempts, from one second up to thirty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +104,8 @@ pub fn translate(event: &Event) -> Option<(&'static str, Value)> {
     }
 }
 
-/// One connection's life. Returns whether the daemon was reached at all (to reset the backoff).
+/// One connection's life. Returns whether the subscription stayed up for [`STABLE`] (to reset
+/// the backoff).
 async fn serve_once(
     transport: &ControlTransport,
     tracker: &mut LinkTracker,
@@ -114,9 +118,13 @@ async fn serve_once(
             return false;
         }
     };
-    let connected = Link::Connected {
-        daemon_version: client.daemon().daemon_version.clone(),
-    };
+    let connected = Link::from_welcome(client.daemon());
+    if matches!(connected, Link::Incompatible { .. }) {
+        // A newer store schema: this app cannot read what the daemon announces.
+        tracker.report(connected, sink);
+        return false;
+    }
+    let since = tokio::time::Instant::now();
     let mut subscription = match client.subscribe().await {
         Ok(subscription) => subscription,
         Err(error) => {
@@ -143,7 +151,7 @@ async fn serve_once(
         }
     }
     tracker.report(Link::Offline, sink);
-    true
+    since.elapsed() >= STABLE
 }
 
 /// Subscribes forever, reconnecting with backoff.

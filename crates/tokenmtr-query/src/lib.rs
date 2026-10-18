@@ -94,7 +94,7 @@ pub use breakdowns::{
 };
 pub use context::{FxPolicy, QueryContext, WeekStart, load_fx_rates, load_subscriptions};
 pub use error::{FilterError, QueryError};
-pub use filters::{BillingFilter, ClientName, FilterSpec, Filters};
+pub use filters::{BillingFilter, ClientName, FilterSpec, Filters, ProfileSelector};
 pub use health::{
     AlertView, BackupView, DaemonHealth, DaemonState, FxRateView, IngestStatus, ParseIssueView,
     SinkHealth, SinkRunView, SinkSpec, SinkState, alerts, backup_runs, daemon_health, fx_rates,
@@ -106,8 +106,9 @@ pub use quota::{
 };
 pub use range::{Bucket, DateRange, Period, RangeSpec};
 pub use recap::{
-    AgentRecap, BudgetScope, BudgetSpec, BudgetView, HealthLevel, Live, Recap, RecapConfig,
-    STATUS_SCHEMA, Selection, SparkPoint, Status, SystemHealth, budgets, recap, status,
+    AgentRecap, BudgetScope, BudgetSpec, BudgetState, BudgetView, HealthLevel, Live, Recap,
+    RecapConfig, STATUS_SCHEMA, Selection, SparkPoint, Status, SystemHealth, budgets, recap,
+    status,
 };
 pub use series::{GroupBy, GroupValue, NO_GROUP, Series, SeriesPoint, series};
 pub use usage::Usage;

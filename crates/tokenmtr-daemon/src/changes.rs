@@ -4,24 +4,13 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use jiff::SignedDuration;
-use tokenmtr_control::{Dataset as WireDataset, Event};
-use tokenmtr_export::store_dataset;
+use tokenmtr_control::Event;
 use tokenmtr_store::Dataset;
 use tokio::time::Instant;
 
 use crate::alerts::Evaluation;
 use crate::ctx::{Ctx, Job, lock};
 use crate::error::DaemonError;
-
-pub(crate) const fn wire(dataset: Dataset) -> WireDataset {
-    match dataset {
-        Dataset::UsageEvents => WireDataset::UsageEvents,
-        Dataset::ToolCalls => WireDataset::ToolCalls,
-        Dataset::Subscriptions => WireDataset::Subscriptions,
-        Dataset::QuotaSnapshots => WireDataset::QuotaSnapshots,
-        Dataset::FxRates => WireDataset::FxRates,
-    }
-}
 
 /// A config duration as a std one; a negative value is no wait.
 pub(crate) fn std_duration(duration: SignedDuration) -> Duration {
@@ -62,8 +51,7 @@ impl Ctx {
         let coalesce = self.settings.timing.event_coalesce;
         let publish_at = {
             let mut run = lock(&self.run);
-            run.pending_changed
-                .extend(changed.iter().copied().map(wire));
+            run.pending_changed.extend(changed.iter().copied());
             run.last_publish.map_or(now, |at| (at + coalesce).max(now))
         };
         self.scheduler
@@ -74,7 +62,7 @@ impl Ctx {
             if !sink
                 .datasets
                 .iter()
-                .any(|dataset| changed.contains(&store_dataset(*dataset)))
+                .any(|dataset| changed.contains(dataset))
             {
                 continue;
             }
@@ -97,7 +85,7 @@ impl Ctx {
 
     /// Pushes the pending `StoreChanged` to subscribers, if anything changed (the `Publish` job).
     pub(crate) fn publish(&self) {
-        let datasets: Vec<WireDataset> = {
+        let datasets: Vec<Dataset> = {
             let mut run = lock(&self.run);
             if run.pending_changed.is_empty() {
                 return;

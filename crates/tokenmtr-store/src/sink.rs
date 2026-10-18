@@ -30,11 +30,17 @@ const INSERT_RUN: &str = "INSERT INTO sink_run \
     (sink, dataset, started_at_us, finished_at_us, row_count, error) \
     VALUES (:sink, :dataset, :started_at_us, :finished_at_us, :row_count, :error)";
 
+/// Runs kept per sink; older ones are deleted as new ones arrive (health reads the newest).
+pub(crate) const RUN_HISTORY: usize = 1000;
+
+const PRUNE_RUNS: &str = "DELETE FROM sink_run WHERE id IN (SELECT id FROM sink_run WHERE sink = ?1 \
+    ORDER BY started_at_us DESC, id DESC LIMIT -1 OFFSET ?2)";
+
 const SET_CURSOR: &str = "INSERT INTO sink_cursor (sink, dataset, revision) \
     VALUES (?1, ?2, ?3) ON CONFLICT (sink, dataset) DO UPDATE SET revision = excluded.revision";
 
-/// Appends one run to the history.
-pub(crate) fn record_run(conn: &Connection, run: &SinkRun) -> Result<(), StoreError> {
+/// Appends one run to the history and drops the sink's runs beyond the newest `keep`.
+pub(crate) fn record_run(conn: &Connection, run: &SinkRun, keep: usize) -> Result<(), StoreError> {
     conn.prepare_cached(INSERT_RUN)?.execute(named_params! {
         ":sink": run.sink.as_str(),
         ":dataset": run.dataset.as_str(),
@@ -43,6 +49,8 @@ pub(crate) fn record_run(conn: &Connection, run: &SinkRun) -> Result<(), StoreEr
         ":row_count": to_i64(run.rows, "row_count")?,
         ":error": run.error,
     })?;
+    conn.prepare_cached(PRUNE_RUNS)?
+        .execute(params![run.sink.as_str(), to_limit(keep)?])?;
     Ok(())
 }
 
@@ -59,7 +67,8 @@ pub(crate) fn cursor(
     Ok(revision.unwrap_or(Revision::ZERO))
 }
 
-/// Sets the cursor. Moving it backwards re-exports rows (D17).
+/// Sets the cursor. Moving it backwards re-delivers rows (D17), which sinks drop when they hold
+/// them already; to rebuild a sink, also delete its output.
 pub(crate) fn set_cursor(
     conn: &Connection,
     sink: &SinkId,
@@ -96,4 +105,38 @@ pub(crate) fn runs(
         })
     })?
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_run_keeps_the_newest_runs_of_each_sink() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::migrations::migrations()
+            .to_latest(&mut conn)
+            .unwrap();
+        let run = |sink: &str, started: i64| SinkRun {
+            sink: SinkId::try_from(sink.to_owned()).unwrap(),
+            dataset: Dataset::FxRates,
+            started: Timestamp::from_second(started).unwrap(),
+            finished: Timestamp::from_second(started + 1).unwrap(),
+            rows: u64::try_from(started).unwrap(),
+            error: None,
+        };
+        record_run(&conn, &run("other", 1), 2).unwrap();
+        for started in [10, 30, 20, 40] {
+            record_run(&conn, &run("a", started), 2).unwrap();
+        }
+        let a = SinkId::try_from("a".to_owned()).unwrap();
+        let kept: Vec<_> = runs(&conn, &a, 10)
+            .unwrap()
+            .iter()
+            .map(|r| r.rows)
+            .collect();
+        assert_eq!(kept, [40, 30]);
+        let other = SinkId::try_from("other".to_owned()).unwrap();
+        assert_eq!(runs(&conn, &other, 10).unwrap().len(), 1);
+    }
 }

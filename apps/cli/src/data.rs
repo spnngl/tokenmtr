@@ -1,9 +1,8 @@
 //! Commands that move data: `backup`, `restore`, `erase`, `scan` and `report`.
 
 use std::io::{BufRead, IsTerminal, Write};
-use std::time::{Duration, Instant};
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, bail};
 use camino::Utf8PathBuf;
 use clap::{ArgGroup, Args, Subcommand, ValueEnum};
 use jiff::civil::Date;
@@ -14,7 +13,7 @@ use tokenmtr_app::{
 };
 use tokenmtr_config::ProcessEnv;
 use tokenmtr_core::{AgentId, Currency};
-use tokenmtr_platform::Platform;
+use tokenmtr_platform::{ControlTransport, Platform};
 use tokenmtr_report::Scope;
 
 use crate::client::with_daemon;
@@ -104,13 +103,16 @@ pub struct RestoreArgs {
     file: Utf8PathBuf,
 }
 
-/// `tokenmtr restore <file>`: replaces the store; refused while the daemon runs.
+/// `tokenmtr restore <file>`: stops the daemon, replaces the store, then starts the service
+/// again if it was loaded (D37).
 pub fn restore(setup: &Setup, args: &RestoreArgs) -> anyhow::Result<()> {
     // No store is opened: restore must work when the current one is damaged or too new.
     let config = load_config(setup.config_path(), &ProcessEnv)
         .with_context(|| format!("cannot load {}", setup.config_path()))?;
     let store = store_path(setup.paths(), &config);
-    restore_backup(&setup.transport(), &store, &args.file)?;
+    let transport = setup.transport();
+    request_shutdown(&transport)?;
+    restore_backup(&transport, setup.platform().service(), &store, &args.file)?;
     println!("restored {store} from {}", args.file);
     Ok(())
 }
@@ -129,27 +131,32 @@ pub struct EraseArgs {
     service: bool,
 }
 
-/// `tokenmtr erase`: stops a running daemon, then deletes the store, backups and logs. Sink
-/// outputs and the agents' own files stay.
+/// `tokenmtr erase`: stops the daemon, then deletes the store, backups and logs (D56). Sink
+/// outputs and the agents' own files stay. A kept service is started again on an empty store.
 pub fn erase(setup: &Setup, args: &EraseArgs) -> anyhow::Result<()> {
+    // An invalid config must not block erasing: the default locations are erased then.
     let config = load_config(setup.config_path(), &ProcessEnv)
-        .with_context(|| format!("cannot load {}", setup.config_path()))?;
+        .inspect_err(|error| {
+            eprintln!(
+                "warning: cannot load {} ({error}); erasing the default locations",
+                setup.config_path()
+            );
+        })
+        .ok();
     if !args.yes && !confirmed(args)? {
         bail!("not erased");
     }
-    // With `--service` removing the service stops the daemon; otherwise ask it to stop (D56).
-    if !args.service {
-        stop_daemon(setup)?;
-    }
+    let transport = setup.transport();
+    request_shutdown(&transport)?;
     let scope = EraseScope {
         config: args.delete_config,
         service: args.service,
     };
     let report = tokenmtr_app::erase(
         setup.paths(),
-        &setup.transport(),
+        &transport,
         setup.config_path(),
-        &config,
+        config.as_ref(),
         scope,
         setup.platform().service(),
     )?;
@@ -164,31 +171,19 @@ pub fn erase(setup: &Setup, args: &EraseArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// How long a daemon gets to remove its socket after a `shutdown` request.
-const DAEMON_STOP_GRACE: Duration = Duration::from_secs(5);
-
-/// Asks a running daemon to stop and waits until it released its socket. A no-op when none runs.
-fn stop_daemon(setup: &Setup) -> anyhow::Result<()> {
-    let transport = setup.transport();
-    if !daemon_running(&transport) {
+/// Asks a running daemon to stop. A daemon under launchd exits 0 and is not restarted
+/// (`KeepAlive.SuccessfulExit = false`); one started in a terminal just exits. The caller then
+/// waits for the daemon lock. A no-op when none runs.
+fn request_shutdown(transport: &ControlTransport) -> anyhow::Result<()> {
+    if !daemon_running(transport) {
         return Ok(());
     }
-    with_daemon(&transport, |mut client| async move {
+    with_daemon(transport, |mut client| async move {
         client
             .shutdown()
             .await
             .context("the daemon refused to stop")
-    })?;
-    let deadline = Instant::now() + DAEMON_STOP_GRACE;
-    while daemon_running(&transport) {
-        ensure!(
-            Instant::now() < deadline,
-            "the daemon did not stop within {}s",
-            DAEMON_STOP_GRACE.as_secs()
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    Ok(())
+    })
 }
 
 fn confirmed(args: &EraseArgs) -> anyhow::Result<bool> {

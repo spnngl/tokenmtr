@@ -231,6 +231,7 @@ mod tests {
             },
             reported_cost: None,
             service_tier: None,
+            modifiers: None,
         })
     }
 
