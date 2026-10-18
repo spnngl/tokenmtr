@@ -181,6 +181,18 @@ impl Client {
         }
     }
 
+    /// Asks the daemon to stop gracefully. The daemon answers first; the control socket
+    /// disappears once it has stopped.
+    ///
+    /// # Errors
+    /// As [`Client::request`].
+    pub async fn shutdown(&mut self) -> Result<(), ClientError> {
+        match self.request(&Request::Shutdown).await? {
+            Response::ShuttingDown => Ok(()),
+            other => Err(ClientError::Unexpected(type_name(&other))),
+        }
+    }
+
     /// Turns the connection into an event stream.
     ///
     /// # Errors
@@ -237,6 +249,7 @@ const fn type_name(response: &Response) -> &'static str {
         Response::QuotaRefreshed(_) => "quota_refreshed",
         Response::Reloaded => "reloaded",
         Response::Issues(_) => "issues",
+        Response::ShuttingDown => "shutting_down",
         Response::Subscribed => "subscribed",
         Response::Event { .. } => "event",
         Response::Error { .. } => "error",

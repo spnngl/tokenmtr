@@ -83,6 +83,21 @@ async fn scan_now_and_backup_now_through_the_client() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_shutdown_request_is_answered_then_the_owner_stops_the_daemon() -> TestResult {
+    let env = Env::new()?;
+    let daemon = env.start(fast_timing()).await?;
+    let mut client = env.client().await?;
+    client.shutdown().await?;
+    tokio::time::timeout(FIVE_SECONDS, daemon.stop_requested()).await?;
+    daemon.shutdown().await?;
+    assert!(
+        !env.transport().socket_path().exists(),
+        "the socket is removed"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_subscriber_gets_one_store_changed_per_append_and_none_when_idle() -> TestResult {
     let env = Env::new()?;
     seed_logs(&env)?;

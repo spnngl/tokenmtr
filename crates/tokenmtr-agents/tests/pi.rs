@@ -90,7 +90,10 @@ fn fixtures_match_snapshots() -> TestResult {
     for name in FIXTURES {
         let (batch, outcome) = parse_fixture(name)?;
         let value = serde_json::to_value(snapshot(batch, &outcome)?)?;
-        insta::assert_json_snapshot!(name.replace(['/', '.'], "_"), value);
+        // `serde_json/preserve_order` may be enabled by another crate in the workspace build.
+        insta::with_settings!({sort_maps => true}, {
+            insta::assert_json_snapshot!(name.replace(['/', '.'], "_"), value);
+        });
     }
     Ok(())
 }

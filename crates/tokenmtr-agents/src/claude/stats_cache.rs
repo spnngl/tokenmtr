@@ -123,7 +123,9 @@ pub fn parse(body: &[u8], profile: &ProfileId, zone: &TimeZone) -> StatsCache {
             out.bad_rows += 1;
             continue;
         };
-        for (model, total) in models {
+        // Sorted: `serde_json/preserve_order` may be enabled by another crate in the build.
+        let sorted: BTreeMap<&String, &Value> = models.iter().collect();
+        for (model, total) in sorted {
             let mix = mixes.get(model.as_str()).copied().unwrap_or_default();
             match event(profile, zone, date, model, total.as_u64(), mix) {
                 Some(event) => out.events.push(event),

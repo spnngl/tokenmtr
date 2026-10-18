@@ -27,6 +27,7 @@ Each request gets exactly one response, in order.
 | `refresh_quota` | `quota_refreshed` | `error` / `disabled` when `quota.enabled` is off. Per profile `status`: `ok`, `signed_out`, `token_expired`, `malformed`, `network_down`, `failed`. |
 | `reload` | `reloaded` | Invalid config: `error` / `invalid_config`, the old config stays active. |
 | `issues` | `issues` | Open parse issues and the last `config_error`. |
+| `shutdown` | `shutting_down` | Graceful stop, same as SIGTERM. The answer comes first; the socket is removed when the daemon has stopped (D56). |
 | `subscribe` | `subscribed`, then `event` lines | Events are interleaved with later responses on the same connection; a subscriber that falls behind gets one `store_changed` listing every dataset. |
 
 Errors are `{"type":"error","kind":…,"message":…}` with `kind` one of `bad_request`, `disabled`, `invalid_config`, `failed`, `shutting_down`. Messages never contain credentials (D55).
@@ -45,5 +46,5 @@ Clients re-read the store after `store_changed`; the event carries no row data.
 ## Versioning
 
 - `PROTOCOL_VERSION` is bumped for any change an older peer would misread: removing or renaming a message or field, changing a meaning, adding a required field.
-- Adding an optional field is compatible. A new event or response type is not: v1 clients fail to parse it, so it bumps the version.
+- Adding an optional field is compatible. A new event or an unsolicited response type is not: v1 clients fail to parse it, so it bumps the version. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
 - There is no negotiation: a mismatch ends the connection. Ship the daemon and its clients together (D52).

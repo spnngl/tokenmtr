@@ -8,7 +8,7 @@ use tokenmtr_agents::ingest::{IngestSettings, Ingestor, ScanPriority, ScanReques
 use tokenmtr_control::{EventBus, Server, ServerInfo, Shutdown};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_store::{SCHEMA_VERSION, Store, StoreReader};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
 
@@ -75,6 +75,13 @@ impl Daemon {
         ctx.rearm(None, &active);
         tracing::info!(socket = %socket, "daemon started");
         Ok(Self { ctx, stop, tasks })
+    }
+
+    /// Resolves once a client sent `Request::Shutdown`. The owner of the daemon then calls
+    /// [`Daemon::shutdown`], as it does on SIGTERM. Cancel-safe; a request made before the call is
+    /// not lost.
+    pub async fn stop_requested(&self) {
+        self.ctx.stop_requested.notified().await;
     }
 
     /// Stops the daemon: no new work starts, the running transaction finishes, sinks get a last
@@ -151,6 +158,7 @@ async fn build(
         watch_plan,
         http: OnceLock::new(),
         started_at: Timestamp::now(),
+        stop_requested: Notify::new(),
     });
     // What the store holds now: only later movement is a change worth announcing.
     let heads: HashMap<_, _> = ctx.heads()?;

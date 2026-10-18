@@ -96,7 +96,10 @@ fn snapshot_fixture(name: &str) -> Result<Value, Box<dyn std::error::Error>> {
 fn fixtures_match_snapshots() -> TestResult {
     for name in FIXTURES {
         let value = snapshot_fixture(name)?;
-        insta::assert_json_snapshot!(name.replace(['/', '.'], "_"), value);
+        // `serde_json/preserve_order` may be enabled by another crate in the workspace build.
+        insta::with_settings!({sort_maps => true}, {
+            insta::assert_json_snapshot!(name.replace(['/', '.'], "_"), value);
+        });
     }
     Ok(())
 }

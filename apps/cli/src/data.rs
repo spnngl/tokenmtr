@@ -1,14 +1,16 @@
 //! Commands that move data: `backup`, `restore`, `erase`, `scan` and `report`.
 
 use std::io::{BufRead, IsTerminal, Write};
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use camino::Utf8PathBuf;
 use clap::{ArgGroup, Args, Subcommand, ValueEnum};
 use jiff::civil::Date;
 use serde::Serialize;
 use tokenmtr_app::{
-    EraseScope, ReportFormat, ReportRange, ReportRequest, load_config, restore_backup, store_path,
+    EraseScope, ReportFormat, ReportRange, ReportRequest, daemon_running, load_config,
+    restore_backup, store_path,
 };
 use tokenmtr_config::ProcessEnv;
 use tokenmtr_core::{AgentId, Currency};
@@ -127,13 +129,17 @@ pub struct EraseArgs {
     service: bool,
 }
 
-/// `tokenmtr erase`: deletes the store, backups and logs. Sink outputs and the agents' own files
-/// stay.
+/// `tokenmtr erase`: stops a running daemon, then deletes the store, backups and logs. Sink
+/// outputs and the agents' own files stay.
 pub fn erase(setup: &Setup, args: &EraseArgs) -> anyhow::Result<()> {
     let config = load_config(setup.config_path(), &ProcessEnv)
         .with_context(|| format!("cannot load {}", setup.config_path()))?;
     if !args.yes && !confirmed(args)? {
         bail!("not erased");
+    }
+    // With `--service` removing the service stops the daemon; otherwise ask it to stop (D56).
+    if !args.service {
+        stop_daemon(setup)?;
     }
     let scope = EraseScope {
         config: args.delete_config,
@@ -155,6 +161,33 @@ pub fn erase(setup: &Setup, args: &EraseArgs) -> anyhow::Result<()> {
         .iter()
         .for_each(|path| println!("deleted {path}"));
     println!("exports and the agents' files were left alone");
+    Ok(())
+}
+
+/// How long a daemon gets to remove its socket after a `shutdown` request.
+const DAEMON_STOP_GRACE: Duration = Duration::from_secs(5);
+
+/// Asks a running daemon to stop and waits until it released its socket. A no-op when none runs.
+fn stop_daemon(setup: &Setup) -> anyhow::Result<()> {
+    let transport = setup.transport();
+    if !daemon_running(&transport) {
+        return Ok(());
+    }
+    with_daemon(&transport, |mut client| async move {
+        client
+            .shutdown()
+            .await
+            .context("the daemon refused to stop")
+    })?;
+    let deadline = Instant::now() + DAEMON_STOP_GRACE;
+    while daemon_running(&transport) {
+        ensure!(
+            Instant::now() < deadline,
+            "the daemon did not stop within {}s",
+            DAEMON_STOP_GRACE.as_secs()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
     Ok(())
 }
 

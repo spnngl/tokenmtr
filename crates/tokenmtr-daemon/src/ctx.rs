@@ -14,7 +14,7 @@ use tokenmtr_export::{ConfiguredSink, SinkSpec};
 use tokenmtr_platform::{Paths, ThreadPriority, set_thread_priority};
 use tokenmtr_remote::{Endpoints, Validators, build_client};
 use tokenmtr_store::{Dataset, Revision, Store, StoreRead, StoreReader};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
 use crate::error::DaemonError;
@@ -115,6 +115,8 @@ pub(crate) struct Ctx {
     pub watch_plan: watch::Sender<WatchPlan>,
     pub http: OnceLock<Http>,
     pub started_at: Timestamp,
+    /// Notified by `Request::Shutdown`; the process owner calls `Daemon::shutdown` then.
+    pub stop_requested: Notify,
 }
 
 /// Locks `mutex`; a panic in another holder does not make the daemon unusable.

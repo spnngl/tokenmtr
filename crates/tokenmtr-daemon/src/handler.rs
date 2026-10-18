@@ -86,6 +86,11 @@ impl ControlHandler {
                 Ok(Response::Reloaded)
             }
             Request::Issues => self.issues().await,
+            Request::Shutdown => {
+                // The permit is kept if the owner is not waiting yet.
+                ctx.stop_requested.notify_one();
+                Ok(Response::ShuttingDown)
+            }
             Request::Hello { .. } | Request::Subscribe => Ok(Response::Error {
                 kind: ErrorKind::BadRequest,
                 message: "handled by the connection, not the dispatcher".to_owned(),

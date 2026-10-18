@@ -53,15 +53,20 @@ fn skeleton(value: &Value, depth: usize) -> Value {
             }
             Value::Array(shapes)
         }
-        Value::Object(map) => Value::Object(
-            map.iter()
+        Value::Object(map) => {
+            // Sorted explicitly: `serde_json/preserve_order` may be enabled by another crate in the
+            // build, which would otherwise make the output follow input order.
+            let mut entries: Vec<(String, Value)> = map
+                .iter()
                 .take(MAX_KEYS)
                 .map(|(key, item)| {
                     let key: String = key.chars().take(MAX_KEY_CHARS).collect();
                     (key, skeleton(item, depth + 1))
                 })
-                .collect::<Map<String, Value>>(),
-        ),
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(entries.into_iter().collect::<Map<String, Value>>())
+        }
     }
 }
 

@@ -105,8 +105,7 @@ fn restore_rejects_a_file_that_is_no_backup() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn restore_scan_and_erase_refuse_while_the_daemon_runs_and_backup_goes_through_it()
--> TestResult {
+async fn restore_and_full_scan_refuse_while_the_daemon_runs_and_erase_stops_it() -> TestResult {
     let home = seeded()?;
     let file = backup_now(&home)?;
     let daemon = Daemon::start(Settings::new(
@@ -116,6 +115,11 @@ async fn restore_scan_and_erase_refuse_while_the_daemon_runs_and_backup_goes_thr
         Arc::new(NoSecrets),
     ))
     .await?;
+    // What `tokenmtr run` does: stop when a client asks for it.
+    let stopper = tokio::spawn(async move {
+        daemon.stop_requested().await;
+        daemon.shutdown().await
+    });
 
     let run = |args: Vec<String>| {
         let mut command = home.tokenmtr();
@@ -123,9 +127,6 @@ async fn restore_scan_and_erase_refuse_while_the_daemon_runs_and_backup_goes_thr
     };
     let restore = run(vec!["restore".into(), file.to_string()]).await?;
     restore.code(1).stderr(predicate::str::contains("daemon"));
-    let erase = run(vec!["erase".into(), "--yes".into()]).await?;
-    erase.code(1).stderr(predicate::str::contains("daemon"));
-    assert!(home.store_path().exists(), "refused erase keeps the store");
     let full_scan = run(vec!["scan".into(), "--full".into()]).await?;
     full_scan.code(1);
     let backup = run(vec!["backup".into(), "now".into()]).await?;
@@ -137,7 +138,12 @@ async fn restore_scan_and_erase_refuse_while_the_daemon_runs_and_backup_goes_thr
     let doctor: Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(doctor["daemon_running"], true);
 
-    daemon.shutdown().await?;
+    // `erase` asks the daemon to stop, then deletes the store.
+    let erase = run(vec!["erase".into(), "--yes".into()]).await?;
+    erase.success().stdout(predicate::str::contains("deleted"));
+    stopper.await??;
+    assert!(!home.store_path().exists());
+    assert!(!home.transport().socket_path().exists());
     Ok(())
 }
 

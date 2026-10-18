@@ -4,11 +4,15 @@ use std::io::IsTerminal;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use camino::Utf8Path;
+use secrecy::SecretString;
 use tokenmtr_config::LogLevel;
 use tokenmtr_daemon::{Daemon, Settings};
-use tokenmtr_platform::{Paths, Platform, PlatformKind, ThreadPriority, set_thread_priority};
+use tokenmtr_platform::{
+    Paths, Platform, PlatformKind, SecretError, SecretStore, ThreadPriority, set_thread_priority,
+};
+use tokenmtr_remote::Endpoints;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -24,7 +28,45 @@ fn secrets() -> Arc<dyn tokenmtr_platform::SecretStore + Send + Sync> {
     Arc::new(tokenmtr_platform::KeychainSecrets)
 }
 
-/// Runs the daemon until SIGTERM or SIGINT.
+/// Test hook (`tests/e2e`): a loopback base URL that replaces the three production hosts. While it
+/// is set the Keychain is not read either, so a test never touches the real one. Anything but an
+/// `http` URL on a loopback host is refused, so a credential can never be sent off the machine
+/// through this variable.
+const TEST_ENDPOINT_BASE: &str = "TOKENMTR_TEST_ENDPOINT_BASE";
+
+/// A secret store that holds nothing: credentials then come from files only.
+struct NoSecrets;
+
+impl SecretStore for NoSecrets {
+    fn get(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
+        Ok(None)
+    }
+}
+
+/// Applies [`TEST_ENDPOINT_BASE`] to `settings` when it is set.
+fn apply_test_endpoint(settings: &mut Settings) -> anyhow::Result<()> {
+    let Some(base) = std::env::var_os(TEST_ENDPOINT_BASE) else {
+        return Ok(());
+    };
+    let base = base
+        .to_str()
+        .with_context(|| format!("{TEST_ENDPOINT_BASE} is not UTF-8"))?;
+    let endpoints =
+        Endpoints::at(base).with_context(|| format!("{TEST_ENDPOINT_BASE} is not a valid URL"))?;
+    ensure!(
+        endpoints.anthropic.scheme() == "http"
+            && matches!(
+                endpoints.anthropic.host_str(),
+                Some("127.0.0.1" | "localhost" | "[::1]")
+            ),
+        "{TEST_ENDPOINT_BASE} must be an http URL on a loopback host"
+    );
+    settings.endpoints = Some(endpoints);
+    settings.secrets = Arc::new(NoSecrets);
+    Ok(())
+}
+
+/// Runs the daemon until SIGTERM, SIGINT or a control `shutdown` request.
 pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
     let platform = PlatformKind::detect().context("cannot resolve the platform directories")?;
     let paths = platform.paths().clone();
@@ -40,7 +82,8 @@ pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
         })
         .build()
         .context("cannot start the async runtime")?;
-    let settings = Settings::new(paths, config_path, platform.control_transport(), secrets());
+    let mut settings = Settings::new(paths, config_path, platform.control_transport(), secrets());
+    apply_test_endpoint(&mut settings)?;
     let outcome = runtime.block_on(serve(settings));
     runtime.shutdown_timeout(RUNTIME_GRACE);
     outcome
@@ -48,7 +91,10 @@ pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
 
 async fn serve(settings: Settings) -> anyhow::Result<()> {
     let daemon = Daemon::start(settings).await?;
-    wait_for_signal().await?;
+    tokio::select! {
+        signal = wait_for_signal() => signal?,
+        () = daemon.stop_requested() => {}
+    }
     tracing::info!("stopping");
     daemon.shutdown().await?;
     Ok(())

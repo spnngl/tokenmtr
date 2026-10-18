@@ -21,6 +21,7 @@ impl Handler for Echo {
                 path: Utf8PathBuf::from("/tmp/x.db.zst"),
                 size_bytes: 7,
             }),
+            Request::Shutdown => Response::ShuttingDown,
             _ => Response::Reloaded,
         })
     }
@@ -81,6 +82,7 @@ async fn handshake_then_requests() -> TestResult {
     ));
     // The connection survives a daemon-side error.
     assert_eq!(client.backup_now().await?.size_bytes, 7);
+    client.shutdown().await?;
     Ok(())
 }
 
@@ -202,6 +204,7 @@ fn every_message_round_trips() -> TestResult {
         Request::Reload,
         Request::Issues,
         Request::Subscribe,
+        Request::Shutdown,
     ];
     for request in requests {
         let back: Request = serde_json::from_str(&serde_json::to_string(&request)?)?;
@@ -214,6 +217,7 @@ fn every_message_round_trips() -> TestResult {
             store_schema: 2,
         },
         Response::Reloaded,
+        Response::ShuttingDown,
         Response::Subscribed,
         Response::Scanned(ScanSummary {
             agents: vec![],

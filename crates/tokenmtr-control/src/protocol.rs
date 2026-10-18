@@ -85,6 +85,8 @@ pub enum Request {
     Issues,
     /// Start receiving [`Event`]s on this connection.
     Subscribe,
+    /// Stop the daemon gracefully, as SIGTERM does (D56). Answered before the daemon stops.
+    Shutdown,
 }
 
 /// What the daemon pushes to subscribers.
@@ -141,6 +143,8 @@ pub enum Response {
     Reloaded,
     /// Answer to [`Request::Issues`].
     Issues(IssueList),
+    /// Answer to [`Request::Shutdown`]: the daemon is stopping; the socket disappears when done.
+    ShuttingDown,
     /// Answer to [`Request::Subscribe`]; events follow.
     Subscribed,
     /// A pushed event; only after [`Response::Subscribed`].
