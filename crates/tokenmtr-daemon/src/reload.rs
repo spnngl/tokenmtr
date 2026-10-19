@@ -198,6 +198,8 @@ impl Ctx {
             }
         }
 
+        self.arm_metrics(o, c);
+
         for sink in &c.sinks {
             if o.is_none_or(|o| !o.sinks.iter().any(|s| s.id == sink.id)) {
                 self.schedule_now(Job::Export(sink.id.clone()));

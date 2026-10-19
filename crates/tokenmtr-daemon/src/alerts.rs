@@ -48,6 +48,13 @@ impl Ctx {
                     failing_since: run.sinks.get(&sink.id).and_then(|s| s.failing_since),
                 })
                 .collect();
+            inputs.metrics = tokenmtr_app::metrics_specs(&active.config)
+                .into_iter()
+                .map(|spec| SinkState {
+                    failing_since: run.metrics.get(&spec.id).and_then(|s| s.failing_since),
+                    id: spec.id,
+                })
+                .collect();
             inputs.backup_failed_at = run.backup_failed_at;
         }
         {

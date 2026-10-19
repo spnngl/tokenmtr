@@ -37,6 +37,12 @@ pub(crate) enum Job {
     Fx,
     /// Refresh the price list.
     Pricing,
+    /// Rebuild the metrics snapshot and publish it to every output.
+    MetricsRefresh,
+    /// Push one remote-write output.
+    RemoteWrite(SinkId),
+    /// (Re)start the server of one metrics exporter.
+    ExporterBind(SinkId),
     /// Export pending rows to one sink.
     Export(SinkId),
     /// Push coalesced `StoreChanged` events to subscribers.
@@ -95,6 +101,8 @@ pub(crate) struct Runtime {
     /// The config file as last loaded; a file event with the same bytes needs no reload.
     pub config_bytes: Option<Vec<u8>>,
     pub sinks: HashMap<SinkId, SinkRuntime>,
+    /// The same facts for metrics outputs.
+    pub metrics: HashMap<SinkId, SinkRuntime>,
     pub quota_resets: QuotaResets,
     pub quota: crate::quota::QuotaRuntime,
     pub account_checked: HashMap<(AgentId, ProfileId), Timestamp>,
@@ -120,6 +128,8 @@ pub(crate) struct Ctx {
     /// A fourth connection for sink exports: cursors and run history are written in short
     /// transactions, and the slow sink I/O between them never holds `store`.
     pub exports: Mutex<Store>,
+    /// The metrics outputs: their snapshot, servers and push state.
+    pub metrics: crate::metrics::Metrics,
     pub ingestor: Mutex<Ingestor>,
     /// Shared with every ingestor; raised by `Daemon::shutdown` so a running scan or reprice
     /// ends between two files or pages, within the shutdown grace.

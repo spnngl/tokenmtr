@@ -8,6 +8,9 @@
 //! - a **file watcher** feeding debounced scans of the agent roots and reloads of the
 //!   config file;
 //! - one event-driven **export job per sink** with backoff;
+//! - the **metrics outputs** (`metrics`): one event-driven refresh job folding the store into a
+//!   snapshot per output, one scrape server per `[[metrics.exporters]]` entry and one push job
+//!   per `[[metrics.remote_write]]` entry, all armed only while configured;
 //! - the **control server** of `tokenmtr-control` with every handler and the `Subscribe` push;
 //! - optional jobs, each running only when its config flag is on: Claude quota polling,
 //!   ECB rates, the `LiteLLM` price list, daily backups.
@@ -25,6 +28,7 @@ mod daemon;
 mod error;
 mod export;
 mod handler;
+mod metrics;
 mod quota;
 mod refresh;
 mod reload;

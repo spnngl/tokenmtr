@@ -30,6 +30,9 @@ pub struct Timing {
     pub min_slack: Duration,
     /// Longest wait between two attempts of a failing sink.
     pub export_retry_cap: Duration,
+    /// First wait after a failed bind or push of a metrics output; it doubles on each failure
+    /// (up to `export_retry_cap` for a bind, the push interval for a push).
+    pub metrics_backoff: Duration,
     /// How often the price list is refreshed.
     pub pricing_interval: Duration,
     /// How often ECB rates are refreshed.
@@ -53,6 +56,7 @@ impl Default for Timing {
             reload_debounce: Duration::from_millis(500),
             min_slack: Duration::from_secs(1),
             export_retry_cap: Duration::from_secs(300),
+            metrics_backoff: Duration::from_secs(1),
             pricing_interval: Duration::from_hours(24),
             fx_interval: Duration::from_hours(24),
             network_retry: Duration::from_hours(1),
