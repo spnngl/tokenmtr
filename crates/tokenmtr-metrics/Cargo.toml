@@ -14,8 +14,11 @@ tokenmtr-config.workspace = true
 tokenmtr-core.workspace = true
 tokenmtr-store.workspace = true
 
+flate2.workspace = true
 jiff.workspace = true
+prost.workspace = true
 rusqlite.workspace = true
+snap.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
@@ -23,6 +26,7 @@ tokenmtr-query.workspace = true
 
 camino.workspace = true
 divan.workspace = true
+insta.workspace = true
 tempfile.workspace = true
 
 [[bench]]
