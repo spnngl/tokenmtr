@@ -5,17 +5,20 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::net::SocketAddr;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use globset::GlobMatcher;
+use globset::{Glob, GlobBuilder, GlobMatcher, GlobSet, GlobSetBuilder};
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 pub use tokenmtr_core::Dataset;
 use tokenmtr_core::{
     AgentId, AlertConfig, Budget, Currency, EurPerUsd, Override, ProfileId, ProjectKey, SinkId,
     Subscription,
 };
+use url::Url;
 
 /// The only schema version this crate reads (`schema_version` in the file).
 pub const CONFIG_SCHEMA_VERSION: u32 = 1;
@@ -229,6 +232,205 @@ pub struct SinkConfig {
     /// Kind-specific settings.
     pub target: SinkTarget,
 }
+
+/// Where an output's secret comes from. Env and file sources are read when the output starts,
+/// never at config load.
+#[derive(Debug, Clone)]
+pub enum SecretSource {
+    /// The value is in the config file.
+    Inline(SecretString),
+    /// The name of an environment variable of the daemon.
+    Env(String),
+    /// A file holding the secret; absolute, private to the user.
+    File(Utf8PathBuf),
+}
+
+impl PartialEq for SecretSource {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Inline(a), Self::Inline(b)) => a.expose_secret() == b.expose_secret(),
+            (Self::Env(a), Self::Env(b)) => a == b,
+            (Self::File(a), Self::File(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for SecretSource {}
+
+/// How an output authenticates its peer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Auth {
+    /// HTTP basic.
+    Basic {
+        /// The user name; never contains `:`.
+        username: String,
+        /// The password.
+        password: SecretSource,
+    },
+    /// A bearer token.
+    Bearer {
+        /// The token.
+        token: SecretSource,
+    },
+}
+
+/// Compiles a glob where `*` does not cross `/`: the dialect of `[[projects]] match` and of the
+/// metrics exclusions.
+///
+/// # Errors
+///
+/// The glob crate's rejection of `pattern`.
+pub(crate) fn path_glob(pattern: &str) -> Result<Glob, globset::Error> {
+    GlobBuilder::new(pattern).literal_separator(true).build()
+}
+
+/// Glob patterns that compile to one matcher. Equality compares the patterns.
+#[derive(Debug, Clone)]
+pub struct GlobList {
+    patterns: Vec<String>,
+    set: GlobSet,
+}
+
+impl GlobList {
+    /// Compiles `patterns` (already `~`-expanded) with `/` kept literal, as `[[projects]]` does.
+    ///
+    /// # Errors
+    ///
+    /// The first pattern the glob crate rejects.
+    pub fn new(patterns: Vec<String>) -> Result<Self, globset::Error> {
+        let mut set = GlobSetBuilder::new();
+        for pattern in &patterns {
+            set.add(path_glob(pattern)?);
+        }
+        Ok(Self {
+            set: set.build()?,
+            patterns,
+        })
+    }
+
+    /// Whether `text` matches any pattern.
+    #[must_use]
+    pub fn is_match(&self, text: &str) -> bool {
+        self.set.is_match(text)
+    }
+
+    /// Whether there are no patterns.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    /// The patterns as written (after `~` expansion).
+    #[must_use]
+    pub fn patterns(&self) -> &[String] {
+        &self.patterns
+    }
+}
+
+impl Default for GlobList {
+    fn default() -> Self {
+        Self {
+            patterns: Vec::new(),
+            set: GlobSet::empty(),
+        }
+    }
+}
+
+impl PartialEq for GlobList {
+    fn eq(&self, other: &Self) -> bool {
+        self.patterns == other.patterns
+    }
+}
+
+impl Eq for GlobList {}
+
+/// What one metrics output leaves out and hides. Exclusion drops rows from this output only.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OutputFilter {
+    /// Globs on the project key (`host/owner/repo`), its display name and its git remote. `*` does
+    /// not cross `/`.
+    pub exclude_projects: GlobList,
+    /// Globs on the working directory; never set with `privacy.redact_paths`.
+    pub exclude_paths: GlobList,
+    /// Per-label redaction; never has `cwd`.
+    pub redact: BTreeMap<RedactColumn, RedactMode>,
+}
+
+/// One `[[metrics.exporters]]` entry: a scrape endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExporterConfig {
+    /// Unique id, shared with sinks and remote-write outputs.
+    pub id: SinkId,
+    /// Address to bind; unique among exporters.
+    pub listen: SocketAddr,
+    /// Required credentials, if any.
+    pub auth: Option<Auth>,
+    /// Exclusion and redaction.
+    pub filter: OutputFilter,
+}
+
+/// The labels a remote-write output adds to every series.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExternalLabels {
+    /// The default: `machine` is the machine name.
+    Machine,
+    /// Exactly these; names are valid and not catalog labels.
+    Explicit(BTreeMap<String, String>),
+}
+
+/// One `[[metrics.remote_write]]` entry: a push target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteWriteConfig {
+    /// Unique id, shared with sinks and exporters.
+    pub id: SinkId,
+    /// The receiver endpoint: https, or http to this machine; no credentials.
+    pub url: Url,
+    /// Time between pushes.
+    pub interval: SignedDuration,
+    /// Exclusion and redaction.
+    pub filter: OutputFilter,
+    /// `X-Scope-OrgID`, when set.
+    pub tenant: Option<String>,
+    /// Credentials, if any.
+    pub auth: Option<Auth>,
+    /// Labels added to every series.
+    pub external_labels: ExternalLabels,
+}
+
+/// `[metrics]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetricsConfig {
+    /// Minimum time between snapshot recomputes.
+    pub refresh_interval: SignedDuration,
+    /// A session family keeps sessions with a usage event this recent.
+    pub session_window: SignedDuration,
+    /// `[[metrics.exporters]]`.
+    pub exporters: Vec<ExporterConfig>,
+    /// `[[metrics.remote_write]]`.
+    pub remote_write: Vec<RemoteWriteConfig>,
+}
+
+/// The labels the metrics carry. An `external_labels` key cannot be one of them.
+pub const METRIC_LABELS: &[&str] = &[
+    "account",
+    "agent",
+    "billing",
+    "client",
+    "error",
+    "git_branch",
+    "kind",
+    "mcp_server",
+    "model",
+    "profile",
+    "project",
+    "provider",
+    "session_id",
+    "tool",
+    "type",
+    "version",
+    "window",
+];
 
 /// Where an agent profile reads from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -582,6 +784,8 @@ pub struct Config {
     pub agents: BTreeMap<AgentId, AgentConfig>,
     /// `[[sinks]]`: ids unique.
     pub sinks: Vec<SinkConfig>,
+    /// `[metrics]`.
+    pub metrics: MetricsConfig,
 }
 
 impl Config {

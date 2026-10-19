@@ -10,6 +10,7 @@ use jiff::SignedDuration;
 use jiff::civil::Date;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use secrecy::SecretString;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokenmtr_core::{
@@ -170,6 +171,7 @@ pub struct RawConfig {
     pub privacy: RawPrivacy,
     pub agents: RawAgents,
     pub sinks: Vec<RawSink>,
+    pub metrics: RawMetrics,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -436,6 +438,66 @@ pub struct RawSink {
     pub path: Option<String>,
     pub mode: Option<FileMode>,
     pub partition: Option<Partition>,
+}
+
+/// `[metrics]`: the Prometheus outputs and what they share.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RawMetrics {
+    pub refresh_interval: Option<RawDuration>,
+    pub session_window: Option<RawDuration>,
+    pub exporters: Vec<RawExporter>,
+    pub remote_write: Vec<RawRemoteWrite>,
+}
+
+/// One `[[metrics.exporters]]` entry: a scrape endpoint.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawExporter {
+    pub id: SinkId,
+    pub listen: Option<String>,
+    pub exclude_projects: Option<Vec<String>>,
+    pub exclude_paths: Option<Vec<String>>,
+    pub redact: Option<BTreeMap<RedactColumn, RedactMode>>,
+    pub auth: Option<RawAuth>,
+}
+
+/// One `[[metrics.remote_write]]` entry: a push target.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawRemoteWrite {
+    pub id: SinkId,
+    pub url: String,
+    pub interval: Option<RawDuration>,
+    pub exclude_projects: Option<Vec<String>>,
+    pub exclude_paths: Option<Vec<String>>,
+    pub redact: Option<BTreeMap<RedactColumn, RedactMode>>,
+    pub tenant: Option<String>,
+    pub auth: Option<RawAuth>,
+    pub external_labels: Option<BTreeMap<String, String>>,
+}
+
+/// The `kind` of an output's `auth`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RawAuthKind {
+    Basic,
+    Bearer,
+}
+
+/// An output's `auth` table. Kind-specific keys are checked against `kind` during validation,
+/// as for [`RawSink`]. Secret values are [`SecretString`]s, so `Debug` never shows them.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawAuth {
+    pub kind: RawAuthKind,
+    pub username: Option<String>,
+    pub password: Option<SecretString>,
+    pub password_env: Option<String>,
+    pub password_file: Option<String>,
+    pub token: Option<SecretString>,
+    pub token_env: Option<String>,
+    pub token_file: Option<String>,
 }
 
 #[cfg(test)]

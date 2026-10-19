@@ -2690,11 +2690,13 @@ dependencies = [
  "globset",
  "jiff",
  "rust_decimal",
+ "secrecy",
  "serde",
  "thiserror",
  "tokenmtr-core",
  "toml",
  "toml_edit",
+ "url",
 ]
 
 [[package]]

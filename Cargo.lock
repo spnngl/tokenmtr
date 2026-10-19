@@ -6441,12 +6441,14 @@ dependencies = [
  "globset",
  "jiff",
  "rust_decimal",
+ "secrecy",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
  "tokenmtr-core",
  "toml 1.1.8+spec-1.1.0",
  "toml_edit 0.25.17+spec-1.1.0",
+ "url",
 ]
 
 [[package]]

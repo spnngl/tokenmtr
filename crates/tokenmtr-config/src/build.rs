@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 
 use camino::Utf8PathBuf;
-use globset::GlobBuilder;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use tokenmtr_core::{
@@ -23,12 +22,14 @@ use crate::model::{
     FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig, IntegrationsConfig,
     LoggingConfig, MachineConfig, MenubarConfig, MenubarRing, Percent, PricingConfig,
     PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig, SinkConfig,
-    SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting,
+    SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting, path_glob,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
     RawSinkKind, RawSubscription,
 };
+
+mod metrics;
 
 type Checked<T> = Result<T, Rejection>;
 
@@ -130,6 +131,7 @@ impl Config {
                 redact_paths: raw.privacy.redact_paths.unwrap_or(false),
             },
             sinks: build_sinks(&raw.sinks, env)?,
+            metrics: metrics::build_metrics(raw, env)?,
             display,
             agents,
         })
@@ -402,18 +404,7 @@ fn build_projects(raw: &[RawProject], env: &dyn Env) -> Checked<Vec<ProjectRule>
         .map(|(i, rule)| {
             let at = ConfigPath::root().key("projects").index(i).key("match");
             let pattern = expand_tilde(env, &rule.pattern, &at)?;
-            let glob = GlobBuilder::new(&pattern)
-                .literal_separator(true)
-                .build()
-                .map_err(|e| {
-                    reject(
-                        &at,
-                        Violation::InvalidGlob {
-                            pattern: pattern.clone(),
-                            reason: e.kind().to_string(),
-                        },
-                    )
-                })?;
+            let glob = path_glob(&pattern).map_err(|e| invalid_glob(&at, &pattern, &e))?;
             Ok(ProjectRule {
                 matcher: glob.compile_matcher(),
                 name: rule.name.clone(),
@@ -421,6 +412,16 @@ fn build_projects(raw: &[RawProject], env: &dyn Env) -> Checked<Vec<ProjectRule>
             })
         })
         .collect()
+}
+
+fn invalid_glob(at: &ConfigPath, pattern: &str, error: &globset::Error) -> Rejection {
+    reject(
+        at,
+        Violation::InvalidGlob {
+            pattern: error.glob().unwrap_or(pattern).to_owned(),
+            reason: error.kind().to_string(),
+        },
+    )
 }
 
 fn build_budgets(
