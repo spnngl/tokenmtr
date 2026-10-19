@@ -1,4 +1,5 @@
-//! Background service management: the daemon runs as a launchd `LaunchAgent`.
+//! Background service management: the shared interface, and the daemon as a launchd `LaunchAgent`
+//! (macOS). The Linux systemd user unit lives in [`crate::systemd`].
 
 use std::fs::OpenOptions;
 use std::io;
@@ -29,14 +30,27 @@ const LAUNCHD_LOG_LIMIT: u64 = 1024 * 1024;
 /// Failure of a [`ServiceManager`] operation.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
-    /// The daemon binary path is relative; launchd would resolve it against `/`.
+    /// The daemon binary path is relative; the service manager would resolve it against `/`.
     #[error("daemon binary path must be absolute: {0}")]
     RelativeBinary(Utf8PathBuf),
     /// The daemon binary is on a disk image or in a translocated copy that disappears; the
     /// app must be moved to a stable folder first.
     #[error("{0} runs from a disk image or a temporary copy: move TokenMtr to Applications")]
     TransientBinary(Utf8PathBuf),
-    /// Filesystem error while reading or writing the plist.
+    /// The daemon binary path holds a control character, which a unit file cannot carry.
+    #[error("daemon binary path holds a control character: {0:?}")]
+    ControlCharacter(Utf8PathBuf),
+    /// The service manager loads the unit from somewhere other than this home directory, as in a
+    /// sandbox `HOME` that shares the real user manager; acting on it would touch the user's own
+    /// daemon.
+    #[error("the service manager does not load {expected} (it loads {loaded:?})")]
+    ForeignUnit {
+        /// The unit file of this installation.
+        expected: Utf8PathBuf,
+        /// What the manager loads instead; `None` when it knows no such unit.
+        loaded: Option<String>,
+    },
+    /// Filesystem error while reading or writing the plist or unit file.
     #[error(transparent)]
     Io(#[from] io::Error),
     /// An external command could not run to success.
@@ -60,11 +74,11 @@ pub enum ServiceError {
 /// State of the installed service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceStatus {
-    /// No plist and not loaded.
+    /// No plist or unit file, and not loaded.
     NotInstalled,
-    /// Plist present but not loaded into launchd (e.g. before the next login).
+    /// Plist or unit file present but not loaded (e.g. before the next login).
     Stopped,
-    /// Loaded into launchd without a live process (starting, or waiting out a restart throttle).
+    /// Loaded without a live process (starting, or waiting out a restart throttle).
     Loaded,
     /// Loaded with a live process.
     Running {
@@ -124,7 +138,7 @@ pub struct CommandOutput {
 }
 
 impl CommandOutput {
-    fn success(&self) -> bool {
+    pub(crate) fn success(&self) -> bool {
         self.code == Some(0)
     }
 }
