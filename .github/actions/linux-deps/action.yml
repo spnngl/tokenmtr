@@ -1,0 +1,21 @@
+name: Linux build dependencies
+description: Installs the system libraries tauri links against, and optionally more packages.
+
+inputs:
+  extra:
+    description: Further apt packages, space separated.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        EXTRA: ${{ inputs.extra }}
+      # No libxdo-dev, the usual Tauri prerequisite: Cargo.lock has no libxdo.
+      run: |
+        sudo apt-get update
+        # shellcheck disable=SC2086
+        sudo apt-get install --yes --no-install-recommends \
+          build-essential file librsvg2-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev \
+          $EXTRA
