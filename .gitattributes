@@ -1,0 +1,26 @@
+# Normalize text to LF; tests compare bytes and hash lines.
+*               text=auto eol=lf
+
+*.rs            text diff=rust
+*.toml          text diff=toml
+*.md            text diff=markdown
+*.css           text diff=css
+*.html          text diff=html
+Cargo.lock      text
+
+# Byte-exact test data.
+fixtures/**     text eol=lf
+fuzz/seeds/**   -text
+*.snap          text eol=lf
+
+# Generated: collapsed in PR diffs, excluded from language stats.
+pricing/litellm.json                            linguist-generated -diff
+apps/desktop/src-tauri/gen/schemas/*.json       linguist-generated -diff
+apps/desktop/src/shared/bindings.ts             linguist-generated
+apps/desktop/src/shared/schemas/__fixtures__/** linguist-generated
+apps/desktop/pnpm-lock.yaml                     -diff
+
+# Binary assets.
+*.png           binary
+*.icns          binary
+*.ico           binary
