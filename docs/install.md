@@ -21,7 +21,21 @@ ln -s /Applications/TokenMtr.app/Contents/MacOS/tokenmtr /usr/local/bin/tokenmtr
 
 `tokenmtr config path` prints the config path in use.
 
+## Homebrew
+
+```sh
+brew install --cask spnngl/tap/tokenmtr
+```
+
+The cask installs the app to `/Applications` and links `tokenmtr` into Homebrew's `bin`. It also
+removes the quarantine flag, so step 2 does not apply, and starts the daemon (step 4). Every
+`brew upgrade` restarts the daemon on the new binary. Then continue at [step 3](#3-first-run).
+
+**Done when:** `tokenmtr service status` reports a running daemon.
+
 ## 1. Install the app
+
+Without Homebrew, download the `.dmg` from the [GitHub releases](https://github.com/spnngl/tokenmtr/releases).
 
 1. Open the `.dmg`.
 2. Drag `TokenMtr.app` onto `Applications`.
@@ -130,6 +144,10 @@ across updates of a signed build. If the prompt never appears, grant access by h
 
 ## 7. Uninstall
 
+With Homebrew, `brew uninstall --cask tokenmtr` quits the app and removes the daemon and the app.
+`brew uninstall --cask --zap tokenmtr` also deletes the config, the store, its backups, the logs and
+the cache. Without Homebrew:
+
 1. Optional: erase TokenMtr's data with the CLI before deleting it:
 
    ```sh
@@ -158,7 +176,7 @@ format drift, unresolved working directories, paths under protected folders, and
 | App shows "daemon offline" | `tokenmtr service status`; read `~/Library/Logs/tokenmtr/launchd.err.log`; run `tokenmtr service install`. |
 | "Move TokenMtr to Applications" | The app runs from the disk image or a translocated copy. Move it to `/Applications` and open it from there. |
 | "Update required" | The daemon speaks an older control protocol than the app. Click **Restart daemon from this app**: it repairs the plist to the bundled binary. |
-| Quota says `keychain_denied` | TokenMtr is missing from the item's access list: [step 6](#6-keychain-access-for-quota). After an update, `codesign -dv --verbose=2 /Applications/TokenMtr.app` must show `Authority=TokenMtr Local Signing`; another authority, or none, means the app was rebuilt or re-signed: reinstall it from the release `.dmg` and add it again. |
+| Quota says `keychain_denied` | TokenMtr is missing from the item's access list: [step 6](#6-keychain-access-for-quota). After an update, `codesign -dv --verbose=2 /Applications/TokenMtr.app` must show `Authority=TokenMtr Local Signing`; another authority, or none, means the app was rebuilt or re-signed: reinstall it from the release `.dmg` and add it again. To compare the certificate itself, run `codesign -d --extract-certificates=/tmp/tokenmtr-cert /Applications/TokenMtr.app && shasum -a 256 /tmp/tokenmtr-cert0`: the hash must equal the fingerprint in the release notes. |
 | Quota says `signed_out` or `token_expired` | Run `claude` and sign in again; TokenMtr never refreshes the token. |
 | Usage older than 30 days is missing | `doctor` shows `cleanupPeriodDays`: Claude already deleted those transcripts. Set it as in step 3. |
 | `protected_folder` issue | [Step 5](#5-folder-access). |
@@ -166,7 +184,9 @@ format drift, unresolved working directories, paths under protected folders, and
 ## Signing (maintainers)
 
 Release builds sign the app and the bundled CLI with the self-signed certificate **TokenMtr Local
-Signing** until Developer ID notarization replaces it. The name is the constant `IDENTITY` in
+Signing** until Developer ID notarization replaces it. The release workflow imports the same
+certificate from repository secrets ([release.md](release.md#ci-signing-secrets)); each GitHub
+release attaches its public part, `tokenmtr-signing.pem`. The name is the constant `IDENTITY` in
 [`scripts/signing.nu`](../scripts/signing.nu); `just release` passes it as `APPLE_SIGNING_IDENTITY`
 whenever the login keychain holds it, so local builds are signed too and keep the Keychain grant
 across rebuilds. Without the certificate `just release` warns and builds unsigned: macOS then asks

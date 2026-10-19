@@ -18,7 +18,11 @@ macOS only for now.
 
 ## Install
 
-See [docs/install.md](docs/install.md).
+```sh
+brew install --cask spnngl/tap/tokenmtr
+```
+
+Or download the `.dmg` from the [releases](https://github.com/spnngl/tokenmtr/releases). First run, permissions and uninstall: [docs/install.md](docs/install.md).
 
 ## Quick start
 
