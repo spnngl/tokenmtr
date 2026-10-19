@@ -1,0 +1,20 @@
+---
+source: crates/tokenmtr-metrics/tests/encode.rs
+expression: "encode(&sample(), Format::Plain)"
+---
+# HELP tokenmtr_build_info Constant 1; the label carries the TokenMtr version.
+# TYPE tokenmtr_build_info gauge
+tokenmtr_build_info{version="0.1.0"} 1
+# HELP tokenmtr_quota_used_ratio Share of the quota window used, from 0 to 1.
+# TYPE tokenmtr_quota_used_ratio gauge
+tokenmtr_quota_used_ratio{account="me@example.com",agent="claude",profile="default",window="5h"} 0.42
+# HELP tokenmtr_series Series in this output, this one included.
+# TYPE tokenmtr_series gauge
+tokenmtr_series 5
+# HELP tokenmtr_snapshot_timestamp_seconds When this snapshot of the store was computed, in Unix seconds.
+# TYPE tokenmtr_snapshot_timestamp_seconds gauge
+tokenmtr_snapshot_timestamp_seconds 1772323200
+# HELP tokenmtr_tokens_total Tokens used, by type.
+# TYPE tokenmtr_tokens_total counter
+tokenmtr_tokens_total{account="me@example.com",agent="claude",billing="subscription",client="cli",model="opus",profile="default",project="github.com/acme/app",provider="anthropic",type="output"} 1500
+tokenmtr_tokens_total{account="me@example.com",agent="claude",billing="subscription",client="cli",model="opus",profile="default",project="we\"ird\\path\nx",provider="anthropic",type="input_uncached"} 7

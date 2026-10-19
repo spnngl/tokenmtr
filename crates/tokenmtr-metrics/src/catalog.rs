@@ -3,6 +3,8 @@
 //! The encoders, the generated table in `docs/metrics.md` and the tests all read it, so a
 //! family cannot exist in one place and not another.
 
+use std::fmt::Write as _;
+
 /// What a family measures over time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -239,6 +241,35 @@ impl Family {
             Self::ToolCalls => "`tool_call` rows, all history",
         }
     }
+}
+
+/// The catalog as the Markdown table embedded in `docs/metrics.md`.
+#[must_use]
+pub fn catalog_markdown() -> String {
+    let mut out = String::from(
+        "| Metric | Type | Labels | Source | Meaning |\n| --- | --- | --- | --- | --- |\n",
+    );
+    for family in Family::ALL {
+        let kind = match family.kind() {
+            Kind::Counter => "counter",
+            Kind::Gauge => "gauge",
+        };
+        let labels = family
+            .labels()
+            .iter()
+            .map(|l| format!("`{l}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = writeln!(
+            out,
+            "| `{}` | {kind} | {labels} | {} | {} |",
+            family.name(),
+            family.source(),
+            family.help(),
+        );
+    }
+    out.pop();
+    out
 }
 
 /// Labels a redaction can hash or drop. `cwd` is not among them: no metric carries it.

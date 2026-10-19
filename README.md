@@ -73,6 +73,7 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | [docs/cli-json.md](docs/cli-json.md) | Stable JSON output of `status` and `recap`. |
 | [docs/status.schema.json](docs/status.schema.json) | JSON Schema of `tokenmtr status --json` and `recap --json`. |
 | [docs/export-schema.md](docs/export-schema.md) | Columns shared by every export sink. |
+| [docs/metrics.md](docs/metrics.md) | Prometheus exporter and remote write: the metric catalog, exclusions, redaction. |
 | [docs/control-protocol.md](docs/control-protocol.md) | How the CLI and the app talk to the daemon, and how the daemon watches files and shuts down. |
 | [docs/adding-a-sink.md](docs/adding-a-sink.md) | Steps to add an export sink. |
 | [docs/adding-a-platform.md](docs/adding-a-platform.md) | Steps to port TokenMtr to another OS. |

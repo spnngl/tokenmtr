@@ -22,6 +22,9 @@ pub enum MetricsError {
     /// Calendar or time-zone arithmetic left the supported range.
     #[error("time: {0}")]
     Time(#[from] jiff::Error),
+    /// A remote-write body could not be compressed.
+    #[error("snappy: {0}")]
+    Snappy(#[from] snap::Error),
 }
 
 impl MetricsError {

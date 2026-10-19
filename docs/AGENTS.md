@@ -9,6 +9,7 @@ Edit these from their source; the named test fails on drift and prints or names 
 | Part | Source | Test |
 | --- | --- | --- |
 | Table between the `schema:start`/`schema:end` markers in `export-schema.md` | `crates/tokenmtr-export/src/schema.rs` | `export_schema_doc_matches_the_code` (prints the replacement) |
+| Table between the `metrics:start`/`metrics:end` markers in `metrics.md` | `crates/tokenmtr-metrics/src/catalog.rs` | `metrics_doc_matches_the_catalog` (prints the replacement) |
 | First `toml` block of `config.md` | `crates/tokenmtr-config/tests/fixtures/example.toml` (edit both) | `docs_embed_the_example_verbatim` |
 | `status.schema.json` | `Status` and `Recap` in `crates/tokenmtr-query` | `apps/cli/tests/schema.rs`, `tests/e2e/tests/scenario.rs` |
 

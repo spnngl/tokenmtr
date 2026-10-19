@@ -27,12 +27,15 @@
 
 pub mod catalog;
 mod error;
+mod remote_write;
 mod scope;
 mod snapshot;
 #[cfg(test)]
 mod tests;
+pub mod text;
 
 pub use catalog::{Family, Kind};
 pub use error::MetricsError;
+pub use remote_write::{MAX_SERIES_PER_REQUEST, Request, Seen, WriteRequest, requests};
 pub use scope::{Folded, OutputScope, Series, Value};
 pub use snapshot::{Snapshot, SnapshotContext, snapshot};
