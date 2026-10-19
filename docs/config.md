@@ -439,7 +439,7 @@ A scrape endpoint: `GET /metrics` on `listen`, nothing else.
 | `id` | id | required | Unique among sinks and metrics outputs. |
 | `listen` | `host:port` | `"127.0.0.1:9464"` | Address to bind; unique among exporters. A non-loopback address exposes the metrics to the network, and macOS asks to allow incoming connections. |
 | `exclude_projects` | `[glob]` | none | Leave out events and tool calls whose project key (`host/owner/repo`), name or git remote matches. `*` does not cross `/`. |
-| `exclude_paths` | `[glob]` | none | Leave out events and tool calls whose working directory matches; `~` expands. An error with `privacy.redact_paths`, which stores hashes. |
+| `exclude_paths` | `[glob]` | none | Leave out events and tool calls whose working directory matches; `~` expands. `*` does not cross `/`, so `~/work/secret` leaves out only that directory: write `~/work/secret/**` for everything below it. An error with `privacy.redact_paths`, which stores hashes. |
 | `redact` | table of label to mode | none | Label `project`, `client`, `git_branch`, `account` or `session_id`; mode `hash` (the keyed hash sinks use) or `drop` (empty label). `cwd` is rejected: metrics never carry it. |
 | `auth` | table | none | Credentials a scraper must send; see below. |
 

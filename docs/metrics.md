@@ -100,7 +100,9 @@ shows less.
 - `exclude_projects` is a list of globs matched against the project key, the project name and the
   normalised git remote. `"github.com/acme/*"` drops every repository of `acme`.
 - `exclude_paths` is a list of globs matched against the working directory; `~` expands.
-- `*` stops at `/`; use `**` to cross directories.
+- `*` stops at `/`; use `**` to cross directories. A path alone matches only that directory:
+  `~/work/secret` does not leave out `~/work/secret/app`, `~/work/secret/**` does. Matching is
+  case-sensitive.
 - An event with no working directory (for `exclude_paths`) or no project (for `exclude_projects`)
   is never excluded. A tool call follows its event, or the earliest event of its session that has
   a working directory or a project.
@@ -115,7 +117,10 @@ shows less.
 `redact = { label = "hash" | "drop" }` rewrites a label of that output: `hash` is the keyed hash
 that sinks use (stable on this machine, different on another one, not reversible without the
 key), `drop` leaves the label empty and merges the series it makes equal. Labels that can be
-redacted: `project`, `client`, `git_branch`, `account`, `session_id`. Before pushing to a hosted
+redacted: `project`, `client`, `git_branch`, `account`, `session_id`. `profile`, `model`,
+`provider`, `tool` and `mcp_server` cannot be redacted: exclude the project instead when an MCP
+server name is private. The default `machine` external label is the host name; set
+`external_labels` to send something else. Before pushing to a hosted
 service, hash or drop `account` and `session_id` and read the label values once:
 `curl localhost:9464/metrics` shows exactly what leaves the machine.
 
@@ -133,7 +138,8 @@ The daemon starts from launchd, which does not pass your shell's environment. Pr
 To use `*_env`, run `launchctl setenv NAME value` and restart the daemon; the setting does not
 survive a reboot. A secret that cannot be read fails that output (`failing` in health, a
 `metrics_failing` alert after the grace period) and leaves the other outputs running. A secret is
-never printed or logged. An exporter that listens beyond loopback without `auth` logs a warning.
+never printed or logged. A secret is read when the output starts, so a rotated token is picked up
+after a daemon restart or a reload that changes the output, not before. An exporter that listens beyond loopback without `auth` logs a warning.
 
 ## Scraping
 

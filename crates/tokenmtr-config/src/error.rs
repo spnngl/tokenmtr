@@ -194,10 +194,10 @@ pub enum Violation {
     #[error("listens on the same address as exporter {0}")]
     ListenClash(SinkId),
     /// `url` is not an absolute http(s) URL with a host.
-    #[error("invalid url {url:?}: {reason}")]
+    #[error("invalid url: {reason}")]
+    ///
+    /// The value is not echoed: it may hold a credential in its user info or query.
     InvalidUrl {
-        /// The value as written.
-        url: String,
         /// Why it was rejected.
         reason: String,
     },

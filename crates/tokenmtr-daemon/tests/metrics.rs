@@ -214,6 +214,41 @@ async fn a_reload_that_adds_an_exclusion_removes_the_series() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_reload_that_changes_only_the_auth_rebinds_the_same_port_without_a_failure() -> TestResult
+{
+    let env = Env::new()?;
+    seed_logs(&env)?;
+    let port = free_port()?;
+    configure(&env, &exporter("local", port, ""))?;
+    let daemon = env.start(timing()).await?;
+    assert!(eventually_async(WAIT, || has(port, "tokenmtr_build_info{")).await);
+
+    configure(
+        &env,
+        &exporter(
+            "local",
+            port,
+            "auth = { kind = \"bearer\", token = \"t0ken\" }",
+        ),
+    )?;
+    env.client().await?.reload().await?;
+    assert!(
+        eventually_async(WAIT, || async {
+            scrape(port, None).await.is_none() && scrape(port, Some("t0ken")).await.is_some()
+        })
+        .await,
+        "the new auth never took over"
+    );
+    assert!(
+        runs(&env, "local")?.iter().all(|r| r.error.is_none()),
+        "{:?}",
+        runs(&env, "local")?
+    );
+    daemon.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_sessions_series_disappears_at_its_expiry_with_no_new_write() -> TestResult {
     let env = Env::new()?;
     // The only event of session s1 is 12 s short of leaving the one-hour window.
