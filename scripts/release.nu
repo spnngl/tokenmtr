@@ -1,6 +1,8 @@
-# Builds the `.app` and `.dmg`. Run through `just release`, which runs the gates first.
+# Builds the `.app` and `.dmg` on macOS, the `.deb` and `.rpm` on Linux. Run through `just release`,
+# which runs the gates first. Linux packages are not signed here (the release workflow signs the
+# checksums).
 #
-# Signs with the stable local identity from `signing.nu` when the login keychain holds it; create
+# On macOS signs with the stable local identity from `signing.nu` when the login keychain holds it; create
 # it once with `just signing-cert`. A stable signature keeps the Keychain's "Always Allow" grant and
 # the macOS folder grants across rebuilds. Without the identity the build is unsigned (the linker's
 # ad-hoc signature only) and says so; `--unsigned` skips signing even when the identity exists.
@@ -17,7 +19,7 @@ def main [
     --unsigned # Skip code signing (local test builds only).
 ] {
     let root = ($env.FILE_PWD | path expand | path dirname)
-    let signing = if $unsigned {
+    let signing = if $unsigned or $nu.os-info.name != "macos" {
         {}
     } else if (has-identity) {
         { APPLE_SIGNING_IDENTITY: $IDENTITY }
@@ -36,5 +38,7 @@ def main [
     } else {
         $target_dir | path join $target "release"
     }
-    glob ($release_dir | path join "bundle" "dmg" "*.dmg") | each {|dmg| print $"dmg: ($dmg)" } | ignore
+    for kind in [dmg deb rpm] {
+        glob ($release_dir | path join "bundle" $kind $"*.($kind)") | each {|file| print $"($kind): ($file)" } | ignore
+    }
 }

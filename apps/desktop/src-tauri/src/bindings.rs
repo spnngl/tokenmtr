@@ -104,4 +104,14 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The Linux packages take their name from `productName` (kebab-cased), so it must be the
+    /// CLI name: the deb, the rpm and `/usr/share/doc/<name>` agree with `tokenmtr`.
+    #[test]
+    fn linux_packages_are_named_after_the_cli() -> Result<(), Box<dyn std::error::Error>> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.linux.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+        assert_eq!(conf["productName"].as_str(), Some(brand::CLI_NAME));
+        Ok(())
+    }
 }
