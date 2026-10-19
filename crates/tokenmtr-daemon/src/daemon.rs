@@ -21,6 +21,7 @@ use crate::changes::std_duration;
 use crate::ctx::{Active, Ctx, Job, QuotaResets, Runtime, lock};
 use crate::error::DaemonError;
 use crate::handler::ControlHandler;
+use crate::metrics::Metrics;
 use crate::reload::{ReloadCause, config_bytes, watch_plan};
 use crate::scheduler::Scheduler;
 use crate::settings::Settings;
@@ -111,6 +112,8 @@ impl Daemon {
         self.stop.send_replace(true);
         let drained = tokio::time::timeout_at(deadline, async {
             while self.tasks.join_next().await.is_some() {}
+            // No job runs any more, so no server can start while these stop.
+            self.ctx.stop_metrics().await;
             (&mut self.server).await
         })
         .await;
@@ -145,15 +148,17 @@ async fn build(
     let open_ingest = ingest.clone();
     let stopping = Arc::new(AtomicBool::new(false));
     let open_stopping = Arc::clone(&stopping);
-    let (store, beat, exports, reader, ingestor) = tokio::task::spawn_blocking(move || {
-        let store = Store::open(&open_path)?;
-        let beat = Store::open(&open_path)?;
-        let exports = Store::open(&open_path)?;
-        let reader = StoreReader::open(&open_path)?;
-        let ingestor = Ingestor::open(open_ingest, &open_path)?.with_stop(open_stopping);
-        Ok::<_, DaemonError>((store, beat, exports, reader, ingestor))
-    })
-    .await??;
+    let (store, beat, exports, reader, ingestor, metrics) =
+        tokio::task::spawn_blocking(move || {
+            let store = Store::open(&open_path)?;
+            let beat = Store::open(&open_path)?;
+            let exports = Store::open(&open_path)?;
+            let reader = StoreReader::open(&open_path)?;
+            let ingestor = Ingestor::open(open_ingest, &open_path)?.with_stop(open_stopping);
+            let metrics = Metrics::new(Store::open(&open_path)?, StoreReader::open(&open_path)?);
+            Ok::<_, DaemonError>((store, beat, exports, reader, ingestor, metrics))
+        })
+        .await??;
 
     let sinks = Ctx::build_sinks(&settings.paths, &config);
     let plan = watch_plan(&config, &ingest, &ingestor);
@@ -166,6 +171,7 @@ async fn build(
         store: Mutex::new(store),
         beat: Mutex::new(beat),
         exports: Mutex::new(exports),
+        metrics,
         reader: Mutex::new(reader),
         ingestor: Mutex::new(ingestor),
         stopping,
@@ -341,6 +347,9 @@ async fn run_job(ctx: Arc<Ctx>, job: Job) {
                 tracing::warn!(%error, "export task failed");
             }
         }
+        Job::MetricsRefresh => ctx.refresh_metrics().await,
+        Job::RemoteWrite(output) => ctx.push_remote_write(output).await,
+        Job::ExporterBind(output) => ctx.bind_exporter(output).await,
         Job::Publish => ctx.publish(),
         Job::Reload => {
             // The error is logged and kept as `config_error` by `reload`.

@@ -33,6 +33,9 @@ pub enum DaemonError {
     /// A query failed.
     #[error("query: {0}")]
     Query(#[from] QueryError),
+    /// The metrics snapshot failed.
+    #[error("metrics: {0}")]
+    Metrics(#[from] tokenmtr_metrics::MetricsError),
     /// Another daemon owns the control socket.
     #[error("another daemon is already running (control socket {0})")]
     AlreadyRunning(Utf8PathBuf),

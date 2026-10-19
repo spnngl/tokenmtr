@@ -57,6 +57,8 @@ impl Ctx {
         self.scheduler
             .schedule(Job::Publish, publish_at, Duration::ZERO);
 
+        self.wake_metrics(changed, now);
+
         let active = self.active();
         for sink in &active.config.sinks {
             if !sink

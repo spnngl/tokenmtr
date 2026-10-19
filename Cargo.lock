@@ -6542,6 +6542,7 @@ dependencies = [
  "tokenmtr-control",
  "tokenmtr-core",
  "tokenmtr-export",
+ "tokenmtr-metrics",
  "tokenmtr-platform",
  "tokenmtr-query",
  "tokenmtr-remote",

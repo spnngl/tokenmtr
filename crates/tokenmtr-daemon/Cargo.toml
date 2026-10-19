@@ -16,6 +16,7 @@ tokenmtr-config.workspace = true
 tokenmtr-control.workspace = true
 tokenmtr-core.workspace = true
 tokenmtr-export.workspace = true
+tokenmtr-metrics.workspace = true
 tokenmtr-platform.workspace = true
 tokenmtr-query.workspace = true
 tokenmtr-remote.workspace = true
@@ -25,13 +26,13 @@ camino.workspace = true
 jiff.workspace = true
 notify.workspace = true
 reqwest.workspace = true
+secrecy.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true
-secrecy.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

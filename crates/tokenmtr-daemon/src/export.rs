@@ -34,6 +34,25 @@ impl From<&SinkRunOutcome> for SinkOutcome {
     }
 }
 
+/// `delay`, shortened so the next attempt falls when the `sink_failing` alert of a streak that
+/// began at `since` is due, not at the next back-off: the alert must fire on time.
+pub(crate) fn before_alert(
+    delay: Duration,
+    since: Timestamp,
+    config: &tokenmtr_config::Config,
+) -> Duration {
+    let threshold = config.alerts.rules.sink_failing_after;
+    let remaining = since
+        .checked_add(threshold)
+        .map(|due| due.duration_since(Timestamp::now()))
+        .ok()
+        .and_then(|remaining| Duration::try_from(remaining).ok())
+        .filter(|remaining| !remaining.is_zero());
+    remaining.map_or(delay, |remaining| {
+        delay.min(remaining.max(Duration::from_millis(100)))
+    })
+}
+
 impl Ctx {
     /// Exports `only` (every sink when `None`) at `priority`.
     pub(crate) async fn export(
@@ -111,18 +130,7 @@ impl Ctx {
             runtime.failing_since = Some(since);
             runtime.failures
         };
-        let mut delay = self.retry_delay(interval, failures);
-        // The `sink_failing` alert must fire when its threshold passes, not at the next backoff.
-        let threshold = active.config.alerts.rules.sink_failing_after;
-        let remaining = since
-            .checked_add(threshold)
-            .map(|due| due.duration_since(now))
-            .ok()
-            .and_then(|remaining| Duration::try_from(remaining).ok())
-            .filter(|remaining| !remaining.is_zero());
-        if let Some(remaining) = remaining {
-            delay = delay.min(remaining.max(Duration::from_millis(100)));
-        }
+        let delay = before_alert(self.retry_delay(interval, failures), since, &active.config);
         self.scheduler
             .schedule_in(Job::Export(outcome.sink.clone()), delay, Duration::ZERO);
     }

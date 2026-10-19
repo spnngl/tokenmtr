@@ -8,6 +8,8 @@ The store's writer whenever it runs. The crate doc in `src/lib.rs` lists its tas
 - Store work runs through `Ctx::blocking`: `ThreadPriority::Background` for scheduled work, `UserInitiated` for work a user waits on (control requests).
 - Long work checks `Ctx::stopping` between files or pages, so shutdown stays within its grace.
 - Network jobs run only while their config flag is on; `tests/network.rs` proves the daemon sends nothing when they are off.
+- Metrics outputs exist only while a `[[metrics.*]]` entry does: with none, nothing is bound, computed or recorded (`tests/metrics.rs`). `Ctx::arm_metrics` is state-driven (it keeps the server, `Seen` set and timers of an unchanged output), the refresh is rate-limited to `refresh_interval` and woken by changed datasets, and a session's expiry arms its own refresh.
+- A failing output retries with `Timing.metrics_backoff` doubling up to `export_retry_cap`, shortened by `before_alert` so the `metrics_failing` alert fires on time. Secrets are resolved at bind or push time, never at config load, and never logged.
 
 ## Adding a scheduled job
 
