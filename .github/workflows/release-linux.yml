@@ -1,0 +1,143 @@
+name: release-linux
+
+# Builds the deb and the rpm for each architecture, checks them, and installs the deb on a fresh
+# runner, for `release.yml`, which publishes them. Called only from there (docs/release.md).
+on:
+  workflow_call:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Built on the newest Ubuntu, so the packages require its glibc (tauri.linux.conf.json).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-26.04, arch: amd64, rpm_arch: x86_64 }
+          - { runner: ubuntu-26.04-arm, arch: arm64, rpm_arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      # Actions pinned to a commit, as in release-macos.yml.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # No cache on purpose: a release must not build from state a pull request could write.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          # renovate: datasource=github-releases depName=casey/just
+          just-version: "1.59.0"
+      - uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28 (scripts/release.nu)
+        with:
+          # renovate: datasource=github-releases depName=nushell/nushell
+          version: "0.116.1"
+      - uses: ./.github/actions/linux-deps
+        with:
+          extra: lintian rpm rpmlint
+
+      - run: pnpm -C apps/desktop install --frozen-lockfile
+      # The desktop crate embeds apps/desktop/dist, so `just check` needs the UI built once.
+      - run: pnpm -C apps/desktop run build
+      # `just release` runs `just check` first.
+      - run: just release
+
+      - name: Check the packages
+        env:
+          TAG: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+          RPM_ARCH: ${{ matrix.rpm_arch }}
+        run: |
+          version="${TAG#v}"
+          bundle=target/release/bundle
+          deb="$bundle/deb/tokenmtr_${version}_${ARCH}.deb"
+          rpm="$bundle/rpm/tokenmtr-${version}-1.${RPM_ARCH}.rpm"
+          # Exactly these two files: a stray name means the product name or version drifted.
+          packages=("$bundle"/deb/*.deb "$bundle"/rpm/*.rpm)
+          [ "${#packages[@]}" = 2 ]
+          test -f "$deb"
+          test -f "$rpm"
+
+          # Each dependency appears exactly once; Tauri adds none of its own (tauri.linux.conf.json).
+          [ "$(dpkg-deb -f "$deb" Package)" = tokenmtr ]
+          [ "$(dpkg-deb -f "$deb" Version)" = "$version" ]
+          [ "$(dpkg-deb -f "$deb" Architecture)" = "$ARCH" ]
+          dpkg-deb -f "$deb" Maintainer | grep -Fx 'Lola Delannoy <lola.2lannoy@gmail.com>'
+          depends=$(dpkg-deb -f "$deb" Depends | tr ',' '\n' | sed 's/^ *//; s/ *$//')
+          for dependency in 'libc6 (>= 2.43)' libayatana-appindicator3-1; do
+            [ "$(printf '%s\n' "$depends" | grep -Fxc "$dependency")" = 1 ] || { echo "::error::deb Depends lacks '$dependency': $depends"; exit 1; }
+          done
+          requires=$(rpm -qpR "$rpm")
+          for dependency in 'libc.so.6(GLIBC_2.43)(64bit)' 'libayatana-appindicator3.so.1()(64bit)'; do
+            [ "$(printf '%s\n' "$requires" | grep -Fxc "$dependency")" = 1 ] || { echo "::error::rpm Requires lacks '$dependency': $requires"; exit 1; }
+          done
+
+          # The files both packages must install.
+          deb_files=$(dpkg-deb -c "$deb" | awk '{print $6}')
+          rpm_files=$(rpm -qpl "$rpm")
+          for file in /usr/bin/tokenmtr /usr/bin/tokenmtr-desktop /usr/share/applications/tokenmtr.desktop; do
+            printf '%s\n' "$deb_files" | grep -Fx ".$file" || { echo "::error::deb lacks $file"; exit 1; }
+            printf '%s\n' "$rpm_files" | grep -Fx "$file" || { echo "::error::rpm lacks $file"; exit 1; }
+          done
+          printf '%s\n' "$deb_files" | grep -Fx ./usr/share/doc/tokenmtr/copyright
+          printf '%s\n' "$deb_files" | grep -Fx ./usr/share/doc/tokenmtr/changelog.gz
+          printf '%s\n' "$rpm_files" | grep -Fx /usr/share/licenses/tokenmtr/LICENSE
+
+          lintian --fail-on error "$deb"
+          rpmlint "$rpm"
+
+          # The sidecar the daemon runs reports the tagged version.
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb"
+          "$RUNNER_TEMP/deb/usr/bin/tokenmtr" --version | grep -Fx "tokenmtr $version"
+
+          mkdir "$RUNNER_TEMP/assets"
+          cp "$deb" "$rpm" "$RUNNER_TEMP/assets/"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/assets/*
+          if-no-files-found: error
+
+  # A fresh runner without the -dev packages: the deb must bring what it needs at run time.
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-26.04, arch: amd64 }
+          - { runner: ubuntu-26.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+      - name: Install and run
+        env:
+          TAG: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes "./tokenmtr_${TAG#v}_${ARCH}.deb"
+          tokenmtr --version | grep -Fx "tokenmtr ${TAG#v}"
+          missing=$(ldd /usr/bin/tokenmtr-desktop /usr/bin/tokenmtr | grep -F 'not found' || true)
+          [ -z "$missing" ] || { echo "::error::unresolved libraries: $missing"; exit 1; }
+          # dlopen()ed, so ldd cannot see it.
+          dpkg -s libayatana-appindicator3-1

@@ -1,0 +1,113 @@
+name: release-macos
+
+# Builds, signs and verifies the universal dmg for `release.yml`, which publishes it. Called only
+# from there, so the signing key reaches nothing else (docs/release.md).
+on:
+  workflow_call:
+    secrets:
+      MACOS_SIGNING_P12_BASE64:
+        required: true
+      MACOS_SIGNING_P12_PASSWORD:
+        required: true
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: universal-apple-darwin
+
+jobs:
+  build:
+    runs-on: macos-latest # Apple Silicon (arm64); builds both Apple triples
+    permissions:
+      contents: read
+    steps:
+      # Actions pinned to a commit: this job holds the signing key.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # No cache on purpose: a release must not build from state a pull request could write.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          # renovate: datasource=github-releases depName=casey/just
+          just-version: "1.59.0"
+      - uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28 (scripts/release.nu)
+        with:
+          # renovate: datasource=github-releases depName=nushell/nushell
+          version: "0.116.1"
+
+      # A throwaway keychain holds the identity; `release.nu` finds it through the search list.
+      # Trusting the self-signed certificate makes `security find-identity -v` list it.
+      - name: Import the signing certificate
+        env:
+          P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "::error::MACOS_SIGNING_P12_BASE64 and MACOS_SIGNING_P12_PASSWORD must be set: an unsigned build is never published"
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -f pkcs12 -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/signing.p12"
+          # A .p12 missing the certificate or the key imports without error but cannot sign.
+          if ! security find-identity -p codesigning "$keychain" | grep -qF '"TokenMtr Local Signing"'; then
+            # Item classes and labels only, no key material: 0x00000010 is a private key, 0x80001000 a certificate.
+            echo "Imported items:"
+            security dump-keychain "$keychain" | grep -E '^class|"labl"' || true
+            echo "::error::The .p12 does not hold both the certificate and the private key of TokenMtr Local Signing (items above): export it from My Certificates (docs/release.md)"
+            exit 1
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          # shellcheck disable=SC2046 # one word per keychain path
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-certificate -c "TokenMtr Local Signing" -p "$keychain" > "$RUNNER_TEMP/tokenmtr-signing.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/tokenmtr-signing.pem"
+          security find-identity -v -p codesigning | grep -F '"TokenMtr Local Signing"'
+
+      - run: pnpm -C apps/desktop install --frozen-lockfile
+      # The desktop crate embeds apps/desktop/dist, so `just check` needs the UI built once.
+      - run: pnpm -C apps/desktop run build
+      # `just release` runs `just check` first.
+      - run: just release --target "$TARGET"
+
+      - name: Verify the artifact
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          bundle="target/$TARGET/release/bundle"
+          app="$bundle/macos/TokenMtr.app"
+          dmg="$bundle/dmg/TokenMtr_${TAG#v}_universal.dmg"
+          test -f "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          # Authority lines need verbosity 2.
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -Fx "Authority=TokenMtr Local Signing"
+          archs=$(lipo -archs "$app/Contents/MacOS/tokenmtr")
+          [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || { echo "::error::tokenmtr archs: $archs"; exit 1; }
+          "$app/Contents/MacOS/tokenmtr" --version | grep -Fx "tokenmtr ${TAG#v}"
+          # The public certificate lets users compare the signature; never the key.
+          mkdir "$RUNNER_TEMP/assets"
+          cp "$dmg" "$RUNNER_TEMP/tokenmtr-signing.pem" "$RUNNER_TEMP/assets/"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos
+          path: ${{ runner.temp }}/assets/*
+          if-no-files-found: error
