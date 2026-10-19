@@ -170,6 +170,77 @@ pub enum Violation {
         /// The offending key.
         field: &'static str,
     },
+    /// A metrics output reuses an id of a sink or of another output.
+    #[error("id {0} is already used by a sink or another metrics output")]
+    DuplicateOutputId(SinkId),
+    /// `exclude_paths` cannot match: `privacy.redact_paths` hashes every working directory at
+    /// ingest.
+    #[error(
+        "exclude_paths cannot match hashed paths; turn off privacy.redact_paths or use exclude_projects"
+    )]
+    ExcludePathsWithRedactedPaths,
+    /// `redact` names a column that is not a metric label.
+    #[error("`{0}` is not a metric label; metrics never carry the working directory")]
+    NotAMetricLabel(&'static str),
+    /// `listen` is not a socket address.
+    #[error("invalid listen address {value:?}: {reason}")]
+    InvalidListen {
+        /// The value as written.
+        value: String,
+        /// Why it was rejected.
+        reason: String,
+    },
+    /// Two exporters listen on the same address.
+    #[error("listens on the same address as exporter {0}")]
+    ListenClash(SinkId),
+    /// `url` is not an absolute http(s) URL with a host.
+    #[error("invalid url {url:?}: {reason}")]
+    InvalidUrl {
+        /// The value as written.
+        url: String,
+        /// Why it was rejected.
+        reason: String,
+    },
+    /// `url` is plain http to a host that is not this machine.
+    #[error(
+        "url must use https unless it points at this machine (localhost or a loopback address)"
+    )]
+    InsecureUrl,
+    /// `url` carries credentials; they belong under `auth`.
+    #[error("url must not contain credentials; use `auth`")]
+    UrlCredentials,
+    /// An `auth` table gives a secret in zero or several ways.
+    #[error("give exactly one of {options}")]
+    SecretSourceCount {
+        /// The accepted keys, as written in config.
+        options: &'static str,
+    },
+    /// An `auth` table sets a key its `kind` does not use.
+    #[error("auth kind `{kind}` does not accept `{field}`")]
+    AuthFieldNotAllowed {
+        /// The auth kind.
+        kind: &'static str,
+        /// The offending key.
+        field: &'static str,
+    },
+    /// `auth.kind = "basic"` has no `username`.
+    #[error("auth kind `basic` needs `username`")]
+    UsernameRequired,
+    /// A basic-auth `username` contains `:`, which HTTP basic auth cannot carry.
+    #[error("username must not contain `:`")]
+    UsernameColon,
+    /// A text value that must carry something is empty or blank.
+    #[error("value must not be blank")]
+    BlankValue,
+    /// A value contains a control character or, for a header, a newline.
+    #[error("value must be printable text on one line")]
+    NotPrintable,
+    /// An `external_labels` key is not a Prometheus label name.
+    #[error("{0:?} is not a valid label name: use [a-zA-Z_][a-zA-Z0-9_]* and no `__` prefix")]
+    InvalidLabelName(String),
+    /// An `external_labels` key is a label the metrics already carry.
+    #[error("label {0:?} is already set by the metrics and cannot be an external label")]
+    ReservedLabel(String),
     /// A list names a disabled agent.
     #[error("agent `{0}` is disabled; enable it under [agents.{0}] or remove it here")]
     AgentDisabled(AgentId),

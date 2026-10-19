@@ -138,6 +138,33 @@ dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant acces
 mode = "append"
 redact = { cwd = "hash", git_branch = "drop" }
 
+[metrics]
+refresh_interval = "30s"       # min time between snapshot recomputes; at least "5s"
+session_window = "2d"          # session metrics keep sessions with an event this recent; at least "1h"
+
+[[metrics.exporters]]
+id = "local"
+listen = "127.0.0.1:9464"      # default; any address works, a non-loopback one triggers the macOS firewall prompt
+
+[[metrics.exporters]]
+id = "lan"
+listen = "0.0.0.0:9465"
+exclude_projects = ["github.com/acme/*"]   # project key, name or git remote
+exclude_paths = ["~/work/private/**"]      # working directory
+redact = { account = "hash" }
+auth = { kind = "bearer", token_file = "~/.config/tokenmtr/scrape.secret" }  # chmod 600
+
+[[metrics.remote_write]]
+id = "grafana"
+url = "https://prometheus-prod-01-eu-west-0.grafana.net/api/prom/push"
+interval = "1m"                # at least "10s"
+exclude_projects = ["*/personal-*"]
+redact = { session_id = "hash", account = "drop" }
+# tenant = "team-a"            # X-Scope-OrgID
+# auth = { kind = "basic", username = "123456", password_env = "TOKENMTR_RW_PASSWORD" }
+# auth = { kind = "bearer", token = "glc_..." }    # plaintext in the file: protect it
+# external_labels = { site = "home" }              # default: { machine = <machine.name> }
+
 # [[sinks]]                    # planned, not accepted yet
 # id = "warehouse"
 # kind = "postgres"

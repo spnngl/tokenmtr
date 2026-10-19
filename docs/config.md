@@ -158,6 +158,33 @@ dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant acces
 mode = "append"
 redact = { cwd = "hash", git_branch = "drop" }
 
+[metrics]
+refresh_interval = "30s"       # min time between snapshot recomputes; at least "5s"
+session_window = "2d"          # session metrics keep sessions with an event this recent; at least "1h"
+
+[[metrics.exporters]]
+id = "local"
+listen = "127.0.0.1:9464"      # default; any address works, a non-loopback one triggers the macOS firewall prompt
+
+[[metrics.exporters]]
+id = "lan"
+listen = "0.0.0.0:9465"
+exclude_projects = ["github.com/acme/*"]   # project key, name or git remote
+exclude_paths = ["~/work/private/**"]      # working directory
+redact = { account = "hash" }
+auth = { kind = "bearer", token_file = "~/.config/tokenmtr/scrape.secret" }  # chmod 600
+
+[[metrics.remote_write]]
+id = "grafana"
+url = "https://prometheus-prod-01-eu-west-0.grafana.net/api/prom/push"
+interval = "1m"                # at least "10s"
+exclude_projects = ["*/personal-*"]
+redact = { session_id = "hash", account = "drop" }
+# tenant = "team-a"            # X-Scope-OrgID
+# auth = { kind = "basic", username = "123456", password_env = "TOKENMTR_RW_PASSWORD" }
+# auth = { kind = "bearer", token = "glc_..." }    # plaintext in the file: protect it
+# external_labels = { site = "home" }              # default: { machine = <machine.name> }
+
 # [[sinks]]                    # planned, not accepted yet
 # id = "warehouse"
 # kind = "postgres"
@@ -393,6 +420,57 @@ Every agent has a `default` profile, added with discovery paths when the file om
 | `path` | path | platform | `sqlite` only: database file. |
 
 A key that does not apply to the sink's `kind` is an error. Two sinks that would write the same files are an error: same `kind`, same `dir` or `path`, and a dataset in common. An unset `dir` or `path` means the exports directory, so two such sinks of one kind clash; give one of them its own `dir` or `path`, or disjoint `datasets`.
+
+### `[metrics]`
+
+Prometheus outputs, built from the store: tokens, events, tool calls and quota, with no money. Nothing runs without an output entry. `docs/metrics.md` lists the metrics.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `refresh_interval` | duration | `"30s"` | Minimum time between snapshot recomputes. At least `"5s"`. |
+| `session_window` | duration | `"2d"` | The `tokenmtr_session_*` metrics keep sessions whose last usage event is this recent. At least `"1h"`. |
+
+### `[[metrics.exporters]]`
+
+A scrape endpoint: `GET /metrics` on `listen`, nothing else.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `id` | id | required | Unique among sinks and metrics outputs. |
+| `listen` | `host:port` | `"127.0.0.1:9464"` | Address to bind; unique among exporters. A non-loopback address exposes the metrics to the network, and macOS asks to allow incoming connections. |
+| `exclude_projects` | `[glob]` | none | Leave out events and tool calls whose project key (`host/owner/repo`), name or git remote matches. `*` does not cross `/`. |
+| `exclude_paths` | `[glob]` | none | Leave out events and tool calls whose working directory matches; `~` expands. An error with `privacy.redact_paths`, which stores hashes. |
+| `redact` | table of label to mode | none | Label `project`, `client`, `git_branch`, `account` or `session_id`; mode `hash` (the keyed hash sinks use) or `drop` (empty label). `cwd` is rejected: metrics never carry it. |
+| `auth` | table | none | Credentials a scraper must send; see below. |
+
+### `[[metrics.remote_write]]`
+
+Pushes the metrics to a Prometheus remote-write receiver every `interval`.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `id` | id | required | Unique among sinks and metrics outputs. |
+| `url` | URL | required | `https`, or `http` to `localhost` or a loopback address. No credentials in the URL. |
+| `interval` | duration | `"1m"` | Time between pushes. At least `"10s"`. |
+| `exclude_projects`, `exclude_paths`, `redact` | | | As for exporters. |
+| `tenant` | string | none | Sent as `X-Scope-OrgID`. |
+| `auth` | table | none | Credentials sent to the receiver; see below. |
+| `external_labels` | table of string | `{ machine = <machine.name> }` | Labels added to every series. A name must match `[a-zA-Z_][a-zA-Z0-9_]*`, not start with `__` and not be a label the metrics carry (`agent`, `profile`, `provider`, `model`, `project`, `client`, `account`, `billing`, `session_id`, `git_branch`, `type`, `kind`, `tool`, `mcp_server`, `error`, `window`, `version`). |
+
+An exclusion or redaction applies to its own output only.
+
+### `auth` of a metrics output
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `basic`, `bearer` | Required. |
+| `username` | string | `basic` only; required; no `:`. |
+| `password`, `password_env`, `password_file` | string | `basic` only: exactly one. The value, the name of an environment variable of the daemon, or the path of a file holding it. |
+| `token`, `token_env`, `token_file` | string | `bearer` only: exactly one, as above. |
+
+A value in the config file is allowed; protect the file. `*_env` and `*_file` are read when the output starts, not when the config loads, so an unset variable or an unreadable file fails that output (it shows as failing in Status) and never the config. An exporter whose secret is missing does not open its port. A file readable by group or others is refused, and one trailing newline is trimmed. Under launchd, prefer `*_file`: a variable set with `launchctl setenv` is gone after a reboot.
+
+Output ids share one namespace with `[[sinks]]` ids.
 
 ## Editing the file
 

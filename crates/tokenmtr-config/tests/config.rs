@@ -134,6 +134,24 @@ fn the_example_parses() {
     ));
     assert_eq!(sinks[2].redact.len(), 2);
     assert_eq!(sinks[0].datasets.len(), 5);
+
+    let metrics = &config.metrics;
+    assert_eq!(metrics.refresh_interval, SignedDuration::from_secs(30));
+    assert_eq!(metrics.session_window, SignedDuration::from_hours(48));
+    assert_eq!(metrics.exporters.len(), 2);
+    assert_eq!(metrics.exporters[0].listen.to_string(), "127.0.0.1:9464");
+    assert_eq!(metrics.exporters[1].listen.to_string(), "0.0.0.0:9465");
+    assert!(
+        metrics.exporters[1]
+            .filter
+            .exclude_paths
+            .is_match("/home/u/work/private/a/b")
+    );
+    assert_eq!(metrics.remote_write.len(), 1);
+    assert_eq!(
+        metrics.remote_write[0].interval,
+        SignedDuration::from_mins(1)
+    );
 }
 
 #[test]
@@ -178,6 +196,15 @@ fn an_empty_file_is_the_default_config() {
     assert_eq!(config.git, GitConfig::default());
     assert_eq!(config.git.default_remote, GitName::origin());
     assert!(config.subscriptions.is_empty() && config.sinks.is_empty());
+    assert!(config.metrics.exporters.is_empty() && config.metrics.remote_write.is_empty());
+    assert_eq!(
+        config.metrics.refresh_interval,
+        SignedDuration::from_secs(30)
+    );
+    assert_eq!(
+        config.metrics.session_window,
+        SignedDuration::from_hours(48)
+    );
     assert!(config.pricing.auto_update);
     assert!(!config.privacy.redact_paths);
     assert_eq!(config.logging.format, LogFormat::Text);
