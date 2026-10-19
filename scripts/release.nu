@@ -6,6 +6,9 @@
 # ad-hoc signature only) and says so; `--unsigned` skips signing even when the identity exists.
 # `--target universal-apple-darwin` builds one bundle for Apple silicon and Intel.
 # `tauri build` runs `build-sidecar.nu` (see `tauri.release.conf.json`) before compiling the app.
+# `CI=true` makes Tauri's `bundle_dmg.sh` skip its Finder AppleScript: the window it opens on the
+# mounted image keeps the volume busy, so the detach fails ("Resource busy"), and headless sessions
+# have no Finder at all. The dmg then opens with Finder's default layout.
 
 use signing.nu [IDENTITY has-identity]
 
@@ -23,7 +26,7 @@ def main [
         {}
     }
     let target_args = if $target == null { [] } else { [--target $target] }
-    with-env $signing {
+    with-env ($signing | merge { CI: "true" }) {
         cd ($root | path join "apps" "desktop")
         ^pnpm tauri build --config src-tauri/tauri.release.conf.json ...$target_args
     }

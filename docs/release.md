@@ -30,7 +30,7 @@ The sidecar is not in the base `tauri.conf.json` so that `cargo clippy --workspa
 
 ## Build gotchas
 
-- **Headless or SSH session:** run `CI=true just release …`. Tauri's `bundle_dmg.sh` then skips the Finder AppleScript that lays out the dmg window, which fails without a logged-in Finder.
+- **Plain dmg layout:** `release.nu` sets `CI=true`, so Tauri's `bundle_dmg.sh` skips the Finder AppleScript that lays out the dmg window. That script fails without a logged-in Finder, and its open window often keeps the volume busy (`hdiutil: couldn't unmount "diskN" - Resource busy`). If a dmg build still fails that way, eject the leftover `TokenMtr` volume in Finder and rerun.
 - **`rust-objcopy` cannot load `libLLVM.dylib`** (rustup toolchain 1.99.1): link the library next to the tool's expected path, once per toolchain:
 
   ```sh
