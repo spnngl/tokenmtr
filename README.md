@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, and CSV/JSONL/SQLite exports. Session data stays on your machine; only quota, FX-rate and price-list lookups use the network.
+Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, and CSV/JSONL/SQLite exports. Session data stays on your machine; only quota, FX-rate and price-list lookups use the network, plus the Prometheus remote-write endpoints you configure (token counts only, and off unless configured).
 
 Screenshots: not added yet.
 

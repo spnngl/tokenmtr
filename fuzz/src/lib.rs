@@ -27,6 +27,7 @@ pub const TARGETS: &[(&str, Entry)] = &[
     ("quota_response", quota_response),
     ("ecb_xml", ecb_xml),
     ("config", config),
+    ("accept_header", accept_header),
 ];
 
 /// One Claude transcript line.
@@ -98,4 +99,13 @@ pub fn config(data: &[u8]) {
         return;
     };
     let _ = load_str(text, ConfigFormat::Toml(TomlCodec), &HomeOnly);
+}
+
+/// An `Accept` or `Accept-Encoding` request header of a scrape.
+pub fn accept_header(data: &[u8]) {
+    let Ok(text) = std::str::from_utf8(data) else {
+        return;
+    };
+    let _ = tokenmtr_metrics::text::Format::negotiate(Some(text));
+    let _ = tokenmtr_remote::scrape::accepts_gzip(Some(text));
 }
