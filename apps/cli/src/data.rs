@@ -172,8 +172,8 @@ pub fn erase(setup: &Setup, args: &EraseArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Asks a running daemon to stop. A daemon under launchd exits 0 and is not restarted
-/// (`KeepAlive.SuccessfulExit = false`); one started in a terminal just exits. The caller then
+/// Asks a running daemon to stop. A daemon under launchd or systemd exits 0 and is not restarted
+/// (`KeepAlive.SuccessfulExit = false`, `Restart=on-failure`); one started in a terminal just exits. The caller then
 /// waits for the daemon lock. A no-op when none runs.
 fn request_shutdown(transport: &ControlTransport) -> anyhow::Result<()> {
     if !daemon_running(transport) {
@@ -310,6 +310,12 @@ pub fn reprice(setup: &Setup, args: &RepriceArgs) -> anyhow::Result<()> {
 /// Keychain's consent prompt allowed, then prints each profile's quota status. The prompt
 /// names the daemon, so only a grant to it lets its silent polls work.
 pub fn quota_connect(setup: &Setup, json: bool) -> anyhow::Result<()> {
+    if cfg!(not(target_os = "macos")) {
+        bail!(
+            "only macOS keeps the Claude credentials in a Keychain; on this OS the daemon reads \
+             ~/.claude/.credentials.json"
+        );
+    }
     let ctx = setup.context()?;
     if !ctx.daemon_running() {
         bail!("the daemon is not running: start it (`tokenmtr service install`), then retry");

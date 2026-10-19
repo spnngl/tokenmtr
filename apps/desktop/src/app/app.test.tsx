@@ -385,6 +385,25 @@ describe("Settings", () => {
     ).toBeTruthy();
   });
 
+  it("names the tray and drops the macOS-only cards on Linux", async () => {
+    await renderApp("/settings", { os: "linux" });
+    expect(await screen.findByRole("heading", { name: "Tray" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Menu bar" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Protected folders" })).toBeNull();
+    cleanup();
+    await renderApp("/settings", { os: "macos" });
+    expect(await screen.findByRole("heading", { name: "Menu bar" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Protected folders" })).toBeTruthy();
+  });
+
+  it("shows the Ctrl+K hint on Linux", async () => {
+    await renderApp("/", { os: "linux" });
+    expect(await screen.findByText("Ctrl+K")).toBeTruthy();
+    cleanup();
+    await renderApp("/", { os: "macos" });
+    expect(await screen.findByText("⌘K")).toBeTruthy();
+  });
+
   it("chooses the menu-bar rings and the profiles drawn without rings", async () => {
     const onAction = vi.fn();
     const user = userEvent.setup();

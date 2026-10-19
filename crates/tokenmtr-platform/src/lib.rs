@@ -154,22 +154,34 @@ pub enum PlatformKind {
 }
 
 impl PlatformKind {
-    /// The platform of the running OS over the default [`Paths::from_env`].
-    ///
-    /// # Errors
-    /// [`PathsError`] if the environment does not yield valid paths.
+    /// The platform of the running OS over `paths`.
     #[cfg(target_os = "macos")]
-    pub fn detect() -> Result<Self, PathsError> {
-        Ok(Self::MacOs(MacOs::new(Paths::from_env()?)))
+    #[must_use]
+    pub fn new(paths: Paths) -> Self {
+        Self::MacOs(MacOs::new(paths))
+    }
+
+    /// The platform of the running OS over `paths`.
+    #[cfg(target_os = "linux")]
+    #[must_use]
+    pub fn new(paths: Paths) -> Self {
+        Self::Linux(Linux::new(paths))
     }
 
     /// The platform of the running OS over the default [`Paths::from_env`].
     ///
     /// # Errors
     /// [`PathsError`] if the environment does not yield valid paths.
-    #[cfg(target_os = "linux")]
     pub fn detect() -> Result<Self, PathsError> {
-        Ok(Self::Linux(Linux::new(Paths::from_env()?)))
+        Ok(Self::new(Paths::from_env()?))
+    }
+
+    /// The launchd service, for the repair that only the macOS plist needs.
+    #[cfg(target_os = "macos")]
+    #[must_use]
+    pub fn launchd(&self) -> &LaunchdService {
+        let Self::MacOs(platform) = self;
+        platform.launchd()
     }
 }
 

@@ -43,6 +43,11 @@ describe("golden command responses", () => {
     expect((await serve("app_state", "app_state.ready").appState()).kind).toBe("ready");
   });
 
+  it("app_state (ready, Linux)", async () => {
+    const state = await serve("app_state", "app_state.ready_linux").appState();
+    expect(state.kind === "ready" && state.os).toBe("linux");
+  });
+
   it("app_state (daemon_offline)", async () => {
     const state = await serve("app_state", "app_state.daemon_offline").appState();
     expect(state.kind).toBe("daemon_offline");

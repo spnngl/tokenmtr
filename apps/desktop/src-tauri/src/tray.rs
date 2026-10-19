@@ -1,4 +1,4 @@
-//! The menu-bar icon: quota rings when there is something to show, the plain template icon
+//! The menu-bar or tray icon: quota rings when there is something to show, the plain mark
 //! otherwise, and the tray menu.
 
 mod rings;
@@ -26,7 +26,15 @@ use crate::windows;
 
 const TRAY_ID: &str = CLI_NAME;
 /// Monochrome template image (44x44, black on transparent; `tray-icon.py`): macOS tints it.
+#[cfg(target_os = "macos")]
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray-icon@2x.png");
+/// The same mark in white (44x44; `tray-icon.py`): Linux has no template rendering, and its
+/// panels are mostly dark.
+#[cfg(target_os = "linux")]
+const TRAY_ICON: &[u8] = include_bytes!("../icons/tray-icon-light.png");
+/// Whether the OS tints [`TRAY_ICON`] itself.
+const TRAY_IS_TEMPLATE: bool = cfg!(target_os = "macos");
+const RECAP: &str = "recap";
 const OPEN: &str = "open";
 const SCAN: &str = "scan";
 const SETTINGS: &str = "settings";
@@ -139,7 +147,9 @@ fn show(tray: &TrayIcon<Wry>, groups: &[Vec<Ring>]) -> tauri::Result<()> {
             )),
             false,
         ),
-        None => tray.set_icon_with_as_template(Some(Image::from_bytes(TRAY_ICON)?), true),
+        None => {
+            tray.set_icon_with_as_template(Some(Image::from_bytes(TRAY_ICON)?), TRAY_IS_TEMPLATE)
+        }
     }
 }
 
@@ -152,6 +162,8 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
+            // Linux trays (libappindicator) emit no click events, so the menu is the way in.
+            &MenuItem::with_id(app, RECAP, "Show recap", true, None::<&str>)?,
             &MenuItem::with_id(
                 app,
                 OPEN,
@@ -175,7 +187,7 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
         .icon(Image::from_bytes(TRAY_ICON)?)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .icon_as_template(true)
+        .icon_as_template(TRAY_IS_TEMPLATE)
         .tooltip(DISPLAY_NAME)
         .on_menu_event(on_menu)
         .on_tray_icon_event(|tray, event| {
@@ -200,6 +212,7 @@ pub fn install(app: &AppHandle<Wry>) -> tauri::Result<()> {
 )]
 fn on_menu(app: &AppHandle<Wry>, event: MenuEvent) {
     match event.id().as_ref() {
+        RECAP => windows::toggle_recap(app, &app.state::<Shell>().recap_gate),
         OPEN => open(app, Route::Overview),
         SETTINGS => open(app, Route::Settings),
         SCAN => {

@@ -1,0 +1,7 @@
+{
+  "kind": "ready",
+  "last_scan_at": null,
+  "scan_interval_secs": 300,
+  "failed_collectors": 0,
+  "os": "linux"
+}

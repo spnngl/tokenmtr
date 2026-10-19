@@ -95,12 +95,14 @@ pub enum AppState {
         scan_interval_secs: u64,
         /// Agents whose collector has open issues.
         failed_collectors: u64,
+        /// The OS, for the copy that has no data signal (shortcut glyph, "Menu bar" or "Tray").
+        os: Os,
     },
     /// First run.
     Onboarding {
         /// Agents found.
         agents: Vec<AgentInfo>,
-        /// A launchd plist exists.
+        /// The background service is installed (a launchd plist or a systemd unit exists).
         daemon_installed: bool,
         /// Notification permission.
         notifications: Permission,
@@ -118,6 +120,25 @@ pub enum AppState {
         /// The store schema the daemon migrates to.
         daemon_schema: u32,
     },
+}
+
+/// The OS the app runs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Os {
+    /// macOS.
+    MacOs,
+    /// Linux.
+    Linux,
+}
+
+impl Os {
+    /// The running OS.
+    #[cfg(target_os = "macos")]
+    pub const CURRENT: Self = Self::MacOs;
+    /// The running OS.
+    #[cfg(target_os = "linux")]
+    pub const CURRENT: Self = Self::Linux;
 }
 
 /// Notification permission as the UI knows it.
@@ -139,7 +160,7 @@ pub struct StateInputs {
     pub onboarding_complete: bool,
     /// The latest handshake.
     pub link: Link,
-    /// A plist is installed.
+    /// The background service is installed.
     pub daemon_installed: bool,
     /// Notification permission.
     pub notifications: Permission,
@@ -201,6 +222,7 @@ pub fn app_state(
                 scan_interval_secs: u64::try_from(app.config().daemon.scan_interval.as_secs())
                     .unwrap_or(0),
                 failed_collectors: u64::try_from(failed.len()).unwrap_or(u64::MAX),
+                os: Os::CURRENT,
             })
         }
     }

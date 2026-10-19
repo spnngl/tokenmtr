@@ -30,6 +30,7 @@ pub struct Backend {
     paths: Paths,
     transport: ControlTransport,
     config_path: Utf8PathBuf,
+    platform: Arc<PlatformKind>,
 }
 
 impl Backend {
@@ -40,21 +41,36 @@ impl Backend {
     /// When the platform directories cannot be resolved (no `HOME`).
     pub fn detect() -> Result<Self, CommandError> {
         let platform = PlatformKind::detect().map_err(CommandError::internal)?;
-        Ok(Self::new(
-            platform.paths().clone(),
-            platform.control_transport(),
-            platform.paths().config_file().to_owned(),
-        ))
+        Ok(Self {
+            paths: platform.paths().clone(),
+            transport: platform.control_transport(),
+            config_path: platform.paths().config_file().to_owned(),
+            platform: Arc::new(platform),
+        })
     }
 
     /// Explicit locations (tests).
     #[must_use]
-    pub const fn new(paths: Paths, transport: ControlTransport, config_path: Utf8PathBuf) -> Self {
+    pub fn new(paths: Paths, transport: ControlTransport, config_path: Utf8PathBuf) -> Self {
         Self {
+            platform: Arc::new(PlatformKind::new(paths.clone())),
             paths,
             transport,
             config_path,
         }
+    }
+
+    /// The running OS: on macOS, the launchd plist repair lives here.
+    #[must_use]
+    #[cfg(target_os = "macos")]
+    pub fn platform(&self) -> &PlatformKind {
+        &self.platform
+    }
+
+    /// The background service manager of the running OS.
+    #[must_use]
+    pub fn service(&self) -> &dyn ServiceManager {
+        self.platform.service()
     }
 
     /// The standard directories.

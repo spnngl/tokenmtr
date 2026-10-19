@@ -140,8 +140,8 @@ pub struct QuotaArgs {
 /// What `tokenmtr quota` does besides showing the windows.
 #[derive(Debug, Subcommand)]
 enum QuotaAction {
-    /// Let the daemon read the Claude credentials in the Keychain: macOS asks once, choose
-    /// "Always Allow".
+    /// Let the daemon read the Claude credentials in the Keychain (macOS only): macOS asks once,
+    /// choose "Always Allow".
     Connect(JsonArgs),
 }
 

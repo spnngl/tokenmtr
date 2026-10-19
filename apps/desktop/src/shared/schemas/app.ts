@@ -48,6 +48,10 @@ export type AgentInfo = z.infer<typeof agentInfoSchema>;
 
 const NOTIFICATION_PERMISSIONS = ["granted", "denied", "undetermined"] as const;
 
+/** The OS the app runs on (`Os` in `src-tauri/src/backend/shell.rs`). */
+export const OSES = ["macos", "linux"] as const;
+export type Os = (typeof OSES)[number];
+
 /**
  * Where the app is in its life. Everything but `ready` replaces the screens (first run, daemon
  * offline, version mismatch).
@@ -59,6 +63,8 @@ export const appStateSchema = z.discriminatedUnion("kind", [
     scan_interval_secs: countSchema,
     /** Collectors whose last run failed: totals may be incomplete. */
     failed_collectors: countSchema,
+    /** For the copy that has no data signal: the shortcut glyph, "Menu bar" versus "Tray". */
+    os: z.enum(OSES),
   }),
   z.object({
     kind: z.literal("onboarding"),

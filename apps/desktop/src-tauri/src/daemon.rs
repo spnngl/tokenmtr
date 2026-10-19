@@ -1,17 +1,21 @@
-//! The daemon from the app's side: the bundled binary, the launchd plist, and the handshake.
+//! The daemon from the app's side: the bundled binary, the background service that runs it, and
+//! the handshake.
 
 use std::path::PathBuf;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use tokenmtr_control::{Client, ClientError, ClientInfo, DaemonInfo};
+#[cfg(any(test, target_os = "macos"))]
 use tokenmtr_platform::service::is_transient;
-use tokenmtr_platform::{
-    CommandRunner, ControlTransport, LaunchdService, ServiceError, ServiceManager,
-};
+#[cfg(any(test, target_os = "macos"))]
+use tokenmtr_platform::{CommandRunner, LaunchdService};
+use tokenmtr_platform::{ControlTransport, ServiceError, ServiceManager};
 
 /// The name of the CLI binary the app bundles as its sidecar.
 const SIDECAR_NAME: &str = tokenmtr_core::brand::CLI_NAME;
+/// Where the deb and rpm packages install both binaries.
+const PACKAGE_BIN_DIR: &str = "/usr/bin";
 /// The app's version; the bundled daemon has the same one.
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -37,7 +41,8 @@ pub enum SidecarError {
     /// The bundled `tokenmtr` binary is not on disk.
     #[error("the daemon binary {0} is missing")]
     Missing(Utf8PathBuf),
-    /// launchd refused, or the app runs from a disk image ([`ServiceError::TransientBinary`]).
+    /// The service manager refused, or the app runs from a disk image
+    /// ([`ServiceError::TransientBinary`]).
     #[error(transparent)]
     Service(#[from] ServiceError),
 }
@@ -51,18 +56,19 @@ pub struct Sidecar {
 
 impl Sidecar {
     /// The sidecar next to the app executable `exe`. It counts as bundled only inside a
-    /// `*.app/Contents/MacOS` directory, so a development build never repoints the daemon of an
-    /// installed app.
+    /// `*.app/Contents/MacOS` directory or in `/usr/bin` (the deb and rpm packages), so a
+    /// development build never repoints the daemon of an installed app.
     #[must_use]
     pub fn beside(exe: &Utf8Path) -> Self {
         let dir = exe.parent();
         let bundled = dir.is_some_and(|dir| {
-            dir.file_name() == Some("MacOS")
-                && dir
-                    .parent()
-                    .and_then(Utf8Path::parent)
-                    .and_then(Utf8Path::extension)
-                    == Some("app")
+            dir == PACKAGE_BIN_DIR
+                || (dir.file_name() == Some("MacOS")
+                    && dir
+                        .parent()
+                        .and_then(Utf8Path::parent)
+                        .and_then(Utf8Path::extension)
+                        == Some("app"))
         });
         Self {
             path: dir.unwrap_or(exe).join(SIDECAR_NAME),
@@ -87,25 +93,45 @@ impl Sidecar {
         &self.path
     }
 
-    /// Whether it sits inside an `.app` bundle.
+    /// Whether it sits inside an `.app` bundle or an installed package.
     #[must_use]
     pub const fn bundled(&self) -> bool {
         self.bundled
     }
 }
 
-/// What the launch-time plist check did.
+/// What the launch-time service check did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepairOutcome {
-    /// Not an app bundle, a bundle on a disk image or in a translocated copy, or no sidecar on
-    /// disk: nothing to point the plist at.
+    /// Not an app bundle or package, a bundle on a disk image or in a translocated copy, or no
+    /// sidecar on disk: nothing to point the service at.
     Skipped,
-    /// No plist is installed (the daemon is installed from onboarding).
+    /// No service is installed (the daemon is installed from onboarding).
     NotInstalled,
-    /// The plist already points at the sidecar.
+    /// The service already runs the sidecar.
     Current,
     /// The plist pointed elsewhere (the `.app` moved); it was rewritten and reloaded.
     Repaired,
+}
+
+/// Where an installed package keeps the sidecar, so there is nothing to repair: the unit points at
+/// the same path across upgrades. Reports whether a service exists to restart.
+///
+/// # Errors
+///
+/// The service manager could not report the status.
+#[cfg(any(test, target_os = "linux"))]
+pub fn check_unit(
+    service: &dyn ServiceManager,
+    sidecar: &Sidecar,
+) -> Result<RepairOutcome, ServiceError> {
+    if !sidecar.bundled() || !sidecar.path().is_file() {
+        return Ok(RepairOutcome::Skipped);
+    }
+    Ok(match service.status()? {
+        tokenmtr_platform::ServiceStatus::NotInstalled => RepairOutcome::NotInstalled,
+        _ => RepairOutcome::Current,
+    })
 }
 
 /// Points an installed plist at the bundled sidecar again when it differs.
@@ -113,6 +139,7 @@ pub enum RepairOutcome {
 /// # Errors
 ///
 /// Reading the plist, or reinstalling the service, failed.
+#[cfg(any(test, target_os = "macos"))]
 pub fn repair_plist<R: CommandRunner>(
     service: &LaunchdService<R>,
     sidecar: &Sidecar,
@@ -134,10 +161,10 @@ pub fn repair_plist<R: CommandRunner>(
 ///
 /// # Errors
 ///
-/// [`SidecarError::Missing`], or [`SidecarError::Service`] when launchd refused or the app runs
-/// from a disk image or a translocated copy.
-pub fn install_service<R: CommandRunner>(
-    service: &LaunchdService<R>,
+/// [`SidecarError::Missing`], or [`SidecarError::Service`] when the service manager refused or the
+/// app runs from a disk image or a translocated copy.
+pub fn install_service(
+    service: &dyn ServiceManager,
     sidecar: &Sidecar,
 ) -> Result<(), SidecarError> {
     if !sidecar.path().is_file() {
@@ -313,6 +340,66 @@ mod tests {
         let dev = Sidecar::beside(Utf8Path::new("/repo/target/debug/tokenmtr-desktop"));
         assert!(!dev.bundled());
         assert_eq!(dev.path(), "/repo/target/debug/tokenmtr");
+    }
+
+    /// A service manager that only reports a fixed status.
+    struct Reports(tokenmtr_platform::ServiceStatus);
+
+    impl ServiceManager for Reports {
+        fn install(&self, _binary: &Utf8Path) -> Result<(), ServiceError> {
+            Ok(())
+        }
+        fn uninstall(&self) -> Result<(), ServiceError> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<bool, ServiceError> {
+            Ok(false)
+        }
+        fn start(&self) -> Result<(), ServiceError> {
+            Ok(())
+        }
+        fn status(&self) -> Result<tokenmtr_platform::ServiceStatus, ServiceError> {
+            Ok(self.0)
+        }
+    }
+
+    #[test]
+    fn an_installed_package_is_bundled_in_usr_bin() {
+        let packaged = Sidecar::beside(Utf8Path::new("/usr/bin/tokenmtr-desktop"));
+        assert!(packaged.bundled());
+        assert_eq!(packaged.path(), "/usr/bin/tokenmtr");
+        assert!(!Sidecar::beside(Utf8Path::new("/usr/local/bin/tokenmtr-desktop")).bundled());
+    }
+
+    #[test]
+    fn a_unit_is_checked_only_for_a_packaged_sidecar_on_disk() -> io::Result<()> {
+        use tokenmtr_platform::ServiceStatus;
+        let fixture = fixture()?;
+        let dev = Sidecar::beside(Utf8Path::new("/repo/target/debug/tokenmtr-desktop"));
+        let installed = Reports(ServiceStatus::Stopped);
+        assert_eq!(
+            check_unit(&installed, &dev).map_err(io::Error::other)?,
+            RepairOutcome::Skipped
+        );
+        // Bundled, but not on disk.
+        let absent = Sidecar::beside(Utf8Path::new("/nowhere/TokenMtr.app/Contents/MacOS/x"));
+        assert_eq!(
+            check_unit(&installed, &absent).map_err(io::Error::other)?,
+            RepairOutcome::Skipped
+        );
+        let sidecar = bundle(&fixture.home)?;
+        assert_eq!(
+            check_unit(&Reports(ServiceStatus::NotInstalled), &sidecar)
+                .map_err(io::Error::other)?,
+            RepairOutcome::NotInstalled
+        );
+        for status in [ServiceStatus::Stopped, ServiceStatus::Running { pid: 7 }] {
+            assert_eq!(
+                check_unit(&Reports(status), &sidecar).map_err(io::Error::other)?,
+                RepairOutcome::Current
+            );
+        }
+        Ok(())
     }
 
     #[test]

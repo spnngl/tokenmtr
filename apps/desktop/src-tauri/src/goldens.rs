@@ -38,7 +38,7 @@ use crate::backend::actions::GeneratedReport;
 use crate::backend::queries::recap_document;
 use crate::backend::shell::{
     AgentInfo, AlertsBlock, AppState, Capabilities, DaemonBlock, DisplayBlock, FilterOptions,
-    FxBlock, GitBlock, Permission, PricingBlock, ProfileInfo, ProtectedFolder, SessionOrigin,
+    FxBlock, GitBlock, Os, Permission, PricingBlock, ProfileInfo, ProtectedFolder, SessionOrigin,
     Settings, TrayBlock,
 };
 use crate::request::FormatWire;
@@ -1793,6 +1793,16 @@ fn app_state_ready() -> Value {
         last_scan_at: Some(at("2026-05-03T14:10:00Z")),
         scan_interval_secs: 300,
         failed_collectors: 1,
+        os: Os::MacOs,
+    })
+}
+
+fn app_state_ready_linux() -> Value {
+    json(AppState::Ready {
+        last_scan_at: None,
+        scan_interval_secs: 300,
+        failed_collectors: 0,
+        os: Os::Linux,
     })
 }
 
@@ -1904,6 +1914,7 @@ fn goldens() -> Vec<(&'static str, Value)> {
     vec![
         ("app_state", app_state()),
         ("app_state.ready", app_state_ready()),
+        ("app_state.ready_linux", app_state_ready_linux()),
         ("app_state.daemon_offline", app_state_daemon_offline()),
         ("app_state.incompatible", app_state_incompatible()),
         ("filter_options", filter_options()),

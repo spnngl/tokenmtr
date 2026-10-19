@@ -29,7 +29,7 @@ pub enum ErrorKind {
     Config,
     /// A file operation failed.
     Io,
-    /// launchd refused an operation.
+    /// The service manager (launchd, systemd) refused an operation.
     Service,
     /// The app runs from a disk image or a translocated copy: it must be moved to Applications
     /// before the background service can point at it.

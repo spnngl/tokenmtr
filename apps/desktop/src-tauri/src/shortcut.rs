@@ -73,7 +73,7 @@ pub fn sync(app: &AppHandle<Wry>) {
         if let Some(new) = change.register
             && let Err(error) = shortcuts.register(new.as_str())
         {
-            tracing::warn!(%error, shortcut = %new, "invalid or taken shortcut");
+            tracing::warn!(%error, shortcut = %new, "could not register the shortcut (invalid, taken, or no X11 session)");
         }
     });
 }

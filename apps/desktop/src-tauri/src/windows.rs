@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{
-    ActivationPolicy, AppHandle, Emitter as _, LogicalSize, Manager as _, PhysicalPosition,
-    PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
+    AppHandle, Emitter as _, LogicalSize, Manager as _, PhysicalPosition, PhysicalSize, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_positioner::{Position, WindowExt as _};
 use tokenmtr_core::brand::DISPLAY_NAME;
@@ -26,8 +26,6 @@ const RECAP_WIDTH: f64 = 360.0;
 const RECAP_HEIGHT: f64 = 520.0;
 /// The popover never shrinks below this, so loading and empty states keep a usable size.
 const RECAP_MIN_HEIGHT: f64 = 240.0;
-/// Height of the macOS menu bar, in logical pixels.
-const MENU_BAR: f64 = 28.0;
 /// Gap kept between the popover and the screen edges, in logical pixels.
 const MARGIN: f64 = 8.0;
 /// How long after a blur-hide a tray click still counts as the click that caused the blur.
@@ -84,12 +82,13 @@ pub struct Area {
 }
 
 /// Where the popover goes when the tray icon's position is unknown (a shortcut press before any
-/// tray click): the top-right corner of `monitor`, below the menu bar, kept inside the screen.
+/// tray click, or a tray without click events): the top-right corner of `monitor`, the usable
+/// area that leaves out the menu bar or panel, kept inside the screen.
 #[must_use]
 pub fn corner_position(monitor: Area, window: (f64, f64), scale: f64) -> (f64, f64) {
     let (width, height) = window;
     let x = (monitor.x + monitor.width - width - MARGIN * scale).max(monitor.x);
-    let y = (monitor.y + MENU_BAR * scale).min(monitor.y + (monitor.height - height).max(0.0));
+    let y = (monitor.y + MARGIN * scale).min(monitor.y + (monitor.height - height).max(0.0));
     (x, y)
 }
 
@@ -133,8 +132,9 @@ fn place_recap(window: &WebviewWindow<Wry>) {
     else {
         return;
     };
-    let PhysicalPosition { x, y } = *monitor.position();
-    let PhysicalSize { width, height } = *monitor.size();
+    let work = monitor.work_area();
+    let PhysicalPosition { x, y } = work.position;
+    let PhysicalSize { width, height } = work.size;
     let scale = monitor.scale_factor();
     let Ok(size) = window.outer_size() else {
         return;
@@ -231,8 +231,9 @@ pub fn hide_recap(app: &AppHandle<Wry>) {
     }
 }
 
-/// Opens the main window at `target`, creating it when it is closed. While it exists the app
-/// has a Dock icon and a menu bar; when it is destroyed the app goes back to being a tray app.
+/// Opens the main window at `target`, creating it when it is closed. On macOS, while it exists
+/// the app has a Dock icon and a menu bar; when it is destroyed the app goes back to being a
+/// tray app.
 ///
 /// # Errors
 ///
@@ -256,7 +257,7 @@ pub fn show_main(app: &AppHandle<Wry>, target: &DashboardTarget) -> tauri::Resul
     let handle = app.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::Destroyed = event
-            && let Err(error) = handle.set_activation_policy(ActivationPolicy::Accessory)
+            && let Err(error) = set_dock_icon(&handle, false)
         {
             tracing::warn!(%error, "could not go back to a tray-only app");
         }
@@ -264,8 +265,25 @@ pub fn show_main(app: &AppHandle<Wry>, target: &DashboardTarget) -> tauri::Resul
     focus(app, &window)
 }
 
+/// macOS shows a Dock icon and a menu bar only while a window is open.
+#[cfg(target_os = "macos")]
+fn set_dock_icon(app: &AppHandle<Wry>, visible: bool) -> tauri::Result<()> {
+    app.set_activation_policy(if visible {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    })
+}
+
+/// Other desktops list a window in the taskbar and need no switch.
+#[cfg(not(target_os = "macos"))]
+#[expect(clippy::unnecessary_wraps, reason = "same signature as the macOS one")]
+const fn set_dock_icon(_app: &AppHandle<Wry>, _visible: bool) -> tauri::Result<()> {
+    Ok(())
+}
+
 fn focus(app: &AppHandle<Wry>, window: &WebviewWindow<Wry>) -> tauri::Result<()> {
-    app.set_activation_policy(ActivationPolicy::Regular)?;
+    set_dock_icon(app, true)?;
     window
         .show()
         .and_then(|()| window.unminimize())
@@ -310,10 +328,10 @@ mod tests {
     }
 
     #[test]
-    fn corner_hugs_the_top_right_below_the_menu_bar() {
+    fn corner_hugs_the_top_right_of_the_usable_area() {
         let (x, y) = corner_position(SCREEN, (720.0, 1040.0), 2.0);
         assert!((x - (2880.0 - 720.0 - 16.0)).abs() < f64::EPSILON);
-        assert!((y - 56.0).abs() < f64::EPSILON);
+        assert!((y - 16.0).abs() < f64::EPSILON);
     }
 
     #[test]
