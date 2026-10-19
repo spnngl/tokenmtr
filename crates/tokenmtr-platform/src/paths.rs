@@ -1,4 +1,4 @@
-//! Default locations and macOS protected folders.
+//! Default locations and the folders the OS guards with consent prompts.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use tokenmtr_brand::{
@@ -26,10 +26,18 @@ pub enum PathsError {
 /// per platform of [`PlatformKind`](crate::PlatformKind): everything OS-specific about
 /// [`Paths`] lives in these arms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "each OS builds only its own layout; tests build both"
+    )
+)]
 enum Layout {
     /// macOS: `~/Library` and the TCC-protected folders.
-    #[cfg(target_os = "macos")]
     MacOs,
+    /// Linux: the XDG base directories; no consent-guarded folders.
+    Linux,
 }
 
 /// The directories a [`Layout`] derives from the home directory.
@@ -43,10 +51,23 @@ impl Layout {
     /// The layout of the OS this build targets.
     #[cfg(target_os = "macos")]
     const CURRENT: Self = Self::MacOs;
+    /// The layout of the OS this build targets.
+    #[cfg(target_os = "linux")]
+    const CURRENT: Self = Self::Linux;
 
-    fn dirs(self, home: &Utf8Path) -> Dirs {
+    /// `xdg` returns an XDG base directory variable, `None` unless it is set to an absolute path.
+    fn dirs(self, home: &Utf8Path, xdg: impl Fn(&str) -> Option<Utf8PathBuf>) -> Dirs {
         match self {
-            #[cfg(target_os = "macos")]
+            Self::Linux => {
+                let base = |var: &str, fallback: &str, name: &str| {
+                    xdg(var).unwrap_or_else(|| home.join(fallback)).join(name)
+                };
+                Dirs {
+                    data: base("XDG_DATA_HOME", ".local/share", APP_SUPPORT_DIR_NAME),
+                    logs: base("XDG_STATE_HOME", ".local/state", LOG_DIR_NAME),
+                    cache: base("XDG_CACHE_HOME", ".cache", CACHE_DIR_NAME),
+                }
+            }
             Self::MacOs => {
                 let library = home.join("Library");
                 Dirs {
@@ -62,7 +83,7 @@ impl Layout {
 
     fn protected(self, home: &Utf8Path) -> Vec<Utf8PathBuf> {
         match self {
-            #[cfg(target_os = "macos")]
+            Self::Linux => Vec::new(),
             Self::MacOs => {
                 let library = home.join("Library");
                 vec![
@@ -92,6 +113,7 @@ impl Layout {
 pub struct Paths {
     layout: Layout,
     home: Utf8PathBuf,
+    config_home: Utf8PathBuf,
     config_dir: Utf8PathBuf,
     config_file: Utf8PathBuf,
     data_dir: Utf8PathBuf,
@@ -117,6 +139,13 @@ impl Paths {
     /// [`PathsError::HomeUnset`] without `HOME`; [`PathsError::NotAbsolute`] if `HOME` or
     /// `TOKENMTR_CONFIG` is relative (resolve user-typed relative paths before this point).
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, PathsError> {
+        Self::from_lookup_with(Layout::CURRENT, get)
+    }
+
+    fn from_lookup_with(
+        layout: Layout,
+        get: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, PathsError> {
         let env = |key: &str| get(key).filter(|v| !v.is_empty());
         let absolute = |var: &'static str, value: String| {
             let path = Utf8PathBuf::from(&value);
@@ -128,20 +157,17 @@ impl Paths {
         };
 
         let home = absolute("HOME", env("HOME").ok_or(PathsError::HomeUnset)?)?;
-        let xdg_config = env("XDG_CONFIG_HOME")
-            .map(Utf8PathBuf::from)
-            .filter(|p| p.is_absolute());
+        let xdg = |var: &str| env(var).map(Utf8PathBuf::from).filter(|p| p.is_absolute());
         let config_override = env(ENV_CONFIG)
             .map(|v| absolute(ENV_CONFIG, v))
             .transpose()?;
 
-        let config_dir = xdg_config
-            .unwrap_or_else(|| home.join(".config"))
-            .join(CONFIG_DIR_NAME);
-        let layout = Layout::CURRENT;
-        let dirs = layout.dirs(&home);
+        let config_home = xdg("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
+        let config_dir = config_home.join(CONFIG_DIR_NAME);
+        let dirs = layout.dirs(&home, xdg);
         Ok(Self {
             layout,
+            config_home,
             config_file: config_override.unwrap_or_else(|| config_dir.join(CONFIG_FILE_NAME)),
             config_dir,
             data_dir: dirs.data,
@@ -157,6 +183,13 @@ impl Paths {
         &self.home
     }
 
+    /// `$XDG_CONFIG_HOME`, else `~/.config`: where per-user config of other programs lives
+    /// (e.g. systemd user units).
+    #[must_use]
+    pub fn config_home(&self) -> &Utf8Path {
+        &self.config_home
+    }
+
     /// Config directory: `$XDG_CONFIG_HOME/tokenmtr`, else `~/.config/tokenmtr`.
     #[must_use]
     pub fn config_dir(&self) -> &Utf8Path {
@@ -169,19 +202,22 @@ impl Paths {
         &self.config_file
     }
 
-    /// Data directory: `~/Library/Application Support/dev.tokenmtr.app`.
+    /// Data directory: `~/Library/Application Support/dev.tokenmtr.app` on macOS,
+    /// `$XDG_DATA_HOME/dev.tokenmtr.app` (else `~/.local/share/…`) on Linux.
     #[must_use]
     pub fn data_dir(&self) -> &Utf8Path {
         &self.data_dir
     }
 
-    /// Logs directory: `~/Library/Logs/tokenmtr`.
+    /// Logs directory: `~/Library/Logs/tokenmtr` on macOS, `$XDG_STATE_HOME/tokenmtr` (else
+    /// `~/.local/state/tokenmtr`) on Linux.
     #[must_use]
     pub fn logs_dir(&self) -> &Utf8Path {
         &self.logs_dir
     }
 
-    /// Cache directory: `~/Library/Caches/dev.tokenmtr.app`.
+    /// Cache directory: `~/Library/Caches/dev.tokenmtr.app` on macOS,
+    /// `$XDG_CACHE_HOME/dev.tokenmtr.app` (else `~/.cache/…`) on Linux.
     #[must_use]
     pub fn cache_dir(&self) -> &Utf8Path {
         &self.cache_dir
@@ -195,7 +231,7 @@ impl Paths {
 
     /// Folders the OS guards with per-app consent prompts: on macOS Documents, Desktop,
     /// Downloads, Pictures, Movies, Music, iCloud Drive, cloud storage, other apps' containers
-    /// and `/Volumes`.
+    /// and `/Volumes`. Empty on Linux.
     #[must_use]
     pub fn protected(&self) -> Vec<Utf8PathBuf> {
         self.layout.protected(&self.home)
@@ -232,17 +268,29 @@ fn starts_with_ignore_case(path: &Utf8Path, prefix: &Utf8Path) -> bool {
 mod tests {
     use super::*;
 
+    fn lookup(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let vars: Vec<(String, String)> = vars
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |key| vars.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    }
+
     fn paths(vars: &[(&str, &str)]) -> Result<Paths, PathsError> {
-        Paths::from_lookup(|key| {
-            vars.iter()
-                .find(|(k, _)| *k == key)
-                .map(|(_, v)| (*v).to_owned())
-        })
+        Paths::from_lookup(lookup(vars))
+    }
+
+    fn macos(vars: &[(&str, &str)]) -> Paths {
+        Paths::from_lookup_with(Layout::MacOs, lookup(vars)).unwrap()
+    }
+
+    fn linux(vars: &[(&str, &str)]) -> Paths {
+        Paths::from_lookup_with(Layout::Linux, lookup(vars)).unwrap()
     }
 
     #[test]
-    fn defaults_follow_d21() {
-        let p = paths(&[("HOME", "/Users/me")]).unwrap();
+    fn macos_defaults_follow_d21() {
+        let p = macos(&[("HOME", "/Users/me")]);
         assert_eq!(p.config_dir(), "/Users/me/.config/tokenmtr");
         assert_eq!(p.config_file(), "/Users/me/.config/tokenmtr/config.toml");
         assert_eq!(
@@ -254,6 +302,56 @@ mod tests {
         assert_eq!(
             p.exports_dir(),
             "/Users/me/Library/Application Support/dev.tokenmtr.app/exports"
+        );
+    }
+
+    #[test]
+    fn linux_defaults_follow_xdg() {
+        let p = linux(&[("HOME", "/home/me")]);
+        assert_eq!(p.config_home(), "/home/me/.config");
+        assert_eq!(p.config_dir(), "/home/me/.config/tokenmtr");
+        assert_eq!(p.config_file(), "/home/me/.config/tokenmtr/config.toml");
+        assert_eq!(p.data_dir(), "/home/me/.local/share/dev.tokenmtr.app");
+        assert_eq!(p.logs_dir(), "/home/me/.local/state/tokenmtr");
+        assert_eq!(p.cache_dir(), "/home/me/.cache/dev.tokenmtr.app");
+        assert_eq!(
+            p.exports_dir(),
+            "/home/me/.local/share/dev.tokenmtr.app/exports"
+        );
+    }
+
+    #[test]
+    fn linux_honors_absolute_xdg_variables_only() {
+        let p = linux(&[
+            ("HOME", "/home/me"),
+            ("XDG_CONFIG_HOME", "/c"),
+            ("XDG_DATA_HOME", "/d"),
+            ("XDG_STATE_HOME", "/s"),
+            ("XDG_CACHE_HOME", "/k"),
+        ]);
+        assert_eq!(p.config_home(), "/c");
+        assert_eq!(p.config_file(), "/c/tokenmtr/config.toml");
+        assert_eq!(p.data_dir(), "/d/dev.tokenmtr.app");
+        assert_eq!(p.logs_dir(), "/s/tokenmtr");
+        assert_eq!(p.cache_dir(), "/k/dev.tokenmtr.app");
+
+        let p = linux(&[
+            ("HOME", "/home/me"),
+            ("XDG_DATA_HOME", "rel"),
+            ("XDG_STATE_HOME", ""),
+            ("XDG_CACHE_HOME", "./x"),
+        ]);
+        assert_eq!(p.data_dir(), "/home/me/.local/share/dev.tokenmtr.app");
+        assert_eq!(p.logs_dir(), "/home/me/.local/state/tokenmtr");
+        assert_eq!(p.cache_dir(), "/home/me/.cache/dev.tokenmtr.app");
+    }
+
+    #[test]
+    fn macos_ignores_xdg_data_variables() {
+        let p = macos(&[("HOME", "/Users/me"), ("XDG_DATA_HOME", "/d")]);
+        assert_eq!(
+            p.data_dir(),
+            "/Users/me/Library/Application Support/dev.tokenmtr.app"
         );
     }
 
@@ -287,8 +385,15 @@ mod tests {
     }
 
     #[test]
+    fn linux_has_no_protected_folders() {
+        let p = linux(&[("HOME", "/home/me")]);
+        assert_eq!(p.protected(), Vec::<Utf8PathBuf>::new());
+        assert!(!p.is_protected(Utf8Path::new("/home/me/Documents")));
+    }
+
+    #[test]
     fn protected_lists_home_folders_and_volumes() {
-        let p = paths(&[("HOME", "/Users/me")]).unwrap();
+        let p = macos(&[("HOME", "/Users/me")]);
         let protected = p.protected();
         assert_eq!(protected.len(), 11);
         assert!(
@@ -301,7 +406,7 @@ mod tests {
 
     #[test]
     fn protected_folders_match_by_component_and_ignore_case() {
-        let p = paths(&[("HOME", "/Users/me")]).unwrap();
+        let p = macos(&[("HOME", "/Users/me")]);
         for hit in [
             "/Users/me/Documents",
             "/Users/me/documents/a/b.csv",

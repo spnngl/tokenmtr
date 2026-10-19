@@ -1,5 +1,5 @@
 //! OS integration: default locations, background service, control socket, secrets, thread
-//! priority and durable file writes. macOS is the only implemented platform.
+//! priority and durable file writes. macOS and Linux are implemented.
 
 pub mod control;
 pub mod framing;
@@ -8,6 +8,7 @@ pub mod paths;
 pub mod qos;
 pub mod secrets;
 pub mod service;
+pub mod systemd;
 
 pub use control::{ControlError, ControlListener, ControlStream, ControlTransport};
 pub use framing::{FrameError, LineReader, LineWriter, MAX_LINE_BYTES};
@@ -15,11 +16,12 @@ pub use paths::{Paths, PathsError};
 pub use qos::{ThreadPriority, set_thread_priority};
 #[cfg(target_os = "macos")]
 pub use secrets::KeychainSecrets;
-pub use secrets::{SecretError, SecretStore};
+pub use secrets::{NoSecrets, SecretError, SecretStore};
 pub use service::{
     CommandOutput, CommandRunner, LaunchdService, ServiceError, ServiceManager, ServiceStatus,
     SystemRunner,
 };
+pub use systemd::SystemdUserService;
 
 /// Everything the daemon, CLI and app need from the operating system.
 pub trait Platform {
@@ -34,6 +36,13 @@ pub trait Platform {
     /// Sets the calling thread's priority. Best effort: a failure is logged and the thread keeps
     /// its current priority.
     fn set_thread_priority(&self, priority: ThreadPriority);
+}
+
+/// Logs a failed [`qos::set_thread_priority`]: the trait makes it best effort.
+fn set_thread_priority_best_effort(priority: ThreadPriority) {
+    if let Err(error) = qos::set_thread_priority(priority) {
+        tracing::warn!(?priority, %error, "cannot set thread priority");
+    }
 }
 
 /// macOS: launchd, Unix socket, Keychain, `QoS` classes.
@@ -84,9 +93,52 @@ impl Platform for MacOs {
     }
 
     fn set_thread_priority(&self, priority: ThreadPriority) {
-        if let Err(error) = qos::set_thread_priority(priority) {
-            tracing::warn!(?priority, %error, "cannot set thread priority");
+        set_thread_priority_best_effort(priority);
+    }
+}
+
+/// Linux: systemd user unit, Unix socket, no OS secret store, scheduling policy and I/O class.
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+pub struct Linux {
+    paths: Paths,
+    service: SystemdUserService,
+    secrets: NoSecrets,
+}
+
+#[cfg(target_os = "linux")]
+impl Linux {
+    /// Builds the Linux platform over `paths`.
+    #[must_use]
+    pub fn new(paths: Paths) -> Self {
+        Self {
+            service: SystemdUserService::new(&paths, SystemRunner),
+            secrets: NoSecrets,
+            paths,
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Platform for Linux {
+    fn paths(&self) -> &Paths {
+        &self.paths
+    }
+
+    fn service(&self) -> &dyn ServiceManager {
+        &self.service
+    }
+
+    fn control_transport(&self) -> ControlTransport {
+        ControlTransport::unix(self.paths.data_dir().join("control.sock"))
+    }
+
+    fn secrets(&self) -> &dyn SecretStore {
+        &self.secrets
+    }
+
+    fn set_thread_priority(&self, priority: ThreadPriority) {
+        set_thread_priority_best_effort(priority);
     }
 }
 
@@ -96,6 +148,9 @@ pub enum PlatformKind {
     /// macOS.
     #[cfg(target_os = "macos")]
     MacOs(MacOs),
+    /// Linux.
+    #[cfg(target_os = "linux")]
+    Linux(Linux),
 }
 
 impl PlatformKind {
@@ -107,42 +162,48 @@ impl PlatformKind {
     pub fn detect() -> Result<Self, PathsError> {
         Ok(Self::MacOs(MacOs::new(Paths::from_env()?)))
     }
+
+    /// The platform of the running OS over the default [`Paths::from_env`].
+    ///
+    /// # Errors
+    /// [`PathsError`] if the environment does not yield valid paths.
+    #[cfg(target_os = "linux")]
+    pub fn detect() -> Result<Self, PathsError> {
+        Ok(Self::Linux(Linux::new(Paths::from_env()?)))
+    }
+}
+
+/// Forwards one [`Platform`] method to the variant that holds the implementation.
+macro_rules! forward {
+    ($self:ident.$method:ident($($arg:expr),*)) => {
+        match $self {
+            #[cfg(target_os = "macos")]
+            Self::MacOs(p) => p.$method($($arg),*),
+            #[cfg(target_os = "linux")]
+            Self::Linux(p) => p.$method($($arg),*),
+        }
+    };
 }
 
 impl Platform for PlatformKind {
     fn paths(&self) -> &Paths {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::MacOs(p) => p.paths(),
-        }
+        forward!(self.paths())
     }
 
     fn service(&self) -> &dyn ServiceManager {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::MacOs(p) => p.service(),
-        }
+        forward!(self.service())
     }
 
     fn control_transport(&self) -> ControlTransport {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::MacOs(p) => p.control_transport(),
-        }
+        forward!(self.control_transport())
     }
 
     fn secrets(&self) -> &dyn SecretStore {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::MacOs(p) => p.secrets(),
-        }
+        forward!(self.secrets())
     }
 
     fn set_thread_priority(&self, priority: ThreadPriority) {
-        match self {
-            #[cfg(target_os = "macos")]
-            Self::MacOs(p) => p.set_thread_priority(priority),
-        }
+        forward!(self.set_thread_priority(priority));
     }
 }
 
@@ -162,5 +223,25 @@ mod tests {
             platform.paths().logs_dir(),
             "/Users/me/Library/Logs/tokenmtr"
         );
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_platform_wires_paths_into_every_part() {
+        let paths = Paths::from_lookup(|k| (k == "HOME").then(|| "/home/me".to_owned())).unwrap();
+        let platform = PlatformKind::Linux(Linux::new(paths));
+        assert_eq!(
+            platform.control_transport().socket_path(),
+            "/home/me/.local/share/dev.tokenmtr.app/control.sock"
+        );
+        assert_eq!(
+            platform.paths().logs_dir(),
+            "/home/me/.local/state/tokenmtr"
+        );
+        assert!(platform.secrets().get("anything").unwrap().is_none());
     }
 }

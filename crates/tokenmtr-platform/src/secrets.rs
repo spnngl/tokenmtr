@@ -40,6 +40,17 @@ pub trait SecretStore {
     }
 }
 
+/// For an OS whose agents keep no secret in the OS store (Linux: Claude Code uses only
+/// `~/.claude/.credentials.json`, which callers read themselves): every lookup finds nothing.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoSecrets;
+
+impl SecretStore for NoSecrets {
+    fn get(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
+        Ok(None)
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub use keychain::KeychainSecrets;
 
@@ -167,5 +178,16 @@ mod keychain {
             let service = format!("dev.tokenmtr.test.missing.{}", std::process::id());
             assert!(KeychainSecrets.get(&service).unwrap().is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod no_secrets_tests {
+    use super::*;
+
+    #[test]
+    fn no_secrets_finds_nothing() {
+        assert!(NoSecrets.get("Claude Code-credentials").unwrap().is_none());
+        assert!(NoSecrets.get_interactive("x").unwrap().is_none());
     }
 }

@@ -29,6 +29,11 @@ fn secrets() -> Arc<dyn tokenmtr_platform::SecretStore + Send + Sync> {
     Arc::new(tokenmtr_platform::KeychainSecrets)
 }
 
+#[cfg(target_os = "linux")]
+fn secrets() -> Arc<dyn tokenmtr_platform::SecretStore + Send + Sync> {
+    Arc::new(tokenmtr_platform::NoSecrets)
+}
+
 /// Test hook for `tests/e2e`, compiled into debug builds only: release binaries ignore the
 /// variable.
 #[cfg(debug_assertions)]
@@ -36,9 +41,8 @@ mod test_endpoint {
     use std::sync::Arc;
 
     use anyhow::{Context, ensure};
-    use secrecy::SecretString;
     use tokenmtr_daemon::Settings;
-    use tokenmtr_platform::{SecretError, SecretStore};
+    use tokenmtr_platform::NoSecrets;
     use tokenmtr_remote::Endpoints;
 
     /// A loopback base URL that replaces the three production hosts. While it is set the
@@ -46,15 +50,6 @@ mod test_endpoint {
     /// URL on a loopback host is refused for every endpoint, so a credential can never be sent
     /// off the machine through this variable.
     const TEST_ENDPOINT_BASE: &str = "TOKENMTR_TEST_ENDPOINT_BASE";
-
-    /// A secret store that holds nothing: credentials then come from files only.
-    struct NoSecrets;
-
-    impl SecretStore for NoSecrets {
-        fn get(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
-            Ok(None)
-        }
-    }
 
     /// Applies [`TEST_ENDPOINT_BASE`] to `settings` when it is set.
     pub(super) fn apply(settings: &mut Settings) -> anyhow::Result<()> {
@@ -86,6 +81,7 @@ pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
     let config_path = config.map_or_else(|| paths.config_file().to_owned(), Utf8Path::to_owned);
     let _log_guard = init_tracing(&paths, &config_path)?;
     // launchd appends the daemon's stdout and stderr forever; keep those files bounded.
+    #[cfg(target_os = "macos")]
     if let Err(error) = tokenmtr_platform::service::trim_launchd_logs(paths.logs_dir()) {
         tracing::warn!(%error, "cannot trim the launchd logs");
     }
