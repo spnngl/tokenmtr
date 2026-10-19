@@ -14,7 +14,7 @@ Every rule of the product lives in `crates/`; `apps/` only wire crates to a UI o
 - Store and log metadata only: token counts, models, ids, timestamps, tool names, error flags. Prompt and response text, tool arguments and results, and error messages read from agent files stay out of the store, logs, parse issues and exports.
 - Network requests go only to the hosts in `ALLOWED_HOSTS` (`crates/tokenmtr-remote/src/http.rs`) and to the `[[metrics.remote_write]]` URLs the user configures (HTTPS, or loopback over any scheme; `remote_write::Target::new` enforces it), through `tokenmtr-remote`. The scrape endpoint listens only for an exporter the user configures. A new host also changes the privacy sentence at the top of `README.md`.
 - Tokens live in `secrecy::SecretString`. Errors and `tracing` carry no headers or bodies; `crates/tokenmtr-remote/tests/secrets.rs` and the e2e scenario check that a fake token appears nowhere.
-- Background work raises no macOS consent prompt: Keychain reads use `SecretStore::get`, and `get_interactive` serves only an explicit user request (`connect_keychain`); cwds under `Paths::protected` folders are skipped lexically, before any filesystem call.
+- Background work raises no OS consent prompt (macOS Keychain, protected folders): secret reads use `SecretStore::get`, and `get_interactive` serves only an explicit user request (`connect_keychain`); cwds under `Paths::protected` folders are skipped lexically, before any filesystem call.
 
 ## Branches
 

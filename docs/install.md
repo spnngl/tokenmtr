@@ -1,6 +1,9 @@
 # Install TokenMtr
 
-macOS only. Run TokenMtr from `/Applications`: the background service refuses a binary inside a
+TokenMtr runs on macOS and on Linux (amd64 and arm64). The numbered steps below are for macOS; Linux
+has [its own section](#linux).
+
+On macOS, run TokenMtr from `/Applications`: the background service refuses a binary inside a
 disk image (`/Volumes/…`) or a translocated copy (`…/AppTranslocation/…`), because launchd would
 point at a path that disappears. The CLI `tokenmtr` lives at
 `/Applications/TokenMtr.app/Contents/MacOS/tokenmtr`; to call it by name:
@@ -14,10 +17,10 @@ ln -s /Applications/TokenMtr.app/Contents/MacOS/tokenmtr /usr/local/bin/tokenmtr
 | What | Path |
 |---|---|
 | Config | `$TOKENMTR_CONFIG` (absolute path), else `$XDG_CONFIG_HOME/tokenmtr/config.toml` when `XDG_CONFIG_HOME` is absolute, else `~/.config/tokenmtr/config.toml` |
-| Store, backups, exports | `~/Library/Application Support/dev.tokenmtr.app/` (exports in `exports/`) |
-| Logs | `~/Library/Logs/tokenmtr/` |
-| Cache | `~/Library/Caches/dev.tokenmtr.app/` |
-| LaunchAgent | `~/Library/LaunchAgents/dev.tokenmtr.daemon.plist` |
+| Store, backups, exports | macOS `~/Library/Application Support/dev.tokenmtr.app/`; Linux `$XDG_DATA_HOME/dev.tokenmtr.app/`, else `~/.local/share/dev.tokenmtr.app/` (exports in `exports/`) |
+| Logs | macOS `~/Library/Logs/tokenmtr/`; Linux `$XDG_STATE_HOME/tokenmtr/`, else `~/.local/state/tokenmtr/` |
+| Cache | macOS `~/Library/Caches/dev.tokenmtr.app/`; Linux `$XDG_CACHE_HOME/dev.tokenmtr.app/`, else `~/.cache/dev.tokenmtr.app/` |
+| Daemon service | macOS LaunchAgent `~/Library/LaunchAgents/dev.tokenmtr.daemon.plist`; Linux systemd user unit `$XDG_CONFIG_HOME/systemd/user/tokenmtr.service`, else `~/.config/systemd/user/tokenmtr.service` |
 
 `tokenmtr config path` prints the config path in use.
 
@@ -35,7 +38,7 @@ removes the quarantine flag, so step 2 does not apply, and starts the daemon (st
 
 ## 1. Install the app
 
-Without Homebrew, download the `.dmg` from the [GitHub releases](https://github.com/spnngl/tokenmtr/releases).
+Without Homebrew, download the `.dmg` from the [GitHub releases](https://github.com/spnngl/tokenmtr/releases) and [verify it](#verify-a-download).
 
 1. Open the `.dmg`.
 2. Drag `TokenMtr.app` onto `Applications`.
@@ -165,6 +168,107 @@ the cache. Without Homebrew:
 **Done when:** `launchctl print gui/$(id -u)/dev.tokenmtr.daemon` fails, `dev.tokenmtr.daemon.plist`
 is gone and no `tokenmtr` process runs.
 
+## Linux
+
+The packages require glibc 2.43 or newer: Ubuntu 26.04 and later, Fedora 44 and later, Debian
+testing and openSUSE Tumbleweed. Older releases refuse the install. Both architectures are
+published: `amd64` or `x86_64`, and `arm64` or `aarch64`.
+
+### Install
+
+Download the package for your architecture from the
+[GitHub releases](https://github.com/spnngl/tokenmtr/releases), [verify it](#verify-a-download),
+then:
+
+```sh
+sudo apt install ./tokenmtr_<version>_amd64.deb         # Debian, Ubuntu
+sudo dnf install ./tokenmtr-<version>-1.x86_64.rpm      # Fedora
+sudo zypper install ./tokenmtr-<version>-1.x86_64.rpm   # openSUSE
+```
+
+The package installs the app as `/usr/bin/tokenmtr-desktop` with an application-menu entry
+(**TokenMtr**), and the CLI as `/usr/bin/tokenmtr`. The daemon runs the CLI binary. The only
+runtime dependency beyond glibc is `libayatana-appindicator3`, which draws the tray icon.
+
+**Done when:** `tokenmtr --version` prints the version and **TokenMtr** is in the application menu.
+
+### First run
+
+Open **TokenMtr** from the application menu: the main window shows the onboarding of
+[step 3](#3-first-run), and the tray icon appears in the panel. At login the app starts in the
+tray only.
+
+- **Tray icon:** GNOME shows none without the AppIndicator extension. Ubuntu ships it enabled;
+  on Fedora Workstation run `sudo dnf install gnome-shell-extension-appindicator` and enable the
+  extension. Linux trays send no click events, so open the recap from the tray menu's
+  **Show recap**.
+- **Global shortcut:** works under X11 sessions only. Under Wayland the registration fails and
+  the app logs it.
+- **Quota:** Claude Code keeps its token in `~/.claude/.credentials.json` on Linux, and TokenMtr
+  reads that file only. `tokenmtr quota connect` is a macOS command.
+- **Folder access:** nothing to grant. The sections on protected folders and the Keychain
+  ([step 5](#5-folder-access), [step 6](#6-keychain-access-for-quota)) apply to macOS only.
+
+### Daemon
+
+The daemon is a systemd user unit, `tokenmtr.service`, that runs `/usr/bin/tokenmtr run`. systemd
+restarts it only after a crash or a failed exit, at most every 30 seconds; a clean exit leaves it
+stopped until the next login or `service install`. The app installs it during onboarding. A
+headless install:
+
+```sh
+tokenmtr service install
+tokenmtr service status
+journalctl --user -u tokenmtr   # the daemon's log
+```
+
+- A user unit starts at login and stops at logout. On a server or after `ssh`, keep it running
+  with `loginctl enable-linger "$USER"`.
+- A package upgrade does not restart the daemon. The app restarts an outdated one when it
+  launches; without the app, run `tokenmtr service install` after the upgrade.
+- `tokenmtr service install` refuses to run when systemd loads `tokenmtr.service` from another
+  file, for example the unit of a different `HOME`: it would restart that daemon.
+- Large `~/.claude/projects` trees can exhaust the inotify limit that file watching uses. Raise
+  `fs.inotify.max_user_watches` with `sysctl` if the daemon lags behind new transcripts.
+
+**Done when:** `systemctl --user status tokenmtr` shows `active (running)`.
+
+### Uninstall
+
+1. Optional: erase TokenMtr's data with the CLI, as in [step 7](#7-uninstall).
+2. Without `erase`, run `tokenmtr service uninstall`. Do this before removing the package: the
+   unit points at `/usr/bin/tokenmtr`.
+3. Remove the package: `sudo apt remove tokenmtr` or `sudo dnf remove tokenmtr`.
+4. Delete the autostart entry in `~/.config/autostart/`, if the app created one.
+
+**Done when:** `systemctl --user status tokenmtr` reports the unit as not found, and no
+`tokenmtr` process runs.
+
+## Verify a download
+
+Every release lists a `SHA256SUMS` file, an SPDX software bill of materials
+(`tokenmtr_<version>.spdx.json`) and two kinds of Sigstore proof, all produced by the release
+workflow without any long-lived key. Either check proves the file came from that workflow at the
+release's tag.
+
+With the GitHub CLI, for the dmg, a deb or an rpm:
+
+```sh
+gh attestation verify tokenmtr_<version>_amd64.deb --repo spnngl/tokenmtr
+```
+
+With `cosign` alone, offline: verify the signed checksum list, then the checksums.
+
+```sh
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity https://github.com/spnngl/tokenmtr/.github/workflows/release.yml@refs/tags/v<version> \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+**Done when:** the command prints a successful verification, and `sha256sum` prints `OK` for each
+file you downloaded.
+
 ## Troubleshooting
 
 Start with `tokenmtr doctor`: agent roots per profile, file counts, last checkpoints, issue counts,
@@ -173,7 +277,7 @@ format drift, unresolved working directories, paths under protected folders, and
 
 | Symptom | Check |
 |---|---|
-| App shows "daemon offline" | `tokenmtr service status`; read `~/Library/Logs/tokenmtr/launchd.err.log`; run `tokenmtr service install`. |
+| App shows "daemon offline" | `tokenmtr service status`; read `~/Library/Logs/tokenmtr/launchd.err.log` (macOS) or run `journalctl --user -u tokenmtr` (Linux); run `tokenmtr service install`. |
 | "Move TokenMtr to Applications" | The app runs from the disk image or a translocated copy. Move it to `/Applications` and open it from there. |
 | "Update required" | The daemon speaks an older control protocol than the app. Click **Restart daemon from this app**: it repairs the plist to the bundled binary. |
 | Quota says `keychain_denied` | TokenMtr is missing from the item's access list: [step 6](#6-keychain-access-for-quota). After an update, `codesign -dv --verbose=2 /Applications/TokenMtr.app` must show `Authority=TokenMtr Local Signing`; another authority, or none, means the app was rebuilt or re-signed: reinstall it from the release `.dmg` and add it again. To compare the certificate itself, run `codesign -d --extract-certificates=/tmp/tokenmtr-cert /Applications/TokenMtr.app && shasum -a 256 /tmp/tokenmtr-cert0`: the hash must equal the fingerprint in the release notes. |

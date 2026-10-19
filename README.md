@@ -14,15 +14,21 @@ Screenshots: not added yet.
 - Claude Code (`claude`)
 - pi (`pi`)
 
-macOS only for now.
+macOS and Linux (amd64 and arm64).
 
 ## Install
+
+macOS:
 
 ```sh
 brew install --cask spnngl/tap/tokenmtr
 ```
 
-Or download the `.dmg` from the [releases](https://github.com/spnngl/tokenmtr/releases). First run, permissions and uninstall: [docs/install.md](docs/install.md).
+Or download the `.dmg` from the [releases](https://github.com/spnngl/tokenmtr/releases).
+
+Linux (Ubuntu 26.04+, Fedora 44+, Debian testing, openSUSE Tumbleweed): download the `.deb` or `.rpm` from the [releases](https://github.com/spnngl/tokenmtr/releases), then `sudo apt install ./tokenmtr_<version>_amd64.deb` or `sudo dnf install ./tokenmtr-<version>-1.x86_64.rpm`.
+
+First run, permissions, verifying a download and uninstall: [docs/install.md](docs/install.md).
 
 ## Quick start
 
@@ -90,6 +96,7 @@ just goldens # regenerate the UI's golden fixtures (apps/desktop/src/shared/sche
 - Homebrew `cargo` ignores `rust-toolchain.toml` and lacks the `x86_64` standard library; the workspace needs Rust 1.95 or newer, so put rustup's `~/.cargo/bin` first in `PATH`.
 - On a fresh clone, run `pnpm -C apps/desktop install && pnpm -C apps/desktop build` before `just check`: the desktop crate embeds the git-ignored `apps/desktop/dist`.
 - `apps/desktop/src-tauri` is outside the workspace's default members; build it with `cargo build -p tokenmtr-desktop`.
+- On Linux, install the build dependencies first (Ubuntu names; `.github/actions/linux-deps` is the reference): `build-essential file librsvg2-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev`. The Linux CI job and release build run on Ubuntu 26.04.
 - Test timestamps with explicit time zones: day buckets use the configured IANA zone.
 - `just bench` includes the store and query benchmarks (`crates/tokenmtr-query/benches/queries.rs`): they build a store of 1,000,000 events first (about a minute, ~700 MB in a temp dir). Set `TOKENMTR_BENCH_STORE=<file>` to keep and reuse it, `TOKENMTR_BENCH_EVENTS` to change its size; run long groups with `--sample-count 10`.
 - UI work starts from the briefs in [apps/desktop/src/shared/BRIEF.md](apps/desktop/src/shared/BRIEF.md).
