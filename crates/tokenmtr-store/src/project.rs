@@ -1,4 +1,5 @@
-//! The `project_map` table: working directory to project resolution.
+//! The `project_map` table: working directory to project resolution; and `project_remote`, the
+//! git remotes of each repository root.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
@@ -53,6 +54,17 @@ impl ProjectSource {
     }
 }
 
+/// One git remote of a repository, without credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitRemote {
+    /// Remote name, such as `origin` or `upstream`.
+    pub name: String,
+    /// Normalized URL, `host/owner/repo`.
+    pub url: String,
+    /// The remote's default branch (`refs/remotes/<name>/HEAD`), when the clone recorded it.
+    pub default_branch: Option<String>,
+}
+
 /// The project a working directory resolved to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectResolution {
@@ -66,12 +78,16 @@ pub struct ProjectResolution {
     pub client: Option<String>,
     /// Git repository root, when inside one.
     pub repo_root: Option<Utf8PathBuf>,
-    /// Normalized git remote, when there is one.
+    /// Normalized git remote that keys the project, when there is one.
     pub remote: Option<String>,
     /// When the resolution was computed.
     pub resolved_at: Timestamp,
     /// How it was resolved.
     pub source: ProjectSource,
+    /// Every remote of `repo_root` with a shared URL, by name; empty without a repository root.
+    /// Saving a resolution with remotes replaces the stored remotes of its root; saving one
+    /// without (a rule, or a repository known only from a hint) keeps them.
+    pub remotes: Vec<GitRemote>,
 }
 
 const COLUMNS: &str =
@@ -98,7 +114,65 @@ pub(crate) fn save(conn: &Connection, resolution: &ProjectResolution) -> Result<
         ":source": source,
         ":rule_id": rule,
     })?;
+    if let Some(root) = &resolution.repo_root
+        && !resolution.remotes.is_empty()
+    {
+        conn.prepare_cached("DELETE FROM project_remote WHERE repo_root = ?1")?
+            .execute([root.as_str()])?;
+        let mut insert = conn.prepare_cached(
+            "INSERT INTO project_remote (repo_root, name, url, default_branch) \
+             VALUES (?1, ?2, ?3, ?4)",
+        )?;
+        for remote in &resolution.remotes {
+            insert.execute(params![
+                root.as_str(),
+                remote.name,
+                remote.url,
+                remote.default_branch
+            ])?;
+        }
+    }
     Ok(())
+}
+
+/// The stored remotes of `root`, by name.
+fn remotes(conn: &Connection, root: &str) -> Result<Vec<GitRemote>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT name, url, default_branch FROM project_remote WHERE repo_root = ?1 ORDER BY name",
+    )?;
+    let rows = statement
+        .query_map([root], |row| {
+            Ok(GitRemote {
+                name: row.get(0)?,
+                url: row.get(1)?,
+                default_branch: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// The remotes of every repository root that `project` spans, by name then URL, without
+/// duplicates.
+pub(crate) fn project_remotes(
+    conn: &Connection,
+    project: &ProjectKey,
+) -> Result<Vec<GitRemote>, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT DISTINCT r.name, r.url, r.default_branch FROM project_remote r \
+         JOIN project_map m ON m.repo_root = r.repo_root \
+         WHERE m.project = ?1 ORDER BY r.name, r.url, r.default_branch",
+    )?;
+    let rows = statement
+        .query_map([project.as_str()], |row| {
+            Ok(GitRemote {
+                name: row.get(0)?,
+                url: row.get(1)?,
+                default_branch: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 /// Saves `resolutions` and points the events of each directory at its project and client.
@@ -213,17 +287,31 @@ pub(crate) fn get(
 ) -> Result<Option<ProjectResolution>, StoreError> {
     let sql = format!("SELECT {COLUMNS} FROM project_map WHERE cwd = ?1");
     let mut statement = conn.prepare_cached(&sql)?;
-    statement
+    let found = statement
         .query_and_then([cwd.as_str()], decode)?
         .next()
-        .transpose()
+        .transpose()?;
+    found.map(|r| with_remotes(conn, r)).transpose()
 }
 
 /// Every resolution, ordered by directory.
 pub(crate) fn all(conn: &Connection) -> Result<Vec<ProjectResolution>, StoreError> {
     let sql = format!("SELECT {COLUMNS} FROM project_map ORDER BY cwd");
     let mut statement = conn.prepare_cached(&sql)?;
-    statement.query_and_then([], decode)?.collect()
+    let found: Vec<ProjectResolution> = statement
+        .query_and_then([], decode)?
+        .collect::<Result<_, _>>()?;
+    found.into_iter().map(|r| with_remotes(conn, r)).collect()
+}
+
+fn with_remotes(
+    conn: &Connection,
+    mut resolution: ProjectResolution,
+) -> Result<ProjectResolution, StoreError> {
+    if let Some(root) = &resolution.repo_root {
+        resolution.remotes = remotes(conn, root.as_str())?;
+    }
+    Ok(resolution)
 }
 
 fn decode(row: &Row<'_>) -> Result<ProjectResolution, StoreError> {
@@ -239,5 +327,6 @@ fn decode(row: &Row<'_>) -> Result<ProjectResolution, StoreError> {
         remote: row.get("remote")?,
         resolved_at: row.ts("resolved_at_us")?,
         source: ProjectSource::from_parts(&source, row.get("rule_id")?)?,
+        remotes: Vec::new(),
     })
 }

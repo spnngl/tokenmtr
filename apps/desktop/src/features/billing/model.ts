@@ -38,6 +38,25 @@ export function planLabel(plan: Plan): string {
   return PLAN_LABELS[plan];
 }
 
+/** Plans bought per seat inside an organization, named with that organization. */
+const SEAT_PLANS: Record<Plan, boolean> = {
+  pro: false,
+  max_5x: false,
+  max_20x: false,
+  team: true,
+  enterprise: true,
+  custom: false,
+};
+
+/** An account's plan: "Team seat (Acme)" for seat plans, the plan label otherwise. */
+export function accountPlanLabel(plan: Plan, organization: string | null): string {
+  if (!SEAT_PLANS[plan]) {
+    return planLabel(plan);
+  }
+  const seat = `${planLabel(plan)} seat`;
+  return organization === null ? seat : `${seat} (${organization})`;
+}
+
 /** API value over fees as "3.2x"; `null` (no fee accrued) is "n/a". */
 /** A budget's spend as a fraction of its limit; above 1 when over budget. */
 export function budgetFraction(budget: MeasuredBudget): number {

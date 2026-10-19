@@ -41,6 +41,10 @@ keep = 14
 [import]
 claude_stats_cache = true
 
+[git]
+default_remote = "origin"      # its URL keys projects; else origin, else the first remote
+# default_branch = "main"      # reserved for branch statistics
+
 [[projects]]                   # first match wins; otherwise git resolution
 match = "~/work/acme-*/**"
 name = "acme"

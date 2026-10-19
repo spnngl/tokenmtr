@@ -11,8 +11,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use tokenmtr_core::{
-    AgentId, Alert, DedupKey, EventId, FxRate, MachineId, PricingVersion, ProfileId, SinkId,
-    SourceFileId, Subscription, UsageEvent,
+    AgentId, Alert, DedupKey, EventId, FxRate, MachineId, PricingVersion, ProfileId, ProjectKey,
+    SinkId, SourceFileId, Subscription, UsageEvent,
 };
 
 use crate::account::{self, AccountRecord};
@@ -27,7 +27,7 @@ use crate::issue::{self, IssueKind, OpenParseIssue, ParseIssue};
 use crate::meta::{self, Identity};
 use crate::migrations::{SCHEMA_VERSION, migrations};
 use crate::pricing::{self, StoredPricingSnapshot};
-use crate::project::{self, ProjectResolution};
+use crate::project::{self, GitRemote, ProjectResolution};
 use crate::quota::{self, QuotaPoll, QuotaSample};
 use crate::runs::{self, BackupRun, IngestRun};
 use crate::signal::{self, SessionSignal};
@@ -440,6 +440,14 @@ pub trait StoreRead: sealed::Sealed {
         project::all(self.connection())
     }
 
+    /// The git remotes of every repository `project` spans, by name, without duplicates.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    fn project_remotes(&self, project: &ProjectKey) -> Result<Vec<GitRemote>, StoreError> {
+        project::project_remotes(self.connection(), project)
+    }
+
     /// Every known account, ordered by agent and profile.
     ///
     /// # Errors
@@ -804,12 +812,13 @@ impl Store {
         meta::set_scan_finished(&self.conn, agent, at)
     }
 
-    /// Inserts or replaces the resolution of its working directory.
+    /// Inserts or replaces the resolution of its working directory, and the remotes of its
+    /// repository root, in one transaction.
     ///
     /// # Errors
-    /// `SQLite` failures.
+    /// `SQLite` failures (the transaction is rolled back).
     pub fn save_project(&mut self, resolution: &ProjectResolution) -> Result<(), StoreError> {
-        project::save(&self.conn, resolution)
+        self.in_transaction(|conn, _| project::save(conn, resolution))
     }
 
     /// Inserts or replaces the account of an agent profile.

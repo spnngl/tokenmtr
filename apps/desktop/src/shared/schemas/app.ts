@@ -106,6 +106,11 @@ export const settingsSchema = z.object({
     hidden_profiles: z.array(z.string()),
     shortcut: z.string(),
   }),
+  /** `[git]`: the remote whose URL keys projects; the work branch, reserved for branch stats. */
+  git: z.object({
+    default_remote: z.string(),
+    default_branch: z.string().nullable(),
+  }),
   alerts: z.object({
     quota_thresholds: z.array(countSchema),
     budget_thresholds: z.array(countSchema),

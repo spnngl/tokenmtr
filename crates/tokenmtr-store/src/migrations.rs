@@ -9,7 +9,7 @@ use rusqlite_migration::{HookResult, M, Migrations};
 use uuid::Uuid;
 
 /// The schema version this build reads and writes: the number of migrations in `migrations()`.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// All migrations, oldest first.
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -26,6 +26,7 @@ pub(crate) fn migrations() -> Migrations<'static> {
         M::up(include_str!(
             "../migrations/0006_inferred_project_keychain_denied.sql"
         )),
+        M::up(include_str!("../migrations/0007_project_remote.sql")),
     ])
 }
 
@@ -81,5 +82,32 @@ mod tests {
             )
             .unwrap();
         assert!(tables >= 17);
+    }
+
+    #[test]
+    fn project_remote_renames_remote_keyed_projects_to_owner_and_repo() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_version(&mut conn, 6).unwrap();
+        conn.execute_batch(
+            "INSERT INTO project_map (cwd, project, name, client, repo_root, remote, resolved_at_us, source, rule_id) VALUES \
+             ('/a', 'github.com/me/images', 'images', NULL, '/a', 'github.com/me/images', 0, 'remote', NULL), \
+             ('/b', 'gitlab.com/g/sub/repo', 'repo', NULL, NULL, 'gitlab.com/g/sub/repo', 0, 'inferred', NULL), \
+             ('/c', 'mine', 'Mine', NULL, '/c', 'github.com/me/c', 0, 'rule', 'r'), \
+             ('/d', '/d', 'd', NULL, '/d', NULL, 0, 'repo_root', NULL);",
+        )
+        .unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+        let names: Vec<String> = conn
+            .prepare("SELECT name FROM project_map ORDER BY cwd")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(names, ["me/images", "g/sub/repo", "Mine", "d"]);
+        let remotes: i64 = conn
+            .query_row("SELECT COUNT(*) FROM project_remote", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remotes, 0);
     }
 }

@@ -507,6 +507,12 @@
           "markdownDescription": "Enables the project_models command without any pre-configured scope."
         },
         {
+          "description": "Enables the project_remotes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-project-remotes",
+          "markdownDescription": "Enables the project_remotes command without any pre-configured scope."
+        },
+        {
           "description": "Enables the project_rule_for command without any pre-configured scope.",
           "type": "string",
           "const": "allow-project-rule-for",
@@ -601,6 +607,12 @@
           "type": "string",
           "const": "allow-sessions",
           "markdownDescription": "Enables the sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_git_defaults command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-git-defaults",
+          "markdownDescription": "Enables the set_git_defaults command without any pre-configured scope."
         },
         {
           "description": "Enables the set_launch_at_login command without any pre-configured scope.",
@@ -807,6 +819,12 @@
           "markdownDescription": "Denies the project_models command without any pre-configured scope."
         },
         {
+          "description": "Denies the project_remotes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-project-remotes",
+          "markdownDescription": "Denies the project_remotes command without any pre-configured scope."
+        },
+        {
           "description": "Denies the project_rule_for command without any pre-configured scope.",
           "type": "string",
           "const": "deny-project-rule-for",
@@ -901,6 +919,12 @@
           "type": "string",
           "const": "deny-sessions",
           "markdownDescription": "Denies the sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_git_defaults command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-git-defaults",
+          "markdownDescription": "Denies the set_git_defaults command without any pre-configured scope."
         },
         {
           "description": "Denies the set_launch_at_login command without any pre-configured scope.",

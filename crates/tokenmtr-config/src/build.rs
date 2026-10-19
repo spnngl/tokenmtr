@@ -20,10 +20,10 @@ use crate::error::{ConfigPath, Rejection, Violation};
 use crate::model::{
     AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry, BudgetScope,
     CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset, DisplayConfig,
-    FileFormat, FileSink, FxConfig, ImportConfig, IntegrationsConfig, LoggingConfig, MachineConfig,
-    MenubarConfig, MenubarRing, Percent, PricingConfig, PrivacyConfig, ProfileConfig,
-    ProfileLocation, ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig,
-    SupersetConfig, TimeZoneSetting,
+    FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig, IntegrationsConfig,
+    LoggingConfig, MachineConfig, MenubarConfig, MenubarRing, Percent, PricingConfig,
+    PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig, SinkConfig,
+    SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
@@ -98,6 +98,14 @@ impl Config {
                         &root.key("integrations").key("superset").key("dir"),
                     )?,
                 },
+            },
+            git: GitConfig {
+                default_remote: raw
+                    .git
+                    .default_remote
+                    .clone()
+                    .unwrap_or_else(GitName::origin),
+                default_branch: raw.git.default_branch.clone(),
             },
             projects: build_projects(&raw.projects, env)?,
             budgets: build_budgets(&raw.budgets, display.currency, &agents, &enabled)?,

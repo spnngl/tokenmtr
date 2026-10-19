@@ -2,18 +2,20 @@ import type { ReactNode } from "react";
 import { formatCount, formatCurrencyMicros } from "../../shared/format";
 import type { Advice, AdvisorReport } from "../../shared/schemas";
 import { Badge, type Column, DataTable, Section } from "../../shared/ui";
-import { ADVISOR_MIN_DAYS, planLabel } from "./model";
+import { ADVISOR_MIN_DAYS, accountPlanLabel, planLabel } from "./model";
 
 type Recommendation = Extract<Advice, { advice: "recommend" }>;
 type PlanFit = Recommendation["fits"][number];
 
-function verdictText(recommendation: Recommendation): string {
+function verdictText(recommendation: Recommendation, current: string): string {
   const { verdict } = recommendation;
   switch (verdict.verdict) {
     case "keep":
-      return `Keep ${planLabel(recommendation.current)}: it fits your usage with room to spare.`;
+      return `Keep ${current}: it fits your usage with room to spare.`;
     case "downgrade":
-      return `Consider ${planLabel(verdict.plan)}: your usage would fit a cheaper plan.`;
+      return recommendation.current_monthly_fee === null
+        ? `Consider ${planLabel(verdict.plan)}: your usage would fit its smaller quota.`
+        : `Consider ${planLabel(verdict.plan)}: your usage would fit a cheaper plan.`;
     case "upgrade":
       return `Consider ${planLabel(verdict.plan)}: your usage is close to or above the current plan's limits.`;
     case "pay_as_you_go":
@@ -39,6 +41,21 @@ const FIT_COLUMNS: readonly Column<PlanFit>[] = [
   },
 ];
 
+/** How the current plan's quota was sized and priced, when that is not its own catalog entry. */
+function sizingText(recommendation: Recommendation, current: string): string | null {
+  const { sizing, current_monthly_fee: fee } = recommendation;
+  const unknownFee =
+    fee === null ? " Its fee is unknown: track it as a subscription to compare prices." : "";
+  switch (sizing.source) {
+    case "catalog":
+      return null;
+    case "rate_tier":
+      return `${current}, quota sized as ${planLabel(sizing.plan)} from Claude's rate tier.${unknownFee}`;
+    default:
+      return sizing satisfies never;
+  }
+}
+
 function AdviceBody({ report }: { readonly report: AdvisorReport }): ReactNode {
   const { advice } = report;
   switch (advice.advice) {
@@ -49,19 +66,40 @@ function AdviceBody({ report }: { readonly report: AdvisorReport }): ReactNode {
           {advice.span_days}.
         </p>
       );
-    case "not_applicable":
+    case "no_plan":
       return (
         <p className="text-sm">
-          Not applicable: no subscription plan was detected for this account, so there is nothing to
-          compare.
+          No plan detected: Claude has not reported a subscription for this account, so there is
+          nothing to compare.
         </p>
       );
-    case "recommend":
+    case "unknown_quota":
+      return (
+        <p className="text-sm">
+          {report.current_plan === null
+            ? "This plan"
+            : accountPlanLabel(report.current_plan, report.organization)}{" "}
+          was detected, but its quota size is unknown: Claude's rate tier does not name a plan to
+          compare with.
+        </p>
+      );
+    case "recommend": {
+      const label = accountPlanLabel(advice.current, report.organization);
+      const sizing = sizingText(advice, label);
       return (
         <div className="flex flex-col gap-3">
-          <p className="text-sm font-medium">{verdictText(advice)}</p>
-          <dl className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-            <Input label="Current plan" value={planLabel(advice.current)} />
+          <p className="text-sm font-medium">{verdictText(advice, label)}</p>
+          {sizing === null ? null : <p className="text-sm text-fg-muted">{sizing}</p>}
+          <dl className="grid grid-cols-2 gap-2 text-sm md:grid-cols-3 lg:grid-cols-5">
+            <Input label="Current plan" value={label} />
+            <Input
+              label="Current fee / month"
+              value={
+                advice.current_monthly_fee === null
+                  ? "Unknown"
+                  : formatCurrencyMicros(advice.current_monthly_fee, "USD")
+              }
+            />
             <Input
               label="Average month at API rates"
               value={formatCurrencyMicros(report.monthly_api_value_usd_micros, "USD")}
@@ -77,6 +115,7 @@ function AdviceBody({ report }: { readonly report: AdvisorReport }): ReactNode {
           />
         </div>
       );
+    }
     default:
       return advice satisfies never;
   }

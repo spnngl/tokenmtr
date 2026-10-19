@@ -9,8 +9,8 @@ use jiff::civil::Date;
 use tokenmtr_config::Config;
 use tokenmtr_core::{Currency, ProjectKey, SubscriptionId};
 use tokenmtr_query::{
-    BillingFilter, Bucket, ClientName, DateRange, Filters, GroupBy, QueryContext, billing, models,
-    overview, projects, series,
+    BillingFilter, Bucket, ClientName, DateRange, Filters, GroupBy, ProjectGrouping, QueryContext,
+    billing, models, overview, projects, series,
 };
 use tokenmtr_report::{
     Amount, DayInput, ModelInput, Period, ProjectInput, Report, ReportInput, Scope,
@@ -197,7 +197,7 @@ fn report_input(
 
     let mut accounts: BTreeMap<(String, Option<String>), ProjectAcc> = BTreeMap::new();
     let mut collect = |filters: &Filters, subscription: Option<&str>| -> Result<(), AppError> {
-        for row in projects(reader, &ctx, filters)?.rows {
+        for row in projects(reader, &ctx, filters, ProjectGrouping::Project)?.rows {
             let name = row
                 .name
                 .or(row.project)

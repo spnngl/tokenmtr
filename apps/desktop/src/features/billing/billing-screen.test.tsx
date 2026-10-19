@@ -89,8 +89,18 @@ describe("BillingScreen", () => {
 
     expect(screen.getAllByText("Estimate")).toHaveLength(BILLING_DATA.advisor.length);
     expect(screen.getByText(/needs 14 days of quota history and has 5/i)).toBeTruthy();
-    expect(screen.getByText(/Not applicable/)).toBeTruthy();
+    expect(screen.getByText(/No plan detected/)).toBeTruthy();
     expect(screen.getByText(/Consider Max 20x/)).toBeTruthy();
+    // A Team seat is named with its organization and sized from Claude's rate tier.
+    expect(
+      screen.getByText(
+        "Team seat (Wiremind), quota sized as Max 5x from Claude's rate tier. Its fee is unknown: track it as a subscription to compare prices.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/Consider Pro: your usage would fit its smaller quota/)).toBeTruthy();
+    expect(
+      screen.getByText(/Team seat \(Wiremind\) was detected, but its quota size is unknown/),
+    ).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: /Track it: claude-code/ }));
     expect(onTrackPlan).toHaveBeenCalledWith({

@@ -7,7 +7,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use tokenmtr_app::{EraseScope, ReportRequest};
-use tokenmtr_config::{MenubarRing, RawProject};
+use tokenmtr_config::{GitName, MenubarRing, RawProject};
 use tokenmtr_control::Client;
 use tokenmtr_core::{AgentId, ProfileId, ProjectKey, SessionId, SubscriptionSpec};
 use tokenmtr_platform::{LaunchdService, SystemRunner};
@@ -236,6 +236,22 @@ pub fn set_menubar_rings(
     Ok(())
 }
 
+/// Sets the remote that keys projects and the default branch.
+///
+/// # Errors
+///
+/// A config that cannot be edited, or a `[git]` key that is not a table.
+pub fn set_git_defaults(
+    backend: &Backend,
+    default_remote: &GitName,
+    default_branch: Option<&GitName>,
+) -> Result<(), CommandError> {
+    backend
+        .context()?
+        .set_git_defaults(default_remote, default_branch)?;
+    Ok(())
+}
+
 /// Raises the transcript retention of a Claude profile to ten years.
 ///
 /// # Errors
@@ -380,6 +396,26 @@ mod tests {
             )
             .is_err()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn set_git_defaults_writes_the_config() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = seeded(CONFIG)?;
+        let upstream = GitName::try_from("upstream".to_owned())?;
+        let main = GitName::try_from("main".to_owned())?;
+        set_git_defaults(&fixture.backend, &upstream, Some(&main))?;
+        let text = std::fs::read_to_string(fixture.backend.config_path())?;
+        assert!(text.contains("default_remote = \"upstream\""), "{text}");
+        assert!(text.contains("default_branch = \"main\""), "{text}");
+        assert_eq!(
+            fixture.backend.context()?.config().git.default_remote,
+            upstream
+        );
+        set_git_defaults(&fixture.backend, &upstream, None)?;
+        let text = std::fs::read_to_string(fixture.backend.config_path())?;
+        assert!(!text.contains("default_branch"), "{text}");
+        assert_eq!(fixture.backend.context()?.config().git.default_branch, None);
         Ok(())
     }
 

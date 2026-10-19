@@ -4,10 +4,10 @@ use jiff::{Span, Timestamp};
 use serde::Serialize;
 use serde_json::Value;
 use tokenmtr_app::AppContext;
-use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId};
+use tokenmtr_core::{AgentId, Currency, ProfileId, ProjectKey, SessionId};
 use tokenmtr_query::{
-    AgentRecap, Bucket, DateRange, Filters, Granularity, GroupBy, Period, QueryContext, QueryError,
-    Selection, Status,
+    AgentRecap, Bucket, DateRange, Filters, Granularity, GroupBy, Period, ProjectGrouping,
+    QueryContext, QueryError, Selection, Status,
 };
 use tokenmtr_store::StoreReader;
 
@@ -89,8 +89,11 @@ pub fn projects(
     app: &AppContext,
     now: Timestamp,
     request: &QueryRequest,
+    grouping: ProjectGrouping,
 ) -> Result<Value, CommandError> {
-    filtered(app, now, request, tokenmtr_query::projects)
+    filtered(app, now, request, |reader, ctx, filters| {
+        tokenmtr_query::projects(reader, ctx, filters, grouping)
+    })
 }
 
 /// `project_models`.
@@ -98,8 +101,16 @@ pub fn project_models(
     app: &AppContext,
     now: Timestamp,
     request: &QueryRequest,
+    grouping: ProjectGrouping,
 ) -> Result<Value, CommandError> {
-    filtered(app, now, request, tokenmtr_query::project_models)
+    filtered(app, now, request, |reader, ctx, filters| {
+        tokenmtr_query::project_models(reader, ctx, filters, grouping)
+    })
+}
+
+/// `project_remotes`.
+pub fn project_remotes(app: &AppContext, project: &ProjectKey) -> Result<Value, CommandError> {
+    json(tokenmtr_query::project_remotes(app.reader(), project))
 }
 
 /// `branches`.
@@ -476,6 +487,21 @@ mod tests {
         let app = fixture.backend.context()?;
         let series = series(&app, fixture.now, &request("USD")?, GroupBy::None)?;
         assert!(series.is_object(), "{series}");
+        Ok(())
+    }
+
+    #[test]
+    fn projects_group_by_project_or_folder() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = seeded(CONFIG)?;
+        let app = fixture.backend.context()?;
+        for grouping in [ProjectGrouping::Project, ProjectGrouping::Folder] {
+            let rows = projects(&app, fixture.now, &request("USD")?, grouping)?;
+            assert!(rows["rows"].is_array(), "{rows}");
+            let split = project_models(&app, fixture.now, &request("USD")?, grouping)?;
+            assert!(split["rows"].is_array(), "{split}");
+        }
+        let project = ProjectKey::try_from("github.com/acme/tool")?;
+        assert_eq!(project_remotes(&app, &project)?, json!([]));
         Ok(())
     }
 

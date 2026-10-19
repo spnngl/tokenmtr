@@ -3,7 +3,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
-use tokenmtr_config::{Config, Env, ProfileLocation, ProjectRule, TimeZoneSetting};
+use tokenmtr_config::{Config, Env, GitName, ProfileLocation, ProjectRule, TimeZoneSetting};
 use tokenmtr_core::{AgentId, Override};
 use tokenmtr_platform::Paths;
 
@@ -26,6 +26,8 @@ pub struct IngestSettings {
     pub sources: Vec<AgentKind>,
     /// `[[projects]]` rules, in match order.
     pub rules: Vec<ProjectRule>,
+    /// `[git] default_remote`: the remote whose URL keys a repository's project.
+    pub default_remote: GitName,
     /// `[pricing.overrides]`.
     pub overrides: Vec<Override>,
     /// The display zone: stats-cache days sit at 12:00 in it.
@@ -51,8 +53,16 @@ impl IngestSettings {
     #[must_use]
     pub fn suggested_project_name(&self, cwd: &Utf8Path, now: Timestamp) -> Option<String> {
         ProjectResolver::new(Vec::new(), self.protected.clone())
+            .with_default_remote(self.default_remote.clone())
             .resolve(cwd, now, &mut self.hints())
             .map(|found| found.resolution.name)
+    }
+
+    /// The resolver of these settings: their rules, protected folders and default remote.
+    #[must_use]
+    pub fn resolver(&self) -> ProjectResolver {
+        ProjectResolver::new(self.rules.clone(), self.protected.clone())
+            .with_default_remote(self.default_remote.clone())
     }
 
     /// Superset's hints when the integration is on, read on first use.
@@ -106,6 +116,7 @@ impl IngestSettings {
         Self {
             sources,
             rules: config.projects.clone(),
+            default_remote: config.git.default_remote.clone(),
             overrides: config.pricing.overrides.clone(),
             zone: match &config.display.timezone {
                 TimeZoneSetting::System => TimeZone::system(),

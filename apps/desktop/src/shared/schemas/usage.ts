@@ -23,7 +23,7 @@ export const totalsSchema = z.object({
 export type Totals = z.infer<typeof totalsSchema>;
 
 const BUCKETS = ["day", "week", "month"] as const;
-const GROUP_BYS = ["none", "agent", "model", "project"] as const;
+const GROUP_BYS = ["none", "agent", "model", "project", "folder"] as const;
 const bucketSchema = z.enum(BUCKETS);
 const groupBySchema = z.enum(GROUP_BYS);
 export type GroupBy = z.infer<typeof groupBySchema>;
@@ -73,7 +73,12 @@ export type ModelRow = z.infer<typeof modelRowSchema>;
 export const modelsSchema = breakdownOf(modelRowSchema);
 export type Models = z.infer<typeof modelsSchema>;
 
+/** What the project breakdowns group by: the project key, or the repository root (else cwd). */
+export const PROJECT_GROUPINGS = ["project", "folder"] as const;
+export type ProjectGrouping = (typeof PROJECT_GROUPINGS)[number];
+
 const projectRowSchema = z.object({
+  /** Project key, or folder path when grouped by folder. */
   project: z.string().nullable(),
   name: z.string().nullable(),
   client: z.string().nullable(),
@@ -95,6 +100,19 @@ const projectModelsRowSchema = z.object({
 export type ProjectModelsRow = z.infer<typeof projectModelsRowSchema>;
 export const projectModelsSchema = breakdownOf(projectModelsRowSchema);
 export type ProjectModels = z.infer<typeof projectModelsSchema>;
+
+/** One git remote of a project (`project_remotes`), by name. */
+const projectRemoteSchema = z.object({
+  name: z.string(),
+  host: z.string(),
+  /** Path after the host: `owner/repo`. */
+  repository: z.string(),
+  default_branch: z.string().nullable(),
+  /** This remote's URL is the project key. */
+  keys_project: z.boolean(),
+});
+export type ProjectRemote = z.infer<typeof projectRemoteSchema>;
+export const projectRemotesSchema = z.array(projectRemoteSchema);
 
 const branchRowSchema = z.object({ branch: z.string().nullable(), ...usageShape });
 export type BranchRow = z.infer<typeof branchRowSchema>;

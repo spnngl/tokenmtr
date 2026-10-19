@@ -75,6 +75,10 @@
     ],
     "shortcut": "CmdOrCtrl+Shift+T"
   },
+  "git": {
+    "default_remote": "origin",
+    "default_branch": "main"
+  },
   "alerts": {
     "quota_thresholds": [
       80,

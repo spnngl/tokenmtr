@@ -20,6 +20,7 @@ import {
   modelsSchema,
   parseIssueSchema,
   projectModelsSchema,
+  projectRemotesSchema,
   projectRuleSchema,
   projectsSchema,
   quotaHistorySchema,
@@ -92,8 +93,11 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     overview: (filters) => read("overview", request(filters), totalsSchema),
     series: (filters, groupBy) => read("series", { ...request(filters), groupBy }, seriesSchema),
     models: (filters) => read("models", request(filters), modelsSchema),
-    projects: (filters) => read("projects", request(filters), projectsSchema),
-    projectModels: (filters) => read("project_models", request(filters), projectModelsSchema),
+    projects: (filters, grouping) =>
+      read("projects", { ...request(filters), grouping }, projectsSchema),
+    projectModels: (filters, grouping) =>
+      read("project_models", { ...request(filters), grouping }, projectModelsSchema),
+    projectRemotes: (project) => read("project_remotes", { project }, projectRemotesSchema),
     branches: (filters) => read("branches", request(filters), branchesSchema),
     unresolvedCwds: (filters) =>
       read("unresolved_cwds", request(filters), z.array(unresolvedCwdSchema)),
@@ -146,6 +150,8 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     addSubscription: (spec) => act("add_subscription", { spec }),
     // Tauri maps the camelCase key onto the command's `hidden_profiles` argument.
     setMenubarRings: (rings, hiddenProfiles) => act("set_menubar_rings", { rings, hiddenProfiles }),
+    setGitDefaults: (defaultRemote, defaultBranch) =>
+      act("set_git_defaults", { defaultRemote, defaultBranch }),
     connectKeychain: () => act("connect_keychain"),
     keepTenYears: (agent, profile) => act("keep_ten_years", { agent, profile }),
     setLaunchAtLogin: (enabled) => act("set_launch_at_login", { enabled }),

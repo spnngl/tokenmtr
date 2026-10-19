@@ -9,13 +9,14 @@ use serde::Serialize;
 use tokenmtr_core::fx::utc_date;
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
-    Advice, AgentId, Currency, Plan, PlanCatalog, ProfileId, QuotaEta, QuotaSnapshot, QuotaWindow,
-    UsdMicros, Utilization, WindowId, advise, quota_eta, saturating_micros,
+    Advice, AgentId, BillingPeriod, Currency, CurrentPlan, Plan, PlanCatalog, ProfileId, QuotaEta,
+    QuotaSnapshot, QuotaWindow, UsdMicros, Utilization, WindowId, advise, quota_eta,
+    saturating_micros,
 };
 use tokenmtr_store::{QuotaStatus, StoreRead, StoreReader};
 
 use crate::context::QueryContext;
-use crate::engine::{Dim, Scope, closed, fetch, usd_to};
+use crate::engine::{Dim, Scope, closed, eur_to_usd, fetch, usd_to};
 use crate::error::QueryError;
 use crate::filters::{Filters, ProfileSelector};
 use crate::range::DateRange;
@@ -363,16 +364,20 @@ pub struct AdvisorReport {
     pub profile: String,
     /// The plan assumed current; absent when unknown.
     pub current_plan: Option<Plan>,
+    /// Organization of the Claude login, e.g. a Team's name; absent when unknown.
+    pub organization: Option<String>,
     /// Quota polls of the last 30 days that fed the advisor.
     pub snapshots: usize,
     /// API value of the last 30 days, scaled to an average month, USD micros.
     pub monthly_api_value_usd_micros: i64,
-    /// The verdict; `not_applicable` when the current plan is unknown.
+    /// The verdict; `no_plan` when the current plan is unknown.
     pub advice: Advice,
 }
 
 /// Runs the advisor over the last 30 days for one agent profile. `current` overrides the plan
-/// detected from the account; without either the advice is `not_applicable`.
+/// detected from the account; without either the advice is `no_plan`. The account's rate-limit
+/// tier sizes a plan the catalog has no quota for (Team, Enterprise), and the subscription
+/// declared for the profile today sets the current fee (EUR converted at today's rate).
 ///
 /// # Errors
 ///
@@ -395,14 +400,15 @@ pub fn advisor(
     .map_err(|_| QueryError::decode("range", today))?;
     let (from, to) = range.instants(ctx.zone())?;
     let snapshots = load_snapshots(reader, agent, profile.as_str(), from, to)?;
-    let plan = match current {
-        Some(plan) => Some(plan),
-        None => reader
-            .accounts()?
-            .into_iter()
-            .find(|a| a.agent == agent && a.profile == *profile)
-            .and_then(|a| a.detected_plan),
-    };
+    let account = reader
+        .accounts()?
+        .into_iter()
+        .find(|a| a.agent == agent && a.profile == *profile);
+    let plan = current.or_else(|| account.as_ref().and_then(|a| a.detected_plan));
+    let tier = account
+        .as_ref()
+        .and_then(|a| a.rate_limit_tier.as_deref())
+        .and_then(Plan::from_rate_limit_tier);
     let filters = Filters::new(range)
         .agents([agent])
         .profile_selectors([ProfileSelector {
@@ -421,18 +427,47 @@ pub fn advisor(
         Some(plan) => advise(
             &snapshots,
             &PlanCatalog::embedded()?,
-            plan,
+            CurrentPlan {
+                plan,
+                tier,
+                monthly_fee: declared_monthly_fee(ctx, agent, profile),
+            },
             headroom,
             UsdMicros::new(monthly),
         ),
-        None => Advice::NotApplicable,
+        None => Advice::NoPlan,
     };
     Ok(AdvisorReport {
         agent,
         profile: profile.as_str().to_owned(),
         current_plan: plan,
+        organization: account.and_then(|a| a.organization),
         snapshots: snapshots.len(),
         monthly_api_value_usd_micros: monthly,
         advice,
     })
+}
+
+/// The monthly USD fee of the subscription covering `agent`/`profile` today (a yearly fee over
+/// twelve); `None` without one, or for a EUR fee when no rate is known.
+fn declared_monthly_fee(
+    ctx: &QueryContext,
+    agent: AgentId,
+    profile: &ProfileId,
+) -> Option<UsdMicros> {
+    let today = ctx.today();
+    let sub = ctx.subscriptions().iter().find(|s| {
+        s.agents().contains(&agent)
+            && s.profiles().is_none_or(|p| p.contains(profile))
+            && s.is_active_on(today)
+    })?;
+    let fee = sub.fee();
+    let usd = match fee.currency() {
+        Currency::Usd => fee.micros(),
+        Currency::Eur => eur_to_usd(fee.micros(), ctx.fx().rate(today)?.rate),
+    };
+    Some(UsdMicros::new(match sub.period() {
+        BillingPeriod::Monthly => usd,
+        BillingPeriod::Yearly => usd / 12,
+    }))
 }

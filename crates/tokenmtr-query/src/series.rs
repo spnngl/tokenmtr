@@ -26,6 +26,9 @@ pub enum GroupBy {
     Model,
     /// By project key (`(none)` when unresolved).
     Project,
+    /// By folder: repository root, else cwd (`(none)` without a cwd); see
+    /// [`crate::ProjectGrouping::Folder`].
+    Folder,
 }
 
 /// Key of events without a project.
@@ -90,6 +93,7 @@ pub fn series(
         GroupBy::None | GroupBy::Agent => Dim::None,
         GroupBy::Model => Dim::Model,
         GroupBy::Project => Dim::Project,
+        GroupBy::Folder => Dim::Folder,
     };
     let fetched = fetch(reader, ctx, filters, dim, Scope::All)?;
     let week_start = ctx.week_start();
@@ -124,8 +128,10 @@ pub fn series(
             GroupBy::None => continue,
             GroupBy::Agent => row.cell.agent.as_str().to_owned(),
             // Extra usage has no model or project: like idle fees, it is in the bucket only.
-            GroupBy::Model | GroupBy::Project if row.mode == Mode::Extra => continue,
-            GroupBy::Model | GroupBy::Project => {
+            GroupBy::Model | GroupBy::Project | GroupBy::Folder if row.mode == Mode::Extra => {
+                continue;
+            }
+            GroupBy::Model | GroupBy::Project | GroupBy::Folder => {
                 row.cell.k1.clone().unwrap_or_else(|| NO_GROUP.to_owned())
             }
         };

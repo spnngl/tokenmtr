@@ -298,7 +298,8 @@ describe("Projects", () => {
     const { router } = await renderApp("/projects?agent=claude");
     expect(await screen.findByRole("heading", { name: "Acme" })).toBeTruthy();
     await user.click(await screen.findByRole("button", { name: /tokenmtr/ }));
-    expect(await screen.findByText("main")).toBeTruthy();
+    const branches = await screen.findByRole("list", { name: "Branches by API value" });
+    expect(within(branches).getByText("main")).toBeTruthy();
     // The drilldown is a route: linkable, and Back returns to the list with the filters.
     expect(router.state.location.pathname).toBe("/projects/tokenmtr");
     expect(searchOf(router).get("agent")).toBe("claude");
@@ -403,6 +404,26 @@ describe("Settings", () => {
         ["session", "weekly", "per_model"],
         ["work"],
       ]),
+    );
+  });
+
+  it("sets the default remote and branch, rejecting a blank remote", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    await renderApp("/settings", { onAction });
+    const remote = await screen.findByRole("textbox", { name: "Default remote" });
+    expect(remote).toHaveProperty("value", "origin");
+    const save = within(screen.getByRole("region", { name: "Git" })).getByRole("button", {
+      name: "Save",
+    });
+    await user.clear(remote);
+    await user.click(save);
+    expect(onAction).not.toHaveBeenCalledWith("setGitDefaults", expect.anything());
+    await user.type(remote, " upstream ");
+    await user.type(screen.getByRole("textbox", { name: "Default branch" }), "main");
+    await user.click(save);
+    await waitFor(() =>
+      expect(onAction).toHaveBeenCalledWith("setGitDefaults", ["upstream", "main"]),
     );
   });
 

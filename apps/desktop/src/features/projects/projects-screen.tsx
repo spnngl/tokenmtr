@@ -17,6 +17,7 @@ import {
   useBranches,
   useModels,
   useProjectModels,
+  useProjectRemotes,
   useProjectRuleFor,
   useProjects,
   useSeries,
@@ -24,7 +25,13 @@ import {
 } from "../../shared/queries";
 import { RankedBars } from "../../shared/ranked-bars";
 import { CardRemote, NO_USAGE_COPY, RemoteView } from "../../shared/remote-view";
-import type { ProjectRow, UnresolvedCwd } from "../../shared/schemas";
+import type {
+  ProjectGrouping,
+  ProjectRemote,
+  ProjectRow,
+  UnresolvedCwd,
+} from "../../shared/schemas";
+import { SegmentedControl } from "../../shared/segmented-control";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
 import { CostByModelPanel } from "../insights/cost-by-model-panel";
@@ -37,6 +44,11 @@ import {
 } from "./project-charts";
 
 const NO_CLIENT = "No client";
+
+const GROUPINGS: readonly { readonly value: ProjectGrouping; readonly label: string }[] = [
+  { value: "project", label: "Remote" },
+  { value: "folder", label: "Folder" },
+];
 
 /** Projects grouped by client; the groups keep the order of their biggest project. */
 export function groupByClient(rows: readonly ProjectRow[]): [string, ProjectRow[]][] {
@@ -52,13 +64,16 @@ function ProjectBars(props: {
   readonly rows: readonly ProjectRow[];
   readonly currency: Currency;
   readonly label: string;
-  readonly onOpen: (project: string) => void;
+  /** Absent for folder rows: a folder has no detail page. */
+  readonly onOpen: ((project: string) => void) | null;
 }): ReactNode {
+  const { onOpen } = props;
   return (
     <RankedBars
       label={props.label}
       items={props.rows.map((row) => {
         const { project } = row;
+        const share = `${formatPercent(row.share_percent / 100)} of cost · ${formatTokens(row.total_tokens)} tokens`;
         return {
           key: project ?? "(none)",
           label: projectLabel(row),
@@ -70,24 +85,34 @@ function ProjectBars(props: {
             />
           ),
           percent: row.share_percent,
-          detail: `${formatPercent(row.share_percent / 100)} of cost · ${formatTokens(row.total_tokens)} tokens`,
-          ...(project === null ? {} : { onPress: () => props.onOpen(project) }),
+          // A folder's name is its last component: the path tells two clones apart.
+          detail: onOpen === null && project !== null ? `${project} · ${share}` : share,
+          ...(project === null || onOpen === null ? {} : { onPress: () => onOpen(project) }),
         };
       })}
     />
   );
 }
 
-/** Cost over time per project, and each project's split by model. */
-function ProjectsCharts({ rows }: { readonly rows: readonly ProjectRow[] }): ReactNode {
+/** Cost over time per project (or folder), and each one's split by model. */
+function ProjectsCharts(props: {
+  readonly rows: readonly ProjectRow[];
+  readonly grouping: ProjectGrouping;
+}): ReactNode {
   const { filters } = useFilters();
+  const { rows, grouping } = props;
+  const series = useSeries(filters, grouping);
+  const split = useProjectModels(filters, grouping);
   return (
     <>
-      <CardRemote title="Cost over time" remote={toRemote(useSeries(filters, "project"))}>
-        {(series) => <ProjectCostLines series={series} label={seriesLabels(rows)} />}
+      <CardRemote title="Cost over time" remote={toRemote(series)}>
+        {(points) => <ProjectCostLines series={points} label={seriesLabels(rows)} />}
       </CardRemote>
-      <CardRemote title="Cost by model per project" remote={toRemote(useProjectModels(filters))}>
-        {(split) => <ProjectModelBars split={split} />}
+      <CardRemote
+        title={grouping === "folder" ? "Cost by model per folder" : "Cost by model per project"}
+        remote={toRemote(split)}
+      >
+        {(models) => <ProjectModelBars split={models} grouping={grouping} />}
       </CardRemote>
     </>
   );
@@ -162,7 +187,40 @@ export function ProjectDetailScreen({ project }: { readonly project: string }): 
           );
         }}
       </RemoteView>
+      <CardRemote title="Remotes" remote={toRemote(useProjectRemotes(project))}>
+        {(rows) => <RemotesCard rows={rows} />}
+      </CardRemote>
     </>
+  );
+}
+
+const REMOTE_COLUMNS: Column<ProjectRemote>[] = [
+  {
+    header: "Remote",
+    cell: (row) => (row.keys_project ? `${row.name} (project key)` : row.name),
+  },
+  { header: "Repository", cell: (row) => row.repository },
+  { header: "Default branch", cell: (row) => row.default_branch ?? "Unknown" },
+];
+
+/** The git remotes of the project's repositories, read from the clones without network. */
+function RemotesCard({ rows }: { readonly rows: readonly ProjectRemote[] }): ReactNode {
+  return (
+    <Card title="Remotes">
+      {rows.length === 0 ? (
+        <p className="text-sm text-fg-muted">
+          No git remote: this project is not a repository with a shared remote, or its paths are
+          redacted.
+        </p>
+      ) : (
+        <DataTable
+          caption="Git remotes"
+          rows={rows}
+          rowKey={(row) => `${row.name} ${row.host}/${row.repository}`}
+          columns={REMOTE_COLUMNS}
+        />
+      )}
+    </Card>
   );
 }
 
@@ -265,11 +323,16 @@ function UnresolvedCard(): ReactNode {
   );
 }
 
-/** Projects: cost per project grouped by client, branch drilldown, unresolved cwds. */
+/**
+ * Projects: cost per project grouped by client, branch drilldown, unresolved cwds. "Group by"
+ * switches between project keys (the git remote) and folders (repository root, else cwd) for this
+ * view only.
+ */
 export function ProjectsScreen(): ReactNode {
   const { filters } = useFilters();
   const navigate = useNavigate();
-  const remote = toRemote(useProjects(filters));
+  const [grouping, setGrouping] = useState<ProjectGrouping>("project");
+  const remote = toRemote(useProjects(filters, grouping));
   const open = (project: string): void => {
     void navigate({
       to: "/projects/$project",
@@ -280,20 +343,31 @@ export function ProjectsScreen(): ReactNode {
   return (
     <>
       <PageHeader to="/projects" />
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-fg-muted" aria-hidden>
+          Group by
+        </span>
+        <SegmentedControl
+          label="Group projects by"
+          options={GROUPINGS}
+          value={grouping}
+          onChange={setGrouping}
+        />
+      </div>
       <RemoteView
         remote={remote}
         emptyWhen={({ rows }) => (rows.length === 0 ? NO_USAGE_COPY : null)}
       >
         {({ rows, currency }) => (
           <>
-            <ProjectsCharts rows={rows} />
+            <ProjectsCharts rows={rows} grouping={grouping} />
             {groupByClient(rows).map(([client, inClient]) => (
               <Card key={client} title={client}>
                 <ProjectBars
                   rows={inClient}
                   currency={currency}
-                  label={`${client} projects by API value`}
-                  onOpen={open}
+                  label={`${client} ${grouping === "folder" ? "folders" : "projects"} by API value`}
+                  onOpen={grouping === "folder" ? null : open}
                 />
               </Card>
             ))}

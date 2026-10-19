@@ -24,6 +24,7 @@ import {
   ProtectedFoldersSection,
   RecentAlertsSection,
 } from "./data-section";
+import { GitSection } from "./git-section";
 import { MenubarSection, SettingSwitch } from "./menubar-section";
 
 const DAEMON_TEXT: Record<Settings["daemon"]["state"], string> = {
@@ -185,6 +186,7 @@ export function SettingsScreen(): ReactNode {
             <DisplayCard settings={settings} />
             <PreferencesCard settings={settings} />
             <MenubarSection settings={settings} />
+            <GitSection settings={settings} />
             <ProtectedFoldersSection folders={settings.protected_folders} />
             <BackupsSection backups={settings.backups} />
             <ParseIssuesSection />

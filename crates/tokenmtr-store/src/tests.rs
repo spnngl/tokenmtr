@@ -855,13 +855,34 @@ fn heartbeat_runs_projects_and_accounts_round_trip() {
         remote: None,
         resolved_at: at(3),
         source: crate::ProjectSource::Rule("r1".to_owned()),
+        remotes: vec![
+            crate::GitRemote {
+                name: "origin".to_owned(),
+                url: "github.com/me/x".to_owned(),
+                default_branch: Some("main".to_owned()),
+            },
+            crate::GitRemote {
+                name: "upstream".to_owned(),
+                url: "github.com/acme/x".to_owned(),
+                default_branch: None,
+            },
+        ],
     };
     f.store.save_project(&resolution).unwrap();
     assert_eq!(
         f.store.project(Utf8Path::new("/work/x")).unwrap(),
         Some(resolution.clone())
     );
-    assert_eq!(f.store.projects().unwrap(), vec![resolution]);
+    assert_eq!(f.store.projects().unwrap(), vec![resolution.clone()]);
+    let key = resolution.project.clone();
+    assert_eq!(f.store.project_remotes(&key).unwrap(), resolution.remotes);
+    // A later save of the same root replaces its remotes.
+    let fewer = crate::ProjectResolution {
+        remotes: resolution.remotes[..1].to_vec(),
+        ..resolution
+    };
+    f.store.save_project(&fewer).unwrap();
+    assert_eq!(f.store.project_remotes(&key).unwrap(), fewer.remotes);
     let account = crate::AccountRecord {
         agent: AgentId::CLAUDE,
         profile: ProfileId::default_profile(),

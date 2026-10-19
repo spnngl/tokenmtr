@@ -88,6 +88,52 @@ describe.each(SCREENS)("$name screen", ({ component, charts }) => {
   });
 });
 
+describe("group by", () => {
+  it("groups by remote by default and by folder on demand, for this view only", async () => {
+    const { container } = await mount(ProjectsScreen, "populated");
+    const user = userEvent.setup();
+    const toggle = await screen.findByRole("radiogroup", { name: "Group projects by" });
+    expect(within(toggle).getByRole("radio", { name: "Remote" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    const projects = await screen.findByRole("list", { name: "No client projects by API value" });
+    expect(within(projects).getAllByRole("button").length).toBeGreaterThan(0);
+
+    await user.click(within(toggle).getByRole("radio", { name: "Folder" }));
+    const folders = await screen.findByRole("list", { name: "No client folders by API value" });
+    // Folders have no detail page; the path tells same-named folders apart.
+    expect(within(folders).queryAllByRole("button")).toEqual([]);
+    expect(within(folders).getByText(/^\/Users\/ada\/code\/tokenmtr · /)).toBeTruthy();
+    expect(await screen.findByRole("figure", { name: "Cost by model per folder" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("project remotes", () => {
+  it("lists every remote with its repository and default branch", async () => {
+    await mount(() => <ProjectDetailScreen project="tokenmtr" />, "populated");
+    const table = await screen.findByRole("table", { name: "Git remotes" });
+    const cells = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) =>
+        within(row)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      );
+    expect(cells).toEqual([
+      ["origin (project key)", "ada/tokenmtr", "main"],
+      ["upstream", "acme/platform/tokenmtr", "Unknown"],
+    ]);
+  });
+
+  it("explains a project without remotes", async () => {
+    await mount(() => <ProjectDetailScreen project="dotfiles" />, "populated");
+    expect(await screen.findByText(/^No git remote/)).toBeTruthy();
+    expect(screen.queryByRole("table", { name: "Git remotes" })).toBeNull();
+  });
+});
+
 describe("cost over time per project", () => {
   const keys = ["(none)", ...Array.from({ length: 9 }, (_, index) => `p${index}`)];
   const series: Series = {

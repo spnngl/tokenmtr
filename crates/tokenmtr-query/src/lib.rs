@@ -69,6 +69,7 @@
 //! | [`series`] | [`Series`]: contiguous, zero-filled [`SeriesPoint`]s, optional `groups` |
 //! | [`models`], [`projects`], [`branches`], [`unresolved_cwds`] | rows with usage |
 //! | [`project_models`] | [`ProjectModelsRow`]s: `project`, `name`, `models` ([`ModelSlice`]: `model` + usage) |
+//! | [`project_remotes`] | [`ProjectRemote`]s: `name`, `host`, `repository`, `default_branch`, `keys_project` |
 //! | [`sessions`], [`session_detail`] | [`SessionPage`], [`SessionDetail`] |
 //! | [`tools`], [`signals`], [`heatmap`] | [`ToolsReport`] (`by_model`: [`ToolModelCalls`]), [`SignalsReport`] (`models`: [`SignalModel`]), [`Heatmap`] |
 //! | [`billing`] | [`BillingReport`]: total, api, per-subscription lines, months |
@@ -94,6 +95,7 @@ mod error;
 mod filters;
 mod health;
 mod model_project;
+mod project_remotes;
 mod quota;
 mod range;
 mod recap;
@@ -107,10 +109,10 @@ pub use billing_series::{
     BillingAmounts, BillingPoint, BillingSeries, Granularity, billing_series,
 };
 pub use breakdowns::{
-    BranchRow, Breakdown, HeatCell, Heatmap, ModelRow, ProjectRow, SessionCompactions,
-    SessionDetail, SessionEvent, SessionPage, SessionRow, SessionToolCall, SignalDay,
-    SignalsReport, ToolRow, ToolsReport, Totals, UnresolvedCwd, branches, heatmap, models,
-    overview, projects, session_detail, sessions, signals, tools, unresolved_cwds,
+    BranchRow, Breakdown, HeatCell, Heatmap, ModelRow, ProjectGrouping, ProjectRow,
+    SessionCompactions, SessionDetail, SessionEvent, SessionPage, SessionRow, SessionToolCall,
+    SignalDay, SignalsReport, ToolRow, ToolsReport, Totals, UnresolvedCwd, branches, heatmap,
+    models, overview, projects, session_detail, sessions, signals, tools, unresolved_cwds,
 };
 pub use context::{FxPolicy, QueryContext, WeekStart, load_fx_rates, load_subscriptions};
 pub use error::{FilterError, QueryError};
@@ -121,6 +123,7 @@ pub use health::{
     ingest_status, parse_issues, sink_health,
 };
 pub use model_project::{ModelSlice, ProjectModelsRow, project_models};
+pub use project_remotes::{ProjectRemote, project_remotes};
 pub use quota::{
     AdvisorReport, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, advisor,
     quota_history, quota_latest,

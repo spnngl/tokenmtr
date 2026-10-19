@@ -1,7 +1,7 @@
 //! The `project_map` cache and re-resolution after a rule change.
 //!
-//! A cwd is resolved once and stored. Changing a `[[projects]]` rule re-resolves the cwds whose
-//! stored answer no longer holds and rewrites the project and client of their events; the store
+//! A cwd is resolved once and stored. Changing a `[[projects]]` rule or `[git] default_remote`
+//! re-resolves the cwds whose stored answer no longer holds and rewrites the project and client of their events; the store
 //! bumps a revision only on rows that really change, so sinks re-export just those.
 
 use std::borrow::Cow;
@@ -234,7 +234,9 @@ impl ProjectCache {
             return Some(resolution);
         };
         resolution.cwd = Utf8PathBuf::from(key.hash(resolution.cwd.as_str()));
+        // Remotes are stored by repository root, which is a path: none are kept.
         resolution.repo_root = None;
+        resolution.remotes.clear();
         let path_key = match resolution.source {
             ProjectSource::RepoRoot | ProjectSource::Cwd => true,
             ProjectSource::Inferred => resolution.remote.is_none(),
@@ -271,7 +273,9 @@ impl ProjectCache {
             .filter(|(cwd, stored)| match scope {
                 Reresolve::All => true,
                 Reresolve::StaleAndFallbacks => {
-                    stored.source == ProjectSource::Cwd || is_stale(resolver, cwd, stored)
+                    stored.source == ProjectSource::Cwd
+                        || lacks_remotes(stored)
+                        || is_stale(resolver, cwd, stored)
                 }
                 Reresolve::Stale => is_stale(resolver, cwd, stored),
             })
@@ -281,7 +285,7 @@ impl ProjectCache {
         let mut branches: Vec<(Utf8PathBuf, String)> = Vec::new();
         let mut moved = 0_u64;
         for cwd in candidates {
-            let Some(found) = resolver.resolve(&cwd, now, &mut self.hints) else {
+            let Some(mut found) = resolver.resolve(&cwd, now, &mut self.hints) else {
                 continue;
             };
             if found.resolution.source == ProjectSource::Inferred
@@ -292,6 +296,19 @@ impl ProjectCache {
             let Some(old) = self.map.get(&cwd) else {
                 continue;
             };
+            // A git-backed answer is not degraded to the cwd fallback because the cwd cannot
+            // be read now (a deleted worktree): re-key it from its stored remotes, or keep it.
+            if found.problem.is_some()
+                && matches!(
+                    old.source,
+                    ProjectSource::Remote | ProjectSource::RepoRoot | ProjectSource::Inferred
+                )
+            {
+                let Some(rekeyed) = resolver.rekey(old) else {
+                    continue;
+                };
+                found.resolution = rekeyed;
+            }
             if old.source == ProjectSource::Cwd && found.problem.is_none() {
                 for agent in agents {
                     for kind in [IssueKind::MissingCwd, IssueKind::ProtectedFolder] {
@@ -326,6 +343,8 @@ impl ProjectCache {
 fn is_stale(resolver: &ProjectResolver, cwd: &Utf8Path, stored: &ProjectResolution) -> bool {
     match (resolver.rule_for(cwd), &stored.source) {
         (None, ProjectSource::Rule(_)) => true,
+        // `[git] default_remote` changed which remote keys it.
+        (None, ProjectSource::Remote | ProjectSource::Inferred) => resolver.rekey(stored).is_some(),
         (None, _) => false,
         (Some(rule), ProjectSource::Rule(id)) => {
             id != rule.pattern()
@@ -340,8 +359,24 @@ fn is_stale(resolver: &ProjectResolver, cwd: &Utf8Path, stored: &ProjectResoluti
     }
 }
 
+/// Whether `stored` is keyed by a remote but its repository's remotes were never read (stored
+/// before remotes were kept): re-resolved once per process to fill them in.
+fn lacks_remotes(stored: &ProjectResolution) -> bool {
+    matches!(
+        stored.source,
+        ProjectSource::Remote | ProjectSource::Inferred
+    ) && stored.remote.is_some()
+        && stored.repo_root.is_some()
+        && stored.remotes.is_empty()
+}
+
+/// Whether `b` would store nothing new over `a`. A `b` without remotes keeps `a`'s stored ones.
 fn same_answer(a: &ProjectResolution, b: &ProjectResolution) -> bool {
-    a.project == b.project && a.name == b.name && a.client == b.client && a.source == b.source
+    a.project == b.project
+        && a.name == b.name
+        && a.client == b.client
+        && a.source == b.source
+        && (b.remotes.is_empty() || a.remotes == b.remotes)
 }
 
 fn cwd_issue(agent: AgentId, cwd: &Utf8Path, problem: CwdProblem, at: Timestamp) -> ParseIssue {

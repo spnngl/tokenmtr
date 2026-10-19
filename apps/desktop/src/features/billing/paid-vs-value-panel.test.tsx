@@ -60,13 +60,13 @@ describe("paid against API value range", () => {
 });
 
 describe("paid against API value panel", () => {
-  it("draws every chart for the filter range and is accessible", async () => {
+  it("follows the default 30-day filter range and is accessible", async () => {
     const { container } = await openBilling();
-    expect(selected("Range")).toBe("Filter range");
+    expect(selected("Range")).toBe("30 days");
     expect(selected("Granularity")).toBe("Daily");
     for (const name of FIGURES) {
       const figure = screen.getByRole("figure", { name });
-      expect(figure.getAttribute("data-points")).toBe("7");
+      expect(figure.getAttribute("data-points")).toBe("30");
     }
     expect(await axeViolations(container)).toEqual([]);
   });

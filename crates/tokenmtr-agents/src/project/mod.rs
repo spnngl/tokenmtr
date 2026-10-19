@@ -3,9 +3,11 @@
 //! Order, first hit wins:
 //! 1. The first `[[projects]]` rule whose glob matches the cwd. No filesystem access.
 //! 2. The git repository containing the cwd (`gix`, never a spawned `git`): a linked worktree
-//!    resolves to its main repository. The normalized `remote.origin.url` is the key, so clones
-//!    of one remote on several machines or paths are one project.
-//! 3. The main repository's root path, when it has no `origin`.
+//!    resolves to its main repository. The normalized URL of its key remote is the key, so
+//!    clones of one remote on several machines or paths are one project, named `owner/repo`.
+//!    The key remote is `[git] default_remote`, else `origin`, else the first by name
+//!    ([`ProjectResolver::key_remote`]). Every remote with a shared URL is kept on the resolution.
+//! 3. The main repository's root path, when no remote has a shared URL.
 //! 4. When git cannot inspect the cwd (a deleted worktree, a folder outside git), another app's
 //!    record of it ([`superset::Hints`]): the main repository it names goes through steps 2-3,
 //!    so the key matches its live worktrees; when that repository is gone too, its recorded
@@ -19,9 +21,9 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
-use tokenmtr_config::ProjectRule;
+use tokenmtr_config::{GitName, ProjectRule};
 use tokenmtr_core::ProjectKey;
-use tokenmtr_store::{ProjectResolution, ProjectSource};
+use tokenmtr_store::{GitRemote, ProjectResolution, ProjectSource};
 
 pub mod superset;
 
@@ -48,18 +50,70 @@ pub struct Resolved {
 }
 
 /// Resolves working directories against the configured rules.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProjectResolver {
     rules: Vec<ProjectRule>,
     /// Folders whose cwds are never read ([`tokenmtr_platform::Paths::protected`]).
     protected: Vec<Utf8PathBuf>,
+    /// The remote whose URL keys a repository's project (`[git] default_remote`).
+    default_remote: GitName,
+}
+
+impl Default for ProjectResolver {
+    fn default() -> Self {
+        Self::new(Vec::new(), Vec::new())
+    }
 }
 
 impl ProjectResolver {
-    /// A resolver over `rules`, in config order, that never reads under `protected`.
+    /// A resolver over `rules`, in config order, that never reads under `protected` and keys
+    /// repositories by their `origin` remote.
     #[must_use]
-    pub const fn new(rules: Vec<ProjectRule>, protected: Vec<Utf8PathBuf>) -> Self {
-        Self { rules, protected }
+    pub fn new(rules: Vec<ProjectRule>, protected: Vec<Utf8PathBuf>) -> Self {
+        Self {
+            rules,
+            protected,
+            default_remote: GitName::origin(),
+        }
+    }
+
+    /// The same resolver, keying repositories by `remote` first.
+    #[must_use]
+    pub fn with_default_remote(mut self, remote: GitName) -> Self {
+        self.default_remote = remote;
+        self
+    }
+
+    /// The remote whose URL keys the project: the default remote, else `origin`, else the
+    /// first by name. `None` when `remotes` is empty.
+    #[must_use]
+    pub fn key_remote<'a>(&self, remotes: &'a [GitRemote]) -> Option<&'a GitRemote> {
+        let named = |name: &str| remotes.iter().find(|remote| remote.name == name);
+        named(self.default_remote.as_str())
+            .or_else(|| named("origin"))
+            .or_else(|| remotes.iter().min_by(|a, b| a.name.cmp(&b.name)))
+    }
+
+    /// `stored` keyed by its stored remotes under the current default remote, when that moves
+    /// its key. Pure: re-keys a git-backed answer without reading the repository.
+    #[must_use]
+    pub fn rekey(&self, stored: &ProjectResolution) -> Option<ProjectResolution> {
+        if !matches!(
+            stored.source,
+            ProjectSource::Remote | ProjectSource::Inferred
+        ) {
+            return None;
+        }
+        let url = &self.key_remote(&stored.remotes)?.url;
+        if stored.remote.as_ref() == Some(url) {
+            return None;
+        }
+        Some(ProjectResolution {
+            project: ProjectKey::try_from(url.as_str()).ok()?,
+            name: remote_name(url).to_owned(),
+            remote: Some(url.clone()),
+            ..stored.clone()
+        })
     }
 
     /// The first rule matching `cwd`.
@@ -104,7 +158,7 @@ impl ProjectResolver {
         } else {
             None
         };
-        if let Some(resolution) = git.and_then(|facts| git_resolution(facts, cwd, at)) {
+        if let Some(resolution) = git.and_then(|facts| self.git_resolution(facts, cwd, at)) {
             return Some(Resolved {
                 resolution,
                 problem,
@@ -137,11 +191,16 @@ impl ProjectResolver {
         let live = (!self.is_protected(repo))
             .then(|| git_facts(repo))
             .flatten();
-        let facts = live.unwrap_or_else(|| GitFacts {
-            root: repo.to_owned(),
-            remote: hint.repo_url.as_deref().and_then(normalize_remote),
-        });
-        let mut resolution = git_resolution(facts, cwd, at)?;
+        let mut resolution = match live {
+            Some(facts) => self.git_resolution(facts, cwd, at)?,
+            None => keyed_resolution(
+                repo.to_owned(),
+                hint.repo_url.as_deref().and_then(normalize_remote),
+                Vec::new(),
+                cwd,
+                at,
+            )?,
+        };
         resolution.source = ProjectSource::Inferred;
         Some(resolution)
     }
@@ -157,6 +216,22 @@ impl ProjectResolver {
         let head = repo.head_name().ok()??;
         Some(head.shorten().to_string())
     }
+
+    fn git_resolution(
+        &self,
+        facts: GitFacts,
+        cwd: &Utf8Path,
+        at: Timestamp,
+    ) -> Option<ProjectResolution> {
+        let remote = self.key_remote(&facts.remotes).map(|r| r.url.clone());
+        keyed_resolution(facts.root, remote, facts.remotes, cwd, at)
+    }
+}
+
+/// The display name of a remote-keyed project: the URL path after the host (`owner/repo`,
+/// `group/sub/repo`).
+fn remote_name(url: &str) -> &str {
+    url.split_once('/').map_or(url, |(_, path)| path)
 }
 
 fn rule_resolution(rule: &ProjectRule, cwd: &Utf8Path, at: Timestamp) -> ProjectResolution {
@@ -169,6 +244,7 @@ fn rule_resolution(rule: &ProjectRule, cwd: &Utf8Path, at: Timestamp) -> Project
         remote: None,
         resolved_at: at,
         source: ProjectSource::Rule(rule.pattern().to_owned()),
+        remotes: Vec::new(),
     }
 }
 
@@ -182,23 +258,27 @@ fn cwd_resolution(cwd: &Utf8Path, at: Timestamp) -> Option<ProjectResolution> {
         remote: None,
         resolved_at: at,
         source: ProjectSource::Cwd,
+        remotes: Vec::new(),
     })
 }
 
-fn git_resolution(facts: GitFacts, cwd: &Utf8Path, at: Timestamp) -> Option<ProjectResolution> {
-    let (project, name, source) = match &facts.remote {
+/// The resolution of a repository at `root` keyed by `remote`, else by `root`.
+fn keyed_resolution(
+    root: Utf8PathBuf,
+    remote: Option<String>,
+    remotes: Vec<GitRemote>,
+    cwd: &Utf8Path,
+    at: Timestamp,
+) -> Option<ProjectResolution> {
+    let (project, name, source) = match &remote {
         Some(remote) => (
             ProjectKey::try_from(remote.as_str()).ok()?,
-            remote.rsplit('/').next().unwrap_or(remote).to_owned(),
+            remote_name(remote).to_owned(),
             ProjectSource::Remote,
         ),
         None => (
-            ProjectKey::try_from(facts.root.as_str()).ok()?,
-            facts
-                .root
-                .file_name()
-                .unwrap_or(facts.root.as_str())
-                .to_owned(),
+            ProjectKey::try_from(root.as_str()).ok()?,
+            root.file_name().unwrap_or(root.as_str()).to_owned(),
             ProjectSource::RepoRoot,
         ),
     };
@@ -207,16 +287,18 @@ fn git_resolution(facts: GitFacts, cwd: &Utf8Path, at: Timestamp) -> Option<Proj
         project,
         name,
         client: None,
-        repo_root: Some(facts.root),
-        remote: facts.remote,
+        repo_root: Some(root),
+        remote,
         resolved_at: at,
         source,
+        remotes,
     })
 }
 
 struct GitFacts {
     root: Utf8PathBuf,
-    remote: Option<String>,
+    /// Remotes with a shared URL, by name.
+    remotes: Vec<GitRemote>,
 }
 
 fn git_facts(cwd: &Utf8Path) -> Option<GitFacts> {
@@ -232,11 +314,35 @@ fn git_facts(cwd: &Utf8Path) -> Option<GitFacts> {
         .ok()
         .and_then(|p| Utf8PathBuf::from_path_buf(p).ok())
         .unwrap_or_else(|| root_path.to_owned());
-    let remote = main
-        .config_snapshot()
-        .string("remote.origin.url")
-        .and_then(|url| normalize_remote(&url.to_string()));
-    Some(GitFacts { root, remote })
+    let config = main.config_snapshot();
+    let remotes = main
+        .remote_names()
+        .into_iter()
+        .filter_map(|name| {
+            let name = name.to_string();
+            let url = config
+                .string(format!("remote.{name}.url").as_str())
+                .and_then(|url| normalize_remote(&url.to_string()))?;
+            let default_branch = remote_head(&main, &name);
+            Some(GitRemote {
+                name,
+                url,
+                default_branch,
+            })
+        })
+        .collect();
+    Some(GitFacts { root, remotes })
+}
+
+/// The branch `refs/remotes/<remote>/HEAD` points at, short (`main`): the remote's default
+/// branch as recorded by the last clone or `git remote set-head`.
+fn remote_head(repo: &gix::Repository, remote: &str) -> Option<String> {
+    let head = repo
+        .try_find_reference(format!("refs/remotes/{remote}/HEAD").as_str())
+        .ok()??;
+    let target = head.target().try_name()?.as_bstr().to_string();
+    let branch = target.strip_prefix(&format!("refs/remotes/{remote}/"))?;
+    (!branch.is_empty()).then(|| branch.to_owned())
 }
 
 /// Normalizes a git remote URL to `host/owner/repo`: scheme, user, port, a trailing `/` and a

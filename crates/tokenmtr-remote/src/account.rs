@@ -44,12 +44,7 @@ pub fn plan_from_claude(
     let kind = normalized
         .as_deref()
         .map(|s| s.strip_prefix("claude_").unwrap_or(s));
-    let tier = rate_limit_tier.map(str::to_ascii_lowercase);
-    let max_by_tier = || match tier.as_deref() {
-        Some(t) if t.contains("max_20x") => Some(Plan::Max20x),
-        Some(t) if t.contains("max_5x") => Some(Plan::Max5x),
-        _ => None,
-    };
+    let max_by_tier = || rate_limit_tier.and_then(Plan::from_rate_limit_tier);
     match kind {
         Some("pro") => Some(Plan::Pro),
         Some("team") => Some(Plan::Team),

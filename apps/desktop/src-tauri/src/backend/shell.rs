@@ -317,6 +317,15 @@ pub struct TrayBlock {
     pub shortcut: String,
 }
 
+/// Git preferences (`[git]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GitBlock {
+    /// The remote whose URL keys projects.
+    pub default_remote: String,
+    /// The work branch, reserved for branch statistics.
+    pub default_branch: Option<String>,
+}
+
 /// Alert rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AlertsBlock {
@@ -360,6 +369,8 @@ pub struct Settings {
     pub pricing: PricingBlock,
     /// Tray.
     pub tray: TrayBlock,
+    /// Git.
+    pub git: GitBlock,
     /// Alert rules.
     pub alerts: AlertsBlock,
     /// The app starts at login.
@@ -472,6 +483,14 @@ pub fn settings(
                 .map(|p| p.as_str().to_owned())
                 .collect(),
             shortcut: config.menubar.shortcut.clone().unwrap_or_default(),
+        },
+        git: GitBlock {
+            default_remote: config.git.default_remote.as_str().to_owned(),
+            default_branch: config
+                .git
+                .default_branch
+                .as_ref()
+                .map(|b| b.as_str().to_owned()),
         },
         alerts: AlertsBlock {
             quota_thresholds: config.alerts.rules.quota_thresholds.clone(),

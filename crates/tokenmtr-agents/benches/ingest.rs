@@ -148,6 +148,7 @@ fn ingestor(config_dir: &Utf8Path, store_path: &Utf8Path) -> Ingestor {
             config_dir,
         )]))],
         rules: Vec::new(),
+        default_remote: tokenmtr_config::GitName::origin(),
         overrides: Vec::new(),
         zone: TimeZone::UTC,
         import_claude_stats_cache: false,

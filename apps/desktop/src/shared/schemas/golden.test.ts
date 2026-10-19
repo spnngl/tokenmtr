@@ -60,6 +60,7 @@ describe("golden command responses", () => {
   it("settings", async () => {
     const settings = await serve("settings").settings();
     expect(settings.daemon.version).toBe("0.4.0");
+    expect(settings.git).toEqual({ default_remote: "origin", default_branch: "main" });
     expect(settings.fx.latest?.eur_per_usd_scaled).toBe(881600000);
   });
 
@@ -81,13 +82,20 @@ describe("golden command responses", () => {
   });
 
   it("projects", async () => {
-    expect((await serve("projects").projects(FILTERS)).rows[1]?.client).toBe("Acme Corp");
+    const projects = await serve("projects").projects(FILTERS, "project");
+    expect(projects.rows[1]?.client).toBe("Acme Corp");
   });
 
   it("project_models", async () => {
-    const split = await serve("project_models").projectModels(FILTERS);
+    const split = await serve("project_models").projectModels(FILTERS, "project");
     expect(split.rows[0]?.models[1]?.model).toBe("gpt-5");
     expect(split.rows[1]?.project).toBeNull();
+  });
+
+  it("project_remotes", async () => {
+    const remotes = await serve("project_remotes").projectRemotes("github.com/ada/tokenmtr");
+    expect(remotes.map((remote) => remote.keys_project)).toEqual([true, false]);
+    expect(remotes[1]?.default_branch).toBeNull();
   });
 
   it("branches", async () => {
@@ -172,8 +180,10 @@ describe("golden command responses", () => {
       "recommend",
       "recommend",
       "recommend",
+      "recommend",
+      "unknown_quota",
       "not_enough_data",
-      "not_applicable",
+      "no_plan",
     ]);
   });
 

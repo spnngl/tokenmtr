@@ -379,6 +379,7 @@ fn seed_reference(store: &mut Store) {
                 } else {
                     ProjectSource::Cwd
                 },
+                remotes: Vec::new(),
             })
             .expect("project");
     }
@@ -473,9 +474,9 @@ mod read {
     use tokenmtr_core::AgentId;
     use tokenmtr_export::fetch_batch;
     use tokenmtr_query::{
-        Bucket, Granularity, GroupBy, Period, QueryContext, Selection, billing, billing_series,
-        branches, heatmap, ingest_status, models, overview, project_models, projects,
-        quota_history, quota_latest, recap, series, session_analytics, session_detail,
+        Bucket, Granularity, GroupBy, Period, ProjectGrouping, QueryContext, Selection, billing,
+        billing_series, branches, heatmap, ingest_status, models, overview, project_models,
+        projects, quota_history, quota_latest, recap, series, session_analytics, session_detail,
         session_timeline, sessions, signals, status, tools, unresolved_cwds,
     };
     use tokenmtr_store::{Dataset, Revision, StoreRead, StoreReader};
@@ -517,13 +518,22 @@ mod read {
 
     #[divan::bench]
     fn projects_30d(bencher: Bencher<'_, '_>) {
-        run(bencher, |r, c| projects(r, c, &last_days(30)).expect("q"));
+        run(bencher, |r, c| {
+            projects(r, c, &last_days(30), ProjectGrouping::Project).expect("q")
+        });
+    }
+
+    #[divan::bench]
+    fn projects_30d_by_folder(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| {
+            projects(r, c, &last_days(30), ProjectGrouping::Folder).expect("q")
+        });
     }
 
     #[divan::bench]
     fn project_models_30d(bencher: Bencher<'_, '_>) {
         run(bencher, |r, c| {
-            project_models(r, c, &last_days(30)).expect("q")
+            project_models(r, c, &last_days(30), ProjectGrouping::Project).expect("q")
         });
     }
 

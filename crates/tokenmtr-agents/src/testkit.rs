@@ -68,6 +68,25 @@ pub fn init_repo(dir: &Path, remote: Option<&str>) {
     }
 }
 
+/// Adds remote `name` with `url` to the repository at `dir`; with `head`, records the remote's
+/// default branch (`refs/remotes/<name>/HEAD`) the way `git clone` does.
+pub fn add_remote(dir: &Path, name: &str, url: &str, head: Option<&str>) {
+    let mut config = fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join(".git").join("config"))
+        .expect("open git config");
+    writeln!(config, "[remote \"{name}\"]\n\turl = {url}").expect("write remote");
+    if let Some(branch) = head {
+        let refs = dir.join(".git").join("refs").join("remotes").join(name);
+        fs::create_dir_all(&refs).expect("create remote refs");
+        fs::write(
+            refs.join("HEAD"),
+            format!("ref: refs/remotes/{name}/{branch}\n"),
+        )
+        .expect("remote HEAD");
+    }
+}
+
 /// Lays out a linked worktree of `main` at `worktree`, the way `git worktree add` does.
 pub fn add_worktree(main: &Path, worktree: &Path, name: &str) {
     let admin = main.join(".git").join("worktrees").join(name);

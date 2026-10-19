@@ -23,6 +23,10 @@ use crate::filters::{BillingFilter, Filters};
 
 const CELL_US: i64 = 900_000_000;
 
+/// The folder of an event: the repository root its cwd resolved to, else the cwd.
+const FOLDER: &str = "COALESCE((SELECT m.repo_root FROM project_map m \
+     WHERE m.cwd = usage_event.cwd), usage_event.cwd)";
+
 /// Extra grouping of the aggregation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Dim {
@@ -31,6 +35,10 @@ pub(crate) enum Dim {
     Project,
     /// Project in `k1`, model in `k2`.
     ProjectModel,
+    /// Folder ([`FOLDER`]) in `k1`, client in `k2`.
+    Folder,
+    /// Folder in `k1`, model in `k2`.
+    FolderModel,
     Branch,
     Session,
     /// Session in `k1`, model in `k2`.
@@ -44,6 +52,8 @@ impl Dim {
             Self::Model => ("model", "NULL"),
             Self::Project => ("project", "client"),
             Self::ProjectModel => ("project", "model"),
+            Self::Folder => (FOLDER, "client"),
+            Self::FolderModel => (FOLDER, "model"),
             Self::Branch => ("git_branch", "NULL"),
             Self::Session => ("session", "NULL"),
             Self::SessionModel => ("session", "model"),
@@ -447,7 +457,7 @@ pub(crate) fn usd_to(
     }
 }
 
-fn eur_to_usd(eur: i64, rate: EurPerUsd) -> i64 {
+pub(crate) fn eur_to_usd(eur: i64, rate: EurPerUsd) -> i64 {
     let rate = i128::from(rate.scaled());
     let usd = (i128::from(eur) * 1_000_000_000 + rate / 2) / rate;
     saturating_micros(usd)

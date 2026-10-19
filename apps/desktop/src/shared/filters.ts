@@ -42,7 +42,7 @@ export interface ParsedFilters {
 /** Defaults for a fresh view; `currency` comes from `display.currency`. */
 export function defaultFilters(currency: Currency): Filters {
   return {
-    range: { kind: "preset", preset: "7d" },
+    range: { kind: "preset", preset: "30d" },
     agent: null,
     profile: null,
     model: null,

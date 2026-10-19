@@ -98,7 +98,7 @@ pub use migrations::SCHEMA_VERSION;
 pub use pricing::{
     RepriceCursor, RepriceEvent, RepricePage, RepriceScope, Repriced, StoredPricingSnapshot,
 };
-pub use project::{ProjectResolution, ProjectSource};
+pub use project::{GitRemote, ProjectResolution, ProjectSource};
 pub use quota::{QuotaOutcome, QuotaPoll, QuotaReading, QuotaSample, QuotaStatus};
 pub use runs::{BackupRun, IngestRun};
 pub use signal::SessionSignal;

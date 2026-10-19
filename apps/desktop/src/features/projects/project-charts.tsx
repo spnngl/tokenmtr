@@ -10,7 +10,13 @@ import {
   formatTokens,
 } from "../../shared/format";
 import { ResponsiveChart } from "../../shared/responsive-chart";
-import type { ModelRow, ProjectModels, ProjectRow, Series } from "../../shared/schemas";
+import type {
+  ModelRow,
+  ProjectGrouping,
+  ProjectModels,
+  ProjectRow,
+  Series,
+} from "../../shared/schemas";
 import { OTHER_MODEL, splitRows, topModels } from "../../shared/top-models";
 import { Amount, ChartFrame, type Column, DataTable } from "../../shared/ui";
 import { useChartAnimation } from "../../shared/use-chart-animation";
@@ -70,19 +76,26 @@ function seriesColumns(
   ];
 }
 
-/** Each project's API value split by model (top five models, the rest as Other). */
-export function ProjectModelBars({ split }: { readonly split: ProjectModels }): ReactNode {
+/** Each project's (or folder's) API value split by model (top five models, the rest as Other). */
+export function ProjectModelBars({
+  split,
+  grouping = "project",
+}: {
+  readonly split: ProjectModels;
+  readonly grouping?: ProjectGrouping;
+}): ReactNode {
+  const noun = grouping === "folder" ? "folder" : "project";
   const top = chartModels(split.rows.flatMap((row) => row.models));
   const rows = split.rows.map(
     (row): BarDatum => ({ label: projectLabel(row), values: valuesOf(row.models, top) }),
   );
   const drawn = topRows(rows, PROJECT_BARS);
-  const title = "Cost by model per project";
+  const title = `Cost by model per ${noun}`;
   return (
     <ChartFrame
       interactive
       title={title}
-      description={`API value of the ${drawn.length} costliest projects, stacked by model; models past the top five fold into Other. The table lists every project.`}
+      description={`API value of the ${drawn.length} costliest ${noun}s, stacked by model; models past the top five fold into Other. The table lists every ${noun}.`}
       points={drawn.length * top.length}
       table={
         <DataTable
@@ -91,7 +104,11 @@ export function ProjectModelBars({ split }: { readonly split: ProjectModels }): 
           // Two projects may share a display name.
           rowKey={(row, index) => `${index}:${row.label}`}
           columns={seriesColumns(
-            { header: "Project", cell: (row) => row.label, sortValue: (row) => row.label },
+            {
+              header: grouping === "folder" ? "Folder" : "Project",
+              cell: (row) => row.label,
+              sortValue: (row) => row.label,
+            },
             top,
             split.currency,
           )}
@@ -143,16 +160,17 @@ export function ProjectCostLines({
     ...Object.fromEntries(row.values.map((value, index) => [`s${index}`, value])),
   }));
   const currency = series.currency;
+  const noun = series.group_by === "folder" ? "folder" : "project";
   const title = "Cost over time";
   return (
     <ChartFrame
       interactive
       title={title}
-      description={`API value per ${series.bucket} of the ${PROJECT_LINES} costliest projects; the rest add up to Other.`}
+      description={`API value per ${series.bucket} of the ${PROJECT_LINES} costliest ${noun}s; the rest add up to Other.`}
       points={rows.length * top.length}
       table={
         <DataTable
-          caption="Cost over time per project"
+          caption={`Cost over time per ${noun}`}
           rows={rows}
           rowKey={(row) => row.label}
           columns={seriesColumns(

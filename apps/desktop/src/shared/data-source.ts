@@ -21,7 +21,9 @@ import type {
   ParseIssue,
   Period,
   Plan,
+  ProjectGrouping,
   ProjectModels,
+  ProjectRemote,
   ProjectRule,
   Projects,
   QuotaHistory,
@@ -93,9 +95,12 @@ export interface DataSource {
   overview(filters: Filters): Promise<Totals>;
   series(filters: Filters, groupBy: GroupBy): Promise<Series>;
   models(filters: Filters): Promise<Models>;
-  projects(filters: Filters): Promise<Projects>;
+  /** Rows by project key, or by repository root (else cwd) for `"folder"`. */
+  projects(filters: Filters, grouping: ProjectGrouping): Promise<Projects>;
   /** Projects split by model, biggest API value first. */
-  projectModels(filters: Filters): Promise<ProjectModels>;
+  projectModels(filters: Filters, grouping: ProjectGrouping): Promise<ProjectModels>;
+  /** The git remotes of one project, by name; empty when it is not a repository. */
+  projectRemotes(project: string): Promise<ProjectRemote[]>;
   /** Branches of `filters.project`. */
   branches(filters: Filters): Promise<Branches>;
   unresolvedCwds(filters: Filters): Promise<UnresolvedCwd[]>;
@@ -154,6 +159,8 @@ export interface DataSource {
   addSubscription(spec: SubscriptionSpec): Promise<void>;
   /** Sets `[menubar] rings` and `hidden_profiles`: which quota windows get a menu-bar ring. */
   setMenubarRings(rings: readonly MenubarRing[], hiddenProfiles: readonly string[]): Promise<void>;
+  /** Sets `[git] default_remote` and `default_branch` (removed when `null`). */
+  setGitDefaults(defaultRemote: string, defaultBranch: string | null): Promise<void>;
   /** The daemon reads the Claude credentials once with the Keychain prompt allowed. */
   connectKeychain(): Promise<void>;
   /** Sets `cleanupPeriodDays` to ten years for one profile. */

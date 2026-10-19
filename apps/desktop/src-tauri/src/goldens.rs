@@ -15,21 +15,22 @@ use serde_json::Value;
 use tokenmtr_config::MenubarRing;
 use tokenmtr_core::{
     Advice, AgentId, AlertKind, BillingPeriod, BudgetMeasure, BudgetPeriod, CostSource, Currency,
-    Dataset, EventKind, Plan, PlanFit, QuotaEta, Recommendation, SignalKind, TokenCounts,
-    UsdMicros, Verdict, WindowId,
+    Dataset, EventKind, Plan, PlanFit, QuotaEta, QuotaSizing, Recommendation, SignalKind,
+    TokenCounts, UsdMicros, Verdict, WindowId,
 };
 use tokenmtr_query::{
     AdvisorReport, AgentRecap, AlertView, BackupView, BillingAmounts, BillingMonth, BillingPoint,
     BillingReport, BillingSeries, BranchRow, Breakdown, Bucket, BudgetState, BudgetView,
     COST_EDGES_MICROS, CostBucket, DaemonHealth, DaemonState, DateRange, FxRateView, Granularity,
     GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, ModelRow,
-    ModelSessions, ModelSlice, NO_GROUP, ParseIssueView, Period, ProjectModelsRow, ProjectRow,
-    QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA, Series,
-    SeriesPoint, SessionAnalytics, SessionCompactions, SessionDay, SessionDetail, SessionEvent,
-    SessionModel, SessionPage, SessionPoint, SessionRow, SessionStartCell, SessionTimeline,
-    SessionToolCall, SignalDay, SignalModel, SignalsReport, SinkHealth, SinkRunView, SinkState,
-    SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent, TimelineSignal,
-    TimelineTool, ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
+    ModelSessions, ModelSlice, NO_GROUP, ParseIssueView, Period, ProjectModelsRow, ProjectRemote,
+    ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA,
+    Series, SeriesPoint, SessionAnalytics, SessionCompactions, SessionDay, SessionDetail,
+    SessionEvent, SessionModel, SessionPage, SessionPoint, SessionRow, SessionStartCell,
+    SessionTimeline, SessionToolCall, SignalDay, SignalModel, SignalsReport, SinkHealth,
+    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent,
+    TimelineSignal, TimelineTool, ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd,
+    Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -37,8 +38,8 @@ use crate::backend::actions::GeneratedReport;
 use crate::backend::queries::recap_document;
 use crate::backend::shell::{
     AgentInfo, AlertsBlock, AppState, Capabilities, DaemonBlock, DisplayBlock, FilterOptions,
-    FxBlock, Permission, PricingBlock, ProfileInfo, ProtectedFolder, SessionOrigin, Settings,
-    TrayBlock,
+    FxBlock, GitBlock, Permission, PricingBlock, ProfileInfo, ProtectedFolder, SessionOrigin,
+    Settings, TrayBlock,
 };
 use crate::request::FormatWire;
 
@@ -256,6 +257,25 @@ fn project_models() -> Value {
             },
         ],
     })
+}
+
+fn project_remotes() -> Value {
+    json(vec![
+        ProjectRemote {
+            name: "origin".to_owned(),
+            host: "github.com".to_owned(),
+            repository: "ada/tokenmtr".to_owned(),
+            default_branch: Some("main".to_owned()),
+            keys_project: true,
+        },
+        ProjectRemote {
+            name: "upstream".to_owned(),
+            host: "gitlab.com".to_owned(),
+            repository: "acme/platform/tokenmtr".to_owned(),
+            default_branch: None,
+            keys_project: false,
+        },
+    ])
 }
 
 fn branches() -> Value {
@@ -1048,6 +1068,10 @@ fn quota_history() -> Value {
     ])
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one literal report per advisor case, read top to bottom"
+)]
 fn advisor() -> Value {
     let fit = |plan, fee, five_hour_peak, seven_day_peak, fits| PlanFit {
         plan,
@@ -1056,10 +1080,13 @@ fn advisor() -> Value {
         seven_day_peak,
         fits,
     };
-    let recommend = |verdict, current, fits| {
+    // A catalog plan's current fee is its list fee.
+    let recommend = |verdict, (current, fee), fits| {
         Advice::Recommend(Recommendation {
             verdict,
             current,
+            sizing: QuotaSizing::Catalog,
+            current_monthly_fee: Some(UsdMicros::new(fee)),
             headroom: 80,
             fits,
         })
@@ -1068,6 +1095,7 @@ fn advisor() -> Value {
         agent,
         profile: profile.to_owned(),
         current_plan,
+        organization: None,
         snapshots,
         monthly_api_value_usd_micros: api,
         advice,
@@ -1081,7 +1109,7 @@ fn advisor() -> Value {
             486_250_000,
             recommend(
                 Verdict::Upgrade(Plan::Max20x),
-                Plan::Max5x,
+                (Plan::Max5x, 100_000_000),
                 vec![
                     fit(Plan::Pro, 20_000_000, 548.0, 310.5, false),
                     fit(Plan::Max5x, 100_000_000, 109.6, 62.1, false),
@@ -1097,7 +1125,7 @@ fn advisor() -> Value {
             61_200_000,
             recommend(
                 Verdict::Downgrade(Plan::Pro),
-                Plan::Max20x,
+                (Plan::Max20x, 200_000_000),
                 vec![fit(Plan::Pro, 20_000_000, 72.0, 40.0, true)],
             ),
         ),
@@ -1109,7 +1137,7 @@ fn advisor() -> Value {
             31_500_000,
             recommend(
                 Verdict::Keep,
-                Plan::Pro,
+                (Plan::Pro, 20_000_000),
                 vec![fit(Plan::Pro, 20_000_000, 66.0, 51.0, true)],
             ),
         ),
@@ -1121,10 +1149,27 @@ fn advisor() -> Value {
             4_200_000,
             recommend(
                 Verdict::PayAsYouGo,
-                Plan::Pro,
+                (Plan::Pro, 20_000_000),
                 vec![fit(Plan::Pro, 20_000_000, 9.0, 3.5, true)],
             ),
         ),
+        seat_report(
+            "team",
+            Plan::Team,
+            Advice::Recommend(Recommendation {
+                verdict: Verdict::Keep,
+                current: Plan::Team,
+                sizing: QuotaSizing::RateTier(Plan::Max5x),
+                current_monthly_fee: None,
+                headroom: 80,
+                fits: vec![
+                    fit(Plan::Pro, 20_000_000, 350.0, 250.0, false),
+                    fit(Plan::Max5x, 100_000_000, 70.0, 50.0, true),
+                    fit(Plan::Max20x, 200_000_000, 17.5, 12.5, true),
+                ],
+            }),
+        ),
+        seat_report("enterprise", Plan::Enterprise, Advice::UnknownQuota),
         report(
             AgentId::CLAUDE,
             "new",
@@ -1133,15 +1178,21 @@ fn advisor() -> Value {
             1_800_000,
             Advice::NotEnoughData { span_days: 2 },
         ),
-        report(
-            AgentId::PI,
-            "default",
-            None,
-            0,
-            92_300_000,
-            Advice::NotApplicable,
-        ),
+        report(AgentId::PI, "default", None, 0, 92_300_000, Advice::NoPlan),
     ])
+}
+
+/// A Claude seat of the `Acme` organization: Team sized by its rate tier, Enterprise unsized.
+fn seat_report(profile: &str, plan: Plan, advice: Advice) -> AdvisorReport {
+    AdvisorReport {
+        agent: AgentId::CLAUDE,
+        profile: profile.to_owned(),
+        current_plan: Some(plan),
+        organization: Some("Acme".to_owned()),
+        snapshots: 330,
+        monthly_api_value_usd_micros: 212_000_000,
+        advice,
+    }
 }
 
 fn budget_views() -> Vec<BudgetView> {
@@ -1751,6 +1802,10 @@ fn settings() -> Value {
             hidden_profiles: vec!["work".to_owned()],
             shortcut: "CmdOrCtrl+Shift+T".to_owned(),
         },
+        git: GitBlock {
+            default_remote: "origin".to_owned(),
+            default_branch: Some("main".to_owned()),
+        },
         alerts: AlertsBlock {
             quota_thresholds: vec![80, 95],
             budget_thresholds: vec![50, 80, 100],
@@ -1828,6 +1883,7 @@ fn goldens() -> Vec<(&'static str, Value)> {
         ("models", models()),
         ("projects", projects()),
         ("project_models", project_models()),
+        ("project_remotes", project_remotes()),
         ("branches", branches()),
         ("unresolved_cwds", unresolved_cwds()),
         ("heatmap", heatmap()),

@@ -177,12 +177,15 @@ export function advisorOf(filters: Filters): AdvisorReport[] {
       agent: "claude",
       profile: "default",
       current_plan: "max_5x",
+      organization: null,
       snapshots: 1_240,
       monthly_api_value_usd_micros: monthly,
       advice: {
         advice: "recommend",
         verdict: { verdict: "keep" },
         current: "max_5x",
+        sizing: { source: "catalog" },
+        current_monthly_fee: 100_000_000,
         headroom: 80,
         fits: [
           {

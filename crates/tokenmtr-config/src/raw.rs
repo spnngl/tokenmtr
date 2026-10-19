@@ -18,7 +18,7 @@ use tokenmtr_core::{
 };
 
 use crate::model::{
-    ClientName, Dataset, FileMode, LogFormat, LogLevel, MenubarRing, Partition, Percent,
+    ClientName, Dataset, FileMode, GitName, LogFormat, LogLevel, MenubarRing, Partition, Percent,
     RedactColumn, RedactMode,
 };
 
@@ -159,6 +159,7 @@ pub struct RawConfig {
     pub backup: RawBackup,
     pub import: RawImport,
     pub integrations: RawIntegrations,
+    pub git: RawGit,
     pub projects: Vec<RawProject>,
     pub budgets: Vec<RawBudget>,
     pub pricing: RawPricing,
@@ -250,6 +251,13 @@ pub struct RawIntegrations {
 pub struct RawSuperset {
     pub enabled: Option<bool>,
     pub dir: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RawGit {
+    pub default_remote: Option<GitName>,
+    pub default_branch: Option<GitName>,
 }
 
 /// One `[[projects]]` rule; also the argument of

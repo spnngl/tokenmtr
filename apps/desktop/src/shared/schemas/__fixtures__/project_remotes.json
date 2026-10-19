@@ -1,0 +1,16 @@
+[
+  {
+    "name": "origin",
+    "host": "github.com",
+    "repository": "ada/tokenmtr",
+    "default_branch": "main",
+    "keys_project": true
+  },
+  {
+    "name": "upstream",
+    "host": "gitlab.com",
+    "repository": "acme/platform/tokenmtr",
+    "default_branch": null,
+    "keys_project": false
+  }
+]

@@ -18,13 +18,13 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::DialogExt as _;
 use tauri_plugin_notification::NotificationExt as _;
 use tokenmtr_app::AppContext;
-use tokenmtr_config::{MenubarRing, RawProject};
-use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId, SubscriptionSpec};
+use tokenmtr_config::{GitName, MenubarRing, RawProject};
+use tokenmtr_core::{AgentId, Currency, ProfileId, ProjectKey, SessionId, SubscriptionSpec};
 use tokenmtr_platform::service::is_transient;
 use tokenmtr_platform::{
     LaunchdService, ServiceError, ServiceManager as _, ServiceStatus, SystemRunner,
 };
-use tokenmtr_query::{Granularity, GroupBy, Period};
+use tokenmtr_query::{Granularity, GroupBy, Period, ProjectGrouping};
 
 use crate::backend::shell::{
     self, AppState, FilterOptions, Permission, SessionOrigin, Settings, StateInputs,
@@ -135,8 +135,6 @@ macro_rules! filtered_query {
 filtered_query!(
     overview,
     models,
-    projects,
-    project_models,
     branches,
     unresolved_cwds,
     heatmap,
@@ -158,6 +156,41 @@ pub async fn billing_series(
 ) -> Reply<Value> {
     read(&shell, move |app, now| {
         queries::billing_series(app, now, &request, granularity, split_by_agent)
+    })
+    .await
+}
+
+/// Projects over the filtered range, by project key or by folder.
+#[tauri::command]
+pub async fn projects(
+    shell: State<'_, Shell>,
+    request: QueryRequest,
+    grouping: ProjectGrouping,
+) -> Reply<Value> {
+    read(&shell, move |app, now| {
+        queries::projects(app, now, &request, grouping)
+    })
+    .await
+}
+
+/// Projects split by model over the filtered range, by project key or by folder.
+#[tauri::command]
+pub async fn project_models(
+    shell: State<'_, Shell>,
+    request: QueryRequest,
+    grouping: ProjectGrouping,
+) -> Reply<Value> {
+    read(&shell, move |app, now| {
+        queries::project_models(app, now, &request, grouping)
+    })
+    .await
+}
+
+/// The git remotes of one project.
+#[tauri::command]
+pub async fn project_remotes(shell: State<'_, Shell>, project: ProjectKey) -> Reply<Value> {
+    read(&shell, move |app, _| {
+        queries::project_remotes(app, &project)
     })
     .await
 }
@@ -380,6 +413,24 @@ pub async fn set_menubar_rings(
     Ok(())
 }
 
+/// Chooses the remote that keys projects and the default branch; the daemon reloads so its
+/// next scan moves projects to the new key.
+#[tauri::command]
+pub async fn set_git_defaults(
+    shell: State<'_, Shell>,
+    default_remote: GitName,
+    default_branch: Option<GitName>,
+) -> Reply<()> {
+    let backend = shell.backend.clone();
+    blocking({
+        let backend = backend.clone();
+        move || actions::set_git_defaults(&backend, &default_remote, default_branch.as_ref())
+    })
+    .await?;
+    actions::reload_daemon(&backend).await;
+    Ok(())
+}
+
 /// The project rule the app suggests for a directory.
 #[tauri::command]
 pub async fn project_rule_for(shell: State<'_, Shell>, cwd: String) -> Reply<RawProject> {
@@ -519,6 +570,7 @@ command_table!(
     models,
     projects,
     project_models,
+    project_remotes,
     branches,
     unresolved_cwds,
     heatmap,
@@ -551,6 +603,7 @@ command_table!(
     add_project_rule,
     add_subscription,
     set_menubar_rings,
+    set_git_defaults,
     project_rule_for,
     connect_keychain,
     keep_ten_years,

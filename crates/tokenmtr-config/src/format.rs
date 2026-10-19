@@ -8,7 +8,7 @@ use tokenmtr_core::ProfileId;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, TableLike, Value};
 
 use crate::error::{ConfigPath, Segment};
-use crate::model::MenubarRing;
+use crate::model::{GitName, MenubarRing};
 use crate::raw::{RawConfig, RawProject, RawSubscription};
 
 /// The text did not decode into a [`RawConfig`].
@@ -89,6 +89,19 @@ pub trait ConfigCodec {
         rings: &[MenubarRing],
         hidden_profiles: &[ProfileId],
     ) -> Result<String, EditError>;
+
+    /// `source` with `[git]` `default_remote` and `default_branch` set; the table is created when
+    /// missing, an existing value keeps its comment, and `default_branch` is removed when `None`.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError`] when `source` cannot be edited.
+    fn set_git_defaults(
+        &self,
+        source: &str,
+        default_remote: &GitName,
+        default_branch: Option<&GitName>,
+    ) -> Result<String, EditError>;
 }
 
 /// TOML, read with `toml` and edited with `toml_edit`.
@@ -151,11 +164,38 @@ impl ConfigCodec for TomlCodec {
         }
         Ok(document.to_string())
     }
+
+    fn set_git_defaults(
+        &self,
+        source: &str,
+        default_remote: &GitName,
+        default_branch: Option<&GitName>,
+    ) -> Result<String, EditError> {
+        let mut document: DocumentMut = source.parse()?;
+        let git = document
+            .as_table_mut()
+            .entry("git")
+            .or_insert_with(toml_edit::table)
+            .as_table_like_mut()
+            .ok_or(EditError::NotATable { key: "git" })?;
+        set_value(git, "default_remote", default_remote.as_str().into());
+        match default_branch {
+            Some(branch) => set_value(git, "default_branch", branch.as_str().into()),
+            None => {
+                git.remove("default_branch");
+            }
+        }
+        Ok(document.to_string())
+    }
 }
 
 /// Sets `key` to `array`, keeping the comment and spacing of an existing value.
 fn set_array(table: &mut dyn TableLike, key: &str, array: Array) {
-    let mut value = Value::Array(array);
+    set_value(table, key, Value::Array(array));
+}
+
+/// Sets `key` to `value`, keeping the comment and spacing of an existing value.
+fn set_value(table: &mut dyn TableLike, key: &str, mut value: Value) {
     if let Some(old) = table.get(key).and_then(Item::as_value) {
         *value.decor_mut() = old.decor().clone();
     }
@@ -233,5 +273,15 @@ impl ConfigCodec for ConfigFormat {
     ) -> Result<String, EditError> {
         self.codec()
             .set_menubar_rings(source, rings, hidden_profiles)
+    }
+
+    fn set_git_defaults(
+        &self,
+        source: &str,
+        default_remote: &GitName,
+        default_branch: Option<&GitName>,
+    ) -> Result<String, EditError> {
+        self.codec()
+            .set_git_defaults(source, default_remote, default_branch)
     }
 }

@@ -83,6 +83,48 @@ impl fmt::Display for ClientName {
     }
 }
 
+/// A git remote or branch name, such as `origin` or `main`: non-blank, without whitespace.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct GitName(String);
+
+impl GitName {
+    /// `origin`, the remote `git clone` creates.
+    #[must_use]
+    pub fn origin() -> Self {
+        Self("origin".to_owned())
+    }
+
+    /// The name as text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for GitName {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, String> {
+        if value.is_empty() || value.contains(char::is_whitespace) {
+            Err("git name must be non-blank and contain no whitespace".to_owned())
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl From<GitName> for String {
+    fn from(value: GitName) -> Self {
+        value.0
+    }
+}
+
+impl fmt::Display for GitName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// A column a sink may redact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -361,6 +403,25 @@ pub struct SupersetConfig {
     pub dir: Option<Utf8PathBuf>,
 }
 
+/// `[git]`: how a repository becomes a project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitConfig {
+    /// The remote whose URL is the project key; `origin`, then the first remote by name, stand
+    /// in when a repository lacks it.
+    pub default_remote: GitName,
+    /// The work branch, reserved for branch statistics; nothing reads it yet.
+    pub default_branch: Option<GitName>,
+}
+
+impl Default for GitConfig {
+    fn default() -> Self {
+        Self {
+            default_remote: GitName::origin(),
+            default_branch: None,
+        }
+    }
+}
+
 /// One `[[projects]]` rule: the first rule whose glob matches a cwd names its project.
 #[derive(Debug, Clone)]
 pub struct ProjectRule {
@@ -499,6 +560,8 @@ pub struct Config {
     pub import: ImportConfig,
     /// `[integrations]`.
     pub integrations: IntegrationsConfig,
+    /// `[git]`.
+    pub git: GitConfig,
     /// `[[projects]]`, in match order.
     pub projects: Vec<ProjectRule>,
     /// `[[budgets]]`.

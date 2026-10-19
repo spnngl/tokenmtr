@@ -4,7 +4,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tokenmtr_config::{
-    Config, ConfigDocument, ConfigError, ConfigFormat, Env, MenubarRing, RawProject,
+    Config, ConfigDocument, ConfigError, ConfigFormat, Env, GitName, MenubarRing, RawProject,
     TimeZoneSetting, TomlCodec,
 };
 use tokenmtr_core::{ProfileId, SubscriptionSpec};
@@ -190,6 +190,23 @@ pub fn set_menubar_rings(
 ) -> Result<Config, AppError> {
     edit_config(path, |document| {
         document.set_menubar_rings(rings, hidden_profiles, env)
+    })
+}
+
+/// Sets `[git] default_remote` and `default_branch` (removed when `None`) in the config file
+/// at `path`, keeping its comments.
+///
+/// # Errors
+///
+/// [`AppError::Config`] when the result is invalid; the file is untouched then.
+pub fn set_git_defaults(
+    path: &Utf8Path,
+    default_remote: &GitName,
+    default_branch: Option<&GitName>,
+    env: &dyn Env,
+) -> Result<Config, AppError> {
+    edit_config(path, |document| {
+        document.set_git_defaults(default_remote, default_branch, env)
     })
 }
 

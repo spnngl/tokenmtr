@@ -38,6 +38,23 @@ pub enum Plan {
     Custom,
 }
 
+impl Plan {
+    /// The plan whose quota Claude's `rateLimitTier` names: `..._max_5x` is Max 5x and
+    /// `..._max_20x` is Max 20x, case-insensitive. Team and Enterprise seats carry these tiers
+    /// too. `None` for any other tier: no observed tier proves a Pro-sized quota.
+    #[must_use]
+    pub fn from_rate_limit_tier(tier: &str) -> Option<Self> {
+        let tier = tier.to_ascii_lowercase();
+        if tier.contains("max_20x") {
+            Some(Self::Max20x)
+        } else if tier.contains("max_5x") {
+            Some(Self::Max5x)
+        } else {
+            None
+        }
+    }
+}
+
 /// How often the fee is billed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

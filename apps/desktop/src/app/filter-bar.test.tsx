@@ -9,8 +9,12 @@ import { axeViolations } from "../shared/axe";
 import { createMockDataSource } from "../shared/mock";
 import { ThemeProvider } from "../shared/theme";
 import { createAppRouter } from "./router";
+import { readStoredRange } from "./stored-range";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 async function renderApp(url: string) {
   const router = createAppRouter(createMemoryHistory({ initialEntries: [url] }));
@@ -29,18 +33,20 @@ async function renderApp(url: string) {
 }
 
 describe("filter bar", () => {
-  it("writes the range to the URL and omits defaults", async () => {
+  it("writes the range to the URL, omits defaults and remembers the last range", async () => {
     const user = userEvent.setup();
     const { filters, search } = await renderApp("/");
     expect(search()).toBe("");
 
     await user.click(within(filters).getByRole("button", { name: /Range/ }));
-    await user.click(await screen.findByRole("option", { name: "Last 30 days" }));
-    expect(search()).toBe("?range=30d");
+    await user.click(await screen.findByRole("option", { name: "Last 7 days" }));
+    expect(search()).toBe("?range=7d");
+    expect(readStoredRange()).toEqual({ kind: "preset", preset: "7d" });
 
     await user.click(within(filters).getByRole("button", { name: /Range/ }));
-    await user.click(await screen.findByRole("option", { name: "Last 7 days" }));
+    await user.click(await screen.findByRole("option", { name: "Last 30 days" }));
     expect(search()).toBe("");
+    expect(readStoredRange()).toEqual({ kind: "preset", preset: "30d" });
   });
 
   it("toggles the currency from the keyboard", async () => {

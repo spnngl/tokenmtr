@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::testkit::{add_worktree, init_repo, rules, utf8_dir};
+use crate::testkit::{add_remote, add_worktree, init_repo, rules, utf8_dir};
 
 fn at() -> Timestamp {
     Timestamp::UNIX_EPOCH
@@ -53,7 +53,7 @@ fn ssh_and_https_clones_are_one_project() {
     let b = resolve(&resolver, &root.join("b"));
     assert_eq!(a.resolution.project, b.resolution.project);
     assert_eq!(a.resolution.project.as_str(), "github.com/acme/tool");
-    assert_eq!(a.resolution.name, "tool");
+    assert_eq!(a.resolution.name, "acme/tool");
     assert_eq!(a.resolution.source, ProjectSource::Remote);
     assert_eq!(a.resolution.remote.as_deref(), Some("github.com/acme/tool"));
     assert_eq!(a.problem, None);
@@ -221,7 +221,7 @@ fn a_deleted_worktree_is_inferred_from_its_live_main_repository() {
         "github.com/acme/tool",
         "the live repository's origin, as its live worktrees resolve"
     );
-    assert_eq!(resolution.name, "tool");
+    assert_eq!(resolution.name, "acme/tool");
     assert_eq!(resolution.repo_root.as_deref(), Some(main.as_path()));
 }
 
@@ -237,7 +237,8 @@ fn a_deleted_worktree_of_a_deleted_repository_takes_the_recorded_remote() {
         .resolution;
     assert_eq!(resolution.source, ProjectSource::Inferred);
     assert_eq!(resolution.project.as_str(), "github.com/acme/widgets");
-    assert_eq!(resolution.name, "widgets");
+    assert_eq!(resolution.name, "acme/widgets");
+    assert_eq!(resolution.remotes, [], "no repository left to read");
 }
 
 #[test]
@@ -274,4 +275,148 @@ fn head_branch_reads_the_checked_out_branch() {
     fs::create_dir_all(root.join("protected/repo")).unwrap();
     init_repo(root.join("protected/repo").as_std_path(), None);
     assert_eq!(resolver.head_branch(&root.join("protected/repo")), None);
+}
+
+fn remote(name: &str, url: &str, default_branch: Option<&str>) -> GitRemote {
+    GitRemote {
+        name: name.to_owned(),
+        url: url.to_owned(),
+        default_branch: default_branch.map(str::to_owned),
+    }
+}
+
+fn git_name(name: &str) -> GitName {
+    GitName::try_from(name.to_owned()).unwrap()
+}
+
+#[test]
+fn every_shared_remote_is_kept_with_its_default_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8_dir(&dir);
+    let repo = root.join("repo");
+    init_repo(repo.as_std_path(), Some("git@github.com:me/tool.git"));
+    add_remote(
+        repo.as_std_path(),
+        "upstream",
+        "https://user:secret@gitlab.com/acme/devops/tool.git",
+        Some("main"),
+    );
+    add_remote(repo.as_std_path(), "local", "/srv/git/tool.git", None);
+    let resolution = resolve(&ProjectResolver::default(), &repo).resolution;
+    assert_eq!(
+        resolution.remotes,
+        [
+            remote("origin", "github.com/me/tool", None),
+            remote("upstream", "gitlab.com/acme/devops/tool", Some("main")),
+        ],
+        "local remotes dropped, credentials never kept"
+    );
+    assert_eq!(resolution.project.as_str(), "github.com/me/tool");
+    assert_eq!(resolution.name, "me/tool");
+}
+
+#[test]
+fn the_configured_default_remote_keys_the_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8_dir(&dir);
+    let repo = root.join("repo");
+    init_repo(repo.as_std_path(), Some("git@github.com:me/tool.git"));
+    add_remote(
+        repo.as_std_path(),
+        "upstream",
+        "git@github.com:acme/devops/tool.git",
+        None,
+    );
+    let resolver = ProjectResolver::default().with_default_remote(git_name("upstream"));
+    let resolution = resolve(&resolver, &repo).resolution;
+    assert_eq!(resolution.project.as_str(), "github.com/acme/devops/tool");
+    assert_eq!(
+        resolution.name, "acme/devops/tool",
+        "nested groups stay in the name"
+    );
+    assert_eq!(
+        resolution.remote.as_deref(),
+        Some("github.com/acme/devops/tool")
+    );
+    assert_eq!(resolution.source, ProjectSource::Remote);
+}
+
+#[test]
+fn without_the_default_remote_origin_then_the_first_remote_keys_the_project() {
+    let resolver = ProjectResolver::default().with_default_remote(git_name("upstream"));
+    let both = [
+        remote("fork", "github.com/me/tool", None),
+        remote("origin", "github.com/acme/tool", None),
+    ];
+    let key = |remotes: &[GitRemote]| resolver.key_remote(remotes).map(|r| r.name.clone());
+    assert_eq!(key(&both).as_deref(), Some("origin"));
+    let no_origin = [
+        remote("zeta", "github.com/z/tool", None),
+        remote("fork", "github.com/me/tool", None),
+    ];
+    assert_eq!(key(&no_origin).as_deref(), Some("fork"), "first by name");
+    assert_eq!(key(&[]), None);
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = utf8_dir(&dir);
+    let repo = root.join("repo");
+    init_repo(repo.as_std_path(), None);
+    add_remote(
+        repo.as_std_path(),
+        "zeta",
+        "git@github.com:z/tool.git",
+        None,
+    );
+    add_remote(
+        repo.as_std_path(),
+        "fork",
+        "git@github.com:me/tool.git",
+        None,
+    );
+    let resolution = resolve(&resolver, &repo).resolution;
+    assert_eq!(resolution.project.as_str(), "github.com/me/tool");
+
+    let only_local = root.join("local");
+    init_repo(only_local.as_std_path(), Some("/srv/git/tool.git"));
+    let resolution = resolve(&resolver, &only_local).resolution;
+    assert_eq!(
+        resolution.source,
+        ProjectSource::RepoRoot,
+        "no shared remote: the root"
+    );
+    assert_eq!(resolution.remotes, []);
+}
+
+#[test]
+fn rekey_moves_a_stored_answer_to_the_new_default_remote_only() {
+    let stored = ProjectResolution {
+        cwd: Utf8PathBuf::from("/work/tool"),
+        project: ProjectKey::try_from("github.com/me/tool").unwrap(),
+        name: "me/tool".to_owned(),
+        client: None,
+        repo_root: Some(Utf8PathBuf::from("/work/tool")),
+        remote: Some("github.com/me/tool".to_owned()),
+        resolved_at: at(),
+        source: ProjectSource::Remote,
+        remotes: vec![
+            remote("origin", "github.com/me/tool", None),
+            remote("upstream", "github.com/acme/tool", Some("main")),
+        ],
+    };
+    assert_eq!(
+        ProjectResolver::default().rekey(&stored),
+        None,
+        "origin already keys it"
+    );
+    let upstream = ProjectResolver::default().with_default_remote(git_name("upstream"));
+    let rekeyed = upstream.rekey(&stored).unwrap();
+    assert_eq!(rekeyed.project.as_str(), "github.com/acme/tool");
+    assert_eq!(rekeyed.name, "acme/tool");
+    assert_eq!(rekeyed.remote.as_deref(), Some("github.com/acme/tool"));
+    assert_eq!(rekeyed.remotes, stored.remotes);
+    let ruled = ProjectResolution {
+        source: ProjectSource::Rule("r".to_owned()),
+        ..stored
+    };
+    assert_eq!(upstream.rekey(&ruled), None, "rules keep their key");
 }

@@ -39,6 +39,7 @@ fn resolution(cwd: &str, project: &str, client: Option<&str>) -> crate::ProjectR
         remote: None,
         resolved_at: at(3),
         source: crate::ProjectSource::Rule("r".to_owned()),
+        remotes: Vec::new(),
     }
 }
 

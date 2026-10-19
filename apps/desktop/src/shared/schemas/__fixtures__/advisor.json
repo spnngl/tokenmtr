@@ -3,6 +3,7 @@
     "agent": "claude",
     "profile": "default",
     "current_plan": "max_5x",
+    "organization": null,
     "snapshots": 412,
     "monthly_api_value_usd_micros": 486250000,
     "advice": {
@@ -12,6 +13,10 @@
         "plan": "max_20x"
       },
       "current": "max_5x",
+      "sizing": {
+        "source": "catalog"
+      },
+      "current_monthly_fee": 100000000,
       "headroom": 80,
       "fits": [
         {
@@ -42,6 +47,7 @@
     "agent": "claude",
     "profile": "work",
     "current_plan": "max_20x",
+    "organization": null,
     "snapshots": 380,
     "monthly_api_value_usd_micros": 61200000,
     "advice": {
@@ -51,6 +57,10 @@
         "plan": "pro"
       },
       "current": "max_20x",
+      "sizing": {
+        "source": "catalog"
+      },
+      "current_monthly_fee": 200000000,
       "headroom": 80,
       "fits": [
         {
@@ -67,6 +77,7 @@
     "agent": "claude",
     "profile": "side",
     "current_plan": "pro",
+    "organization": null,
     "snapshots": 290,
     "monthly_api_value_usd_micros": 31500000,
     "advice": {
@@ -75,6 +86,10 @@
         "verdict": "keep"
       },
       "current": "pro",
+      "sizing": {
+        "source": "catalog"
+      },
+      "current_monthly_fee": 20000000,
       "headroom": 80,
       "fits": [
         {
@@ -91,6 +106,7 @@
     "agent": "claude",
     "profile": "lab",
     "current_plan": "pro",
+    "organization": null,
     "snapshots": 150,
     "monthly_api_value_usd_micros": 4200000,
     "advice": {
@@ -99,6 +115,10 @@
         "verdict": "pay_as_you_go"
       },
       "current": "pro",
+      "sizing": {
+        "source": "catalog"
+      },
+      "current_monthly_fee": 20000000,
       "headroom": 80,
       "fits": [
         {
@@ -113,8 +133,64 @@
   },
   {
     "agent": "claude",
+    "profile": "team",
+    "current_plan": "team",
+    "organization": "Acme",
+    "snapshots": 330,
+    "monthly_api_value_usd_micros": 212000000,
+    "advice": {
+      "advice": "recommend",
+      "verdict": {
+        "verdict": "keep"
+      },
+      "current": "team",
+      "sizing": {
+        "source": "rate_tier",
+        "plan": "max_5x"
+      },
+      "current_monthly_fee": null,
+      "headroom": 80,
+      "fits": [
+        {
+          "plan": "pro",
+          "monthly_fee": 20000000,
+          "five_hour_peak": 350.0,
+          "seven_day_peak": 250.0,
+          "fits": false
+        },
+        {
+          "plan": "max_5x",
+          "monthly_fee": 100000000,
+          "five_hour_peak": 70.0,
+          "seven_day_peak": 50.0,
+          "fits": true
+        },
+        {
+          "plan": "max_20x",
+          "monthly_fee": 200000000,
+          "five_hour_peak": 17.5,
+          "seven_day_peak": 12.5,
+          "fits": true
+        }
+      ]
+    }
+  },
+  {
+    "agent": "claude",
+    "profile": "enterprise",
+    "current_plan": "enterprise",
+    "organization": "Acme",
+    "snapshots": 330,
+    "monthly_api_value_usd_micros": 212000000,
+    "advice": {
+      "advice": "unknown_quota"
+    }
+  },
+  {
+    "agent": "claude",
     "profile": "new",
     "current_plan": null,
+    "organization": null,
     "snapshots": 6,
     "monthly_api_value_usd_micros": 1800000,
     "advice": {
@@ -126,10 +202,11 @@
     "agent": "pi",
     "profile": "default",
     "current_plan": null,
+    "organization": null,
     "snapshots": 0,
     "monthly_api_value_usd_micros": 92300000,
     "advice": {
-      "advice": "not_applicable"
+      "advice": "no_plan"
     }
   }
 ]

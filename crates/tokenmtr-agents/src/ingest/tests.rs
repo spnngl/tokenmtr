@@ -71,6 +71,11 @@ impl Machine {
         self.ingestor = ingestor(&self.root, rules_toml, false);
     }
 
+    /// Restarts the ingestor with `[git] default_remote = remote` and no rules.
+    fn key_by_remote(&mut self, remote: &str) {
+        self.ingestor = keyed_ingestor(&self.root, "", false, remote);
+    }
+
     fn scan(&mut self) -> ScanReport {
         self.scan_with(&ScanRequest::incremental(ScanPriority::UserInitiated))
     }
@@ -101,6 +106,15 @@ impl Machine {
 }
 
 fn ingestor(root: &Utf8Path, rules_toml: &str, redact_paths: bool) -> Ingestor {
+    keyed_ingestor(root, rules_toml, redact_paths, "origin")
+}
+
+fn keyed_ingestor(
+    root: &Utf8Path,
+    rules_toml: &str,
+    redact_paths: bool,
+    default_remote: &str,
+) -> Ingestor {
     let claude = Profile::new(
         ProfileId::default_profile(),
         vec![root.join("claude").join("projects")],
@@ -115,6 +129,7 @@ fn ingestor(root: &Utf8Path, rules_toml: &str, redact_paths: bool) -> Ingestor {
             AgentKind::Pi(PiSource::new(vec![pi])),
         ],
         rules: rules(rules_toml),
+        default_remote: tokenmtr_config::GitName::try_from(default_remote.to_owned()).unwrap(),
         overrides: Vec::new(),
         zone: TimeZone::UTC,
         import_claude_stats_cache: true,
@@ -1183,6 +1198,65 @@ fn a_deleted_worktree_is_inferred_from_superset_with_its_last_branch() {
     machine.scan_with(&ScanRequest::full(ScanPriority::UserInitiated));
     assert_eq!(branch_of(&machine, "m1").as_deref(), Some("feat/otter"));
     assert_eq!(branch_of(&machine, "m2").as_deref(), Some("feat/otter"));
+}
+
+#[test]
+fn changing_the_default_remote_rekeys_projects_and_moves_their_events() {
+    let mut machine = Machine::new();
+    let repo = machine.root.join("src/tool");
+    crate::testkit::init_repo(repo.as_std_path(), Some("git@github.com:me/tool.git"));
+    crate::testkit::add_remote(
+        repo.as_std_path(),
+        "upstream",
+        "git@github.com:acme/tool.git",
+        Some("main"),
+    );
+    pi_session(
+        &machine,
+        "p1",
+        repo.as_str(),
+        &[("m1", "2026-03-03T07:00:05.000Z")],
+    );
+    machine.scan();
+    let project = |machine: &Machine| {
+        machine.events()[0]
+            .row
+            .project
+            .as_ref()
+            .map(|p| p.as_str().to_owned())
+    };
+    assert_eq!(project(&machine).as_deref(), Some("github.com/me/tool"));
+    let key = tokenmtr_core::ProjectKey::try_from("github.com/me/tool").unwrap();
+    let remotes = machine.store.project_remotes(&key).unwrap();
+    let names: Vec<(&str, Option<&str>)> = remotes
+        .iter()
+        .map(|r| (r.name.as_str(), r.default_branch.as_deref()))
+        .collect();
+    assert_eq!(names, [("origin", None), ("upstream", Some("main"))]);
+    let head = machine.head();
+    let revision = machine.events()[0].revision;
+
+    machine.key_by_remote("upstream");
+    let report = machine.scan();
+    assert_eq!((report.cwds_reresolved, report.events_reassigned), (1, 1));
+    assert_eq!(project(&machine).as_deref(), Some("github.com/acme/tool"));
+    assert!(
+        machine.events()[0].revision > revision,
+        "sinks re-export it"
+    );
+    assert!(machine.head() > head);
+    assert_eq!(machine.store.projects().unwrap()[0].name, "acme/tool");
+
+    // Once the folder is gone, the stored remotes still re-key it; it never falls back to the cwd.
+    std::fs::remove_dir_all(&repo).unwrap();
+    machine.key_by_remote("origin");
+    machine.scan();
+    assert_eq!(project(&machine).as_deref(), Some("github.com/me/tool"));
+    machine.scan_with(&ScanRequest::full(ScanPriority::UserInitiated));
+    assert_eq!(project(&machine).as_deref(), Some("github.com/me/tool"));
+    let stored = &machine.store.projects().unwrap()[0];
+    assert_eq!(stored.source, tokenmtr_store::ProjectSource::Remote);
+    assert_eq!(stored.remotes.len(), 2);
 }
 
 #[test]

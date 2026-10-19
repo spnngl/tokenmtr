@@ -118,6 +118,16 @@ for (const theme of THEMES) {
           await shoot(page, theme, `${viewport.name}-project-detail`);
         });
 
+        test("projects by folder", async ({ page }) => {
+          await page.goto("/?mock=populated#/projects");
+          await page.getByRole("radio", { name: "Folder" }).click();
+          await expect(
+            page.getByRole("list", { name: /folders by API value/ }).first(),
+          ).toBeVisible();
+          await settle(page);
+          await shoot(page, theme, `${viewport.name}-projects-by-folder`);
+        });
+
         test("session drilldown", async ({ page }) => {
           await page.goto("/?mock=populated#/sessions?agent=claude&project=tokenmtr&z=");
           // Hash history appends `?mock=...` to the last hash param, hence the throwaway `z`.

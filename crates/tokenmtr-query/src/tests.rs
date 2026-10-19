@@ -170,7 +170,12 @@ fn empty_store_returns_zeros_not_errors() {
     assert_eq!(totals.cache_savings_micros, None);
     assert_eq!(totals.roi, None);
     assert!(models(&reader, &ctx, &f).unwrap().rows.is_empty());
-    assert!(projects(&reader, &ctx, &f).unwrap().rows.is_empty());
+    assert!(
+        projects(&reader, &ctx, &f, ProjectGrouping::Project)
+            .unwrap()
+            .rows
+            .is_empty()
+    );
     assert_eq!(sessions(&reader, &ctx, &f, 0, 50).unwrap().total, 0);
     assert!(quota_latest(&reader, &ctx, &f).unwrap().is_empty());
     assert!(tools(&reader, &ctx, &f).unwrap().tools.is_empty());
@@ -688,7 +693,7 @@ fn extra_usage_is_paid_without_api_value_tokens_or_breakdown_rows() {
     assert_eq!(by_model.len(), 3);
     assert!(by_model.iter().all(|m| m.usage.extra_usage_micros == 0));
     assert!(
-        projects(&reader, &c, &f)
+        projects(&reader, &c, &f, ProjectGrouping::Project)
             .unwrap()
             .rows
             .iter()
@@ -1147,6 +1152,111 @@ fn quota_meters_history_and_eta() {
     ));
     assert_eq!(report.snapshots, 5);
     assert!(PlanCatalog::embedded().is_ok());
+}
+
+/// 20 daily polls of the default profile peaking at `percent` of the five-hour window.
+fn seed_daily_polls(percent: f64) -> Seed {
+    let seed = Seed::new();
+    let start = ts("2026-03-01T12:00:00Z");
+    for day in 0..20 {
+        let at = start
+            .checked_add(SignedDuration::from_hours(24 * day))
+            .unwrap();
+        poll(&seed, "default", at, window(percent, at));
+    }
+    seed
+}
+
+fn seed_account(seed: &Seed, plan: Option<Plan>, tier: Option<&str>) {
+    seed.store()
+        .save_account(&tokenmtr_store::AccountRecord {
+            agent: AgentId::CLAUDE,
+            profile: ProfileId::default_profile(),
+            email: None,
+            organization: Some("Wiremind".to_owned()),
+            detected_plan: plan,
+            rate_limit_tier: tier.map(str::to_owned),
+            fetched_at: ts("2026-03-20T12:00:00Z"),
+        })
+        .unwrap();
+}
+
+fn team_subscription(fee: Money) -> Subscription {
+    Subscription::new(SubscriptionSpec {
+        id: SubscriptionId::try_from("team".to_owned()).unwrap(),
+        provider: ProviderId::try_from("anthropic".to_owned()).unwrap(),
+        plan: Plan::Team,
+        agents: vec![AgentId::CLAUDE],
+        profiles: Some(vec![ProfileId::default_profile()]),
+        fee,
+        period: BillingPeriod::Monthly,
+        start: date(2026, 1, 1),
+        end: None,
+    })
+    .unwrap()
+}
+
+fn advise_default(seed: &Seed, ctx: &QueryContext) -> AdvisorReport {
+    advisor(
+        &seed.reader(),
+        ctx,
+        AgentId::CLAUDE,
+        &ProfileId::default_profile(),
+        None,
+        80,
+    )
+    .unwrap()
+}
+
+#[test]
+fn advisor_sizes_a_team_seat_from_its_rate_tier_and_declared_fee() {
+    let seed = seed_daily_polls(70.0);
+    seed_account(&seed, Some(Plan::Team), Some("default_claude_max_5x"));
+    let ctx = usd_ctx("UTC", "2026-03-21T00:00:00Z").with_subscriptions(vec![team_subscription(
+        Money::from_micros(Currency::Usd, 100_000_000),
+    )]);
+    let report = advise_default(&seed, &ctx);
+    assert_eq!(report.current_plan, Some(Plan::Team));
+    assert_eq!(report.organization.as_deref(), Some("Wiremind"));
+    let tokenmtr_core::Advice::Recommend(r) = &report.advice else {
+        panic!("expected a recommendation, got {:?}", report.advice);
+    };
+    assert_eq!(r.sizing, tokenmtr_core::QuotaSizing::RateTier(Plan::Max5x));
+    assert_eq!(r.current_monthly_fee, Some(UsdMicros::new(100_000_000)));
+    let json = json(&report);
+    assert_eq!(json["organization"], "Wiremind");
+    assert_eq!(json["advice"]["sizing"]["source"], "rate_tier");
+    assert_eq!(json["advice"]["sizing"]["plan"], "max_5x");
+}
+
+#[test]
+fn advisor_converts_a_eur_seat_fee_to_usd() {
+    let seed = seed_daily_polls(70.0);
+    seed_account(&seed, Some(Plan::Team), Some("default_claude_max_5x"));
+    let rate = FxPolicy::fixed(EurPerUsd::from_scaled(920_000_000).unwrap());
+    let ctx = ctx("UTC", Currency::Usd, rate, "2026-03-21T00:00:00Z").with_subscriptions(vec![
+        team_subscription(Money::from_micros(Currency::Eur, 92_000_000)),
+    ]);
+    let tokenmtr_core::Advice::Recommend(r) = advise_default(&seed, &ctx).advice else {
+        panic!("expected a recommendation");
+    };
+    assert_eq!(r.current_monthly_fee, Some(UsdMicros::new(100_000_000)));
+}
+
+#[test]
+fn advisor_names_why_it_cannot_advise() {
+    let seed = seed_daily_polls(70.0);
+    let ctx = usd_ctx("UTC", "2026-03-21T00:00:00Z");
+    assert_eq!(
+        advise_default(&seed, &ctx).advice,
+        tokenmtr_core::Advice::NoPlan
+    );
+    // A Team seat whose tier names no plan: its quota size is unknown.
+    seed_account(&seed, Some(Plan::Team), Some("default_claude_ai"));
+    let report = advise_default(&seed, &ctx);
+    assert_eq!(report.current_plan, Some(Plan::Team));
+    assert_eq!(report.advice, tokenmtr_core::Advice::UnknownQuota);
+    assert_eq!(json(&report)["advice"]["advice"], "unknown_quota");
 }
 
 fn recap_config(sinks: Vec<SinkSpec>, budgets: Vec<BudgetSpec>) -> RecapConfig {
@@ -1950,7 +2060,7 @@ fn project_models_split_each_project_and_sum_to_the_projects_breakdown() {
         usd_ctx("UTC", "2026-04-10T18:00:00Z").with_subscriptions(vec![anthropic_subscription()]);
     let f = days(date(2026, 4, 10), date(2026, 4, 11));
 
-    let split = project_models(&reader, &c, &f).unwrap();
+    let split = project_models(&reader, &c, &f, ProjectGrouping::Project).unwrap();
     assert_eq!(split.currency, Currency::Usd);
     let keys: Vec<Option<&str>> = split.rows.iter().map(|r| r.project.as_deref()).collect();
     assert_eq!(keys, [Some("p1"), Some("p2"), None]);
@@ -1962,7 +2072,7 @@ fn project_models_split_each_project_and_sum_to_the_projects_breakdown() {
     assert_eq!(p1, [("m1", 3_000_000), ("m2", 1_000_000)]);
     assert_eq!(split.rows[0].name, None);
 
-    let projects = projects(&reader, &c, &f).unwrap();
+    let projects = projects(&reader, &c, &f, ProjectGrouping::Project).unwrap();
     for row in &projects.rows {
         let models = &split
             .rows
@@ -1979,4 +2089,127 @@ fn project_models_split_each_project_and_sum_to_the_projects_breakdown() {
     }
     assert!(split.rows[0].models[0].usage.subscription_fee_micros > 0);
     assert_eq!(json(&split)["rows"][0]["models"][0]["model"], "m1");
+}
+
+#[test]
+fn projects_group_by_folder_merges_worktrees_and_splits_clones() {
+    let seed = Seed::new();
+    let at = ts("2026-04-10T10:00:00Z");
+    let key = ProjectKey::try_from("github.com/acme/tool").unwrap();
+    let remote = |name: &str, url: &str| tokenmtr_store::GitRemote {
+        name: name.to_owned(),
+        url: url.to_owned(),
+        default_branch: (name == "upstream").then(|| "main".to_owned()),
+    };
+    for (cwd, root) in [("/w/a", "/w/a"), ("/w/a/sub", "/w/a"), ("/w/b", "/w/b")] {
+        seed.store()
+            .save_project(&tokenmtr_store::ProjectResolution {
+                cwd: cwd.into(),
+                project: key.clone(),
+                name: "acme/tool".to_owned(),
+                client: None,
+                repo_root: Some(root.into()),
+                remote: Some(key.as_str().to_owned()),
+                resolved_at: at,
+                source: tokenmtr_store::ProjectSource::Remote,
+                remotes: vec![
+                    remote("origin", "github.com/acme/tool"),
+                    remote("upstream", "gitlab.com/up/stream/tool"),
+                ],
+            })
+            .unwrap();
+    }
+    let event = |id: &str, cwd: Option<&str>, micros: i64| {
+        let mut e = model(reported(seed.ev(id, at), micros), "m1");
+        e.cwd = cwd.map(Into::into);
+        e.project = cwd.is_some().then(|| key.clone());
+        e
+    };
+    seed.put(&[
+        event("a", Some("/w/a"), 3_000_000),
+        event("b", Some("/w/a/sub"), 1_000_000),
+        event("c", Some("/w/b"), 2_000_000),
+        event("d", Some("/w/c/"), 500_000),
+        event("e", None, 100_000),
+    ]);
+    let reader = seed.reader();
+    let c = usd_ctx("UTC", "2026-04-10T18:00:00Z");
+    let f = days(date(2026, 4, 10), date(2026, 4, 11));
+
+    let by_project = projects(&reader, &c, &f, ProjectGrouping::Project).unwrap();
+    let rows: Vec<(Option<&str>, Option<&str>)> = by_project
+        .rows
+        .iter()
+        .map(|r| (r.project.as_deref(), r.name.as_deref()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (Some("github.com/acme/tool"), Some("acme/tool")),
+            (None, None)
+        ]
+    );
+
+    let by_folder = projects(&reader, &c, &f, ProjectGrouping::Folder).unwrap();
+    let rows: Vec<(Option<&str>, Option<&str>, i64)> = by_folder
+        .rows
+        .iter()
+        .map(|r| {
+            (
+                r.project.as_deref(),
+                r.name.as_deref(),
+                r.usage.api_value_micros,
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (Some("/w/a"), Some("a"), 4_000_000),
+            (Some("/w/b"), Some("b"), 2_000_000),
+            (Some("/w/c/"), Some("c"), 500_000),
+            (None, None, 100_000),
+        ],
+        "worktrees of one root merge, a second clone is its own folder, unmapped cwds stand alone"
+    );
+
+    let split = project_models(&reader, &c, &f, ProjectGrouping::Folder).unwrap();
+    let keys: Vec<Option<&str>> = split.rows.iter().map(|r| r.project.as_deref()).collect();
+    assert_eq!(keys, [Some("/w/a"), Some("/w/b"), Some("/w/c/"), None]);
+    assert_eq!(split.rows[0].name.as_deref(), Some("a"));
+
+    let s = series(&reader, &c, &f, Bucket::Day, GroupBy::Folder).unwrap();
+    let groups: Vec<&str> = s.points[0].groups.keys().map(String::as_str).collect();
+    assert_eq!(groups, ["(none)", "/w/a", "/w/b", "/w/c/"]);
+    assert_eq!(json(&s)["group_by"], "folder");
+
+    let remotes = project_remotes(&reader, &key).unwrap();
+    let shown: Vec<(&str, &str, &str, Option<&str>, bool)> = remotes
+        .iter()
+        .map(|r| {
+            (
+                r.name.as_str(),
+                r.host.as_str(),
+                r.repository.as_str(),
+                r.default_branch.as_deref(),
+                r.keys_project,
+            )
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("origin", "github.com", "acme/tool", None, true),
+            (
+                "upstream",
+                "gitlab.com",
+                "up/stream/tool",
+                Some("main"),
+                false
+            ),
+        ],
+        "two clones with the same remotes list them once"
+    );
+    let unknown = ProjectKey::try_from("nowhere").unwrap();
+    assert_eq!(project_remotes(&reader, &unknown).unwrap(), []);
 }

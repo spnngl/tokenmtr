@@ -10,8 +10,9 @@ use camino::Utf8Path;
 use jiff::SignedDuration;
 use jiff::civil::date;
 use tokenmtr_config::{
-    ConfigDocument, ConfigError, ConfigFormat, FileFormat, LineCol, LogFormat, MenubarRing,
-    Partition, ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
+    ConfigDocument, ConfigError, ConfigFormat, FileFormat, GitConfig, GitName, LineCol, LogFormat,
+    MenubarRing, Partition, ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation,
+    load, load_str,
 };
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, EurMicros, ModelId, Money, Override, Plan, ProfileId,
@@ -93,6 +94,8 @@ fn the_example_parses() {
     assert_eq!(config.advisor.headroom.get(), 80);
     assert_eq!(config.backup.keep, 14);
     assert_eq!(config.backup.interval, SignedDuration::from_hours(24));
+    assert_eq!(config.git.default_remote.as_str(), "origin");
+    assert_eq!(config.git.default_branch, None);
 
     let rule = &config.projects[0];
     assert_eq!(rule.pattern(), "/home/u/work/acme-*/**");
@@ -172,6 +175,8 @@ fn an_empty_file_is_the_default_config() {
     assert_eq!(config.advisor.headroom.get(), 80);
     assert_eq!(config.backup.keep, 14);
     assert!(config.projects.is_empty() && config.budgets.is_empty());
+    assert_eq!(config.git, GitConfig::default());
+    assert_eq!(config.git.default_remote, GitName::origin());
     assert!(config.subscriptions.is_empty() && config.sinks.is_empty());
     assert!(config.pricing.auto_update);
     assert!(!config.privacy.redact_paths);
@@ -591,6 +596,50 @@ fn setting_menubar_rings_keeps_comments() {
         .set_menubar_rings(&[MenubarRing::Weekly, MenubarRing::Weekly], &[], &env)
         .unwrap_err();
     assert!(matches!(error, ConfigError::Invalid { .. }), "{error}");
+}
+
+#[test]
+fn git_names_must_be_non_blank_words() {
+    let config =
+        parse("[git]\ndefault_remote = \"upstream\"\ndefault_branch = \"main\"\n").unwrap();
+    assert_eq!(config.git.default_remote.as_str(), "upstream");
+    assert_eq!(
+        config.git.default_branch.map(String::from).as_deref(),
+        Some("main")
+    );
+    for bad in ["", "my remote"] {
+        let source = format!("[git]\ndefault_remote = \"{bad}\"\n");
+        assert!(parse(&source).is_err(), "{bad:?} accepted");
+    }
+}
+
+#[test]
+fn setting_git_defaults_keeps_comments() {
+    let mut document = ConfigDocument::new(EXAMPLE, toml());
+    let upstream = GitName::try_from("upstream".to_owned()).unwrap();
+    let main = GitName::try_from("main".to_owned()).unwrap();
+    let config = document
+        .set_git_defaults(&upstream, Some(&main), &env)
+        .unwrap();
+    assert_eq!(config.git.default_remote, upstream);
+    assert_eq!(config.git.default_branch.as_ref(), Some(&main));
+    assert!(document.text().contains(
+        "default_remote = \"upstream\"      # its URL keys projects; else origin, else the first remote\n"
+    ));
+    assert!(document.text().contains("\ndefault_branch = \"main\"\n"));
+
+    let config = document.set_git_defaults(&upstream, None, &env).unwrap();
+    assert_eq!(config.git.default_branch, None);
+    assert!(!document.text().contains("\ndefault_branch = "));
+    assert!(document.text().contains("# default_branch = \"main\""));
+
+    let mut bare = ConfigDocument::new("schema_version = 1\n", toml());
+    bare.set_git_defaults(&GitName::origin(), None, &env)
+        .unwrap();
+    assert_eq!(
+        bare.text(),
+        "schema_version = 1\n\n[git]\ndefault_remote = \"origin\"\n"
+    );
 }
 
 #[test]

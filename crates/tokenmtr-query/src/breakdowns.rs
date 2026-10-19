@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use rusqlite::params_from_iter;
 use rusqlite::types::Value;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokenmtr_core::fx::utc_date;
 use tokenmtr_core::{
     AgentId, CostSource, Currency, EventKind, ModelId, PriceQuery, ProviderId, SessionId,
@@ -255,12 +255,72 @@ fn ratio_signed(a: i64, b: i64) -> f64 {
     a as f64 / b as f64
 }
 
-/// One project of the projects screen.
+/// What the project breakdowns ([`projects`], [`crate::project_models`]) group by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectGrouping {
+    /// The project key: a rule, a git remote, a repository root or the cwd.
+    #[default]
+    Project,
+    /// The folder: the repository root of the event's cwd, else the cwd. Two clones of one
+    /// remote are two folders; worktrees of one repository are one.
+    Folder,
+}
+
+impl ProjectGrouping {
+    pub(crate) const fn dim(self) -> Dim {
+        match self {
+            Self::Project => Dim::Project,
+            Self::Folder => Dim::Folder,
+        }
+    }
+
+    pub(crate) const fn model_dim(self) -> Dim {
+        match self {
+            Self::Project => Dim::ProjectModel,
+            Self::Folder => Dim::FolderModel,
+        }
+    }
+}
+
+/// Display names of the rows of a [`ProjectGrouping`].
+pub(crate) enum RowNames {
+    /// From the project map, by project key.
+    Projects(HashMap<String, Option<String>>),
+    /// The last component of the folder path.
+    Folders,
+}
+
+impl RowNames {
+    pub(crate) fn load(
+        reader: &StoreReader,
+        grouping: ProjectGrouping,
+    ) -> Result<Self, QueryError> {
+        Ok(match grouping {
+            ProjectGrouping::Project => Self::Projects(project_names(reader)?),
+            ProjectGrouping::Folder => Self::Folders,
+        })
+    }
+
+    pub(crate) fn of(&self, key: Option<&String>) -> Option<String> {
+        let key = key?;
+        match self {
+            Self::Projects(names) => names.get(key).cloned().flatten(),
+            Self::Folders => {
+                let trimmed = key.trim_end_matches('/');
+                let last = trimmed.rsplit('/').next().unwrap_or(trimmed);
+                Some(if last.is_empty() { key } else { last }.to_owned())
+            }
+        }
+    }
+}
+
+/// One project (or folder, per [`ProjectGrouping`]) of the projects screen.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProjectRow {
-    /// Project key; absent for events no rule or repository could place.
+    /// Project key, or folder path; absent for events no rule, repository or cwd could place.
     pub project: Option<String>,
-    /// Display name from the project map.
+    /// Display name: from the project map, or the folder's last component.
     pub name: Option<String>,
     /// Client label.
     pub client: Option<String>,
@@ -271,8 +331,8 @@ pub struct ProjectRow {
     pub share_percent: f64,
 }
 
-/// Projects of `filters`, biggest paid cost first. Paid cost is each project's share of the
-/// subscription fees by API value.
+/// Projects of `filters` grouped by `grouping`, biggest paid cost first. Paid cost is each
+/// project's share of the subscription fees by API value.
 ///
 /// # Errors
 ///
@@ -281,8 +341,9 @@ pub fn projects(
     reader: &StoreReader,
     ctx: &QueryContext,
     filters: &Filters,
+    grouping: ProjectGrouping,
 ) -> Result<Breakdown<ProjectRow>, QueryError> {
-    let fetched = fetch(reader, ctx, filters, Dim::Project, Scope::Usage)?;
+    let fetched = fetch(reader, ctx, filters, grouping.dim(), Scope::Usage)?;
     let mut by_key: BTreeMap<(Option<String>, Option<String>), Usage> = BTreeMap::new();
     for row in &fetched.rows {
         by_key
@@ -291,13 +352,11 @@ pub fn projects(
             .add(row);
     }
     let whole: i64 = by_key.values().map(|u| u.api_value_micros).sum();
-    let names = project_names(reader)?;
+    let names = RowNames::load(reader, grouping)?;
     let mut rows: Vec<ProjectRow> = by_key
         .into_iter()
         .map(|((project, client), usage)| ProjectRow {
-            name: project
-                .as_ref()
-                .and_then(|p| names.get(p).cloned().flatten()),
+            name: names.of(project.as_ref()),
             share_percent: share(usage.api_value_micros, whole),
             project,
             client,

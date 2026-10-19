@@ -7,7 +7,7 @@ use crate::env::Env;
 use crate::error::ConfigError;
 use crate::format::{ConfigCodec, ConfigFormat};
 use crate::load::parse;
-use crate::model::{Config, MenubarRing};
+use crate::model::{Config, GitName, MenubarRing};
 use crate::raw::{RawProject, RawSubscription};
 
 /// A config file's text plus the format that edits it.
@@ -126,6 +126,25 @@ impl ConfigDocument {
         let text = self
             .format
             .set_menubar_rings(&self.text, rings, hidden_profiles)?;
+        self.commit(text, env)
+    }
+
+    /// Sets the remote that keys projects and the reserved work branch (`[git] default_remote`
+    /// and `default_branch`; `None` removes the branch). Returns the validated config of the new
+    /// text.
+    ///
+    /// # Errors
+    ///
+    /// As [`ConfigDocument::add_subscription`].
+    pub fn set_git_defaults(
+        &mut self,
+        default_remote: &GitName,
+        default_branch: Option<&GitName>,
+        env: &dyn Env,
+    ) -> Result<Config, ConfigError> {
+        let text = self
+            .format
+            .set_git_defaults(&self.text, default_remote, default_branch)?;
         self.commit(text, env)
     }
 

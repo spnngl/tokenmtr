@@ -20,7 +20,7 @@ mod testing;
 /// Every product-name constant (the leaf crate `tokenmtr-brand`).
 pub use tokenmtr_brand as brand;
 
-pub use advisor::{Advice, PlanFit, Recommendation, Verdict, advise};
+pub use advisor::{Advice, CurrentPlan, PlanFit, QuotaSizing, Recommendation, Verdict, advise};
 pub use alert::{Alert, AlertConfig, AlertInputs, AlertKind, evaluate_alerts};
 pub use billing::{
     BillingMode, BillingPeriod, Plan, PlanCatalog, Subscription, SubscriptionSpec, billing_mode,

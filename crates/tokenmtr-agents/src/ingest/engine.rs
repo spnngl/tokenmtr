@@ -140,7 +140,7 @@ impl Ingestor {
     #[must_use]
     pub fn new(settings: IngestSettings, reader: StoreReader) -> Self {
         Self {
-            resolver: ProjectResolver::new(settings.rules.clone(), settings.protected.clone()),
+            resolver: settings.resolver(),
             fallbacks_retried: false,
             pricer: Pricer::new(settings.overrides.clone()),
             settings,

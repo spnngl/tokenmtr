@@ -61,6 +61,10 @@ keep = 14
 [import]
 claude_stats_cache = true
 
+[git]
+default_remote = "origin"      # its URL keys projects; else origin, else the first remote
+# default_branch = "main"      # reserved for branch statistics
+
 [[projects]]                   # first match wins; otherwise git resolution
 match = "~/work/acme-*/**"
 name = "acme"
@@ -251,9 +255,20 @@ When the account has extra usage switched on (Claude's pay-as-you-go spend beyon
 | --- | --- | --- | --- |
 | `claude_stats_cache` | bool | `true` | Import Claude's `stats-cache.json` on each scan, for days before the first transcript on disk. |
 
+### `[git]`
+
+How a git repository becomes a project. TokenMtr reads the repository's config and refs, never runs `git` and never fetches.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `default_remote` | string | `"origin"` | The remote whose URL is the project key. A repository without it uses `origin`, else its first remote by name, else its root path. Changing it re-resolves known projects on the next scan. |
+| `default_branch` | string | unset | Your work branch, such as `"main"`. Reserved for upcoming branch statistics; nothing uses it yet. |
+
+A remote-keyed project is named `owner/repo` (the URL path after the host, `group/subgroup/repo` for nested groups). Every remote of the repository is kept, as `host/owner/repo` without credentials, with its default branch when `refs/remotes/<remote>/HEAD` exists; the project page lists them.
+
 ### `[[projects]]`
 
-Rules are tried in file order; the first match names the project. Without a match, the project is the session's git repository (its `origin` remote, else its root path). A working directory that is gone, or is not a git repository, takes its project from the Superset worktree that was there (see `[integrations.superset]`): the main repository when it still exists, else the repository URL Superset recorded. Otherwise the project is the working directory.
+Rules are tried in file order; the first match names the project. Without a match, the project is the session's git repository (its remote, see `[git]`, else its root path). A working directory that is gone, or is not a git repository, takes its project from the Superset worktree that was there (see `[integrations.superset]`): the main repository when it still exists, else the repository URL Superset recorded. Otherwise the project is the working directory.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -381,4 +396,4 @@ A key that does not apply to the sink's `kind` is an error. Two sinks that would
 
 ## Editing the file
 
-`ConfigDocument` appends a `[[subscriptions]]` or `[[projects]]` table and leaves every other byte, comments included, untouched. A new project rule goes last, so it has the lowest precedence. An edit is kept only when the new text still validates.
+`ConfigDocument` appends a `[[subscriptions]]` or `[[projects]]` table, or sets `[menubar]` rings or `[git]` defaults, and leaves every other byte, comments included, untouched. A new project rule goes last, so it has the lowest precedence. An edit is kept only when the new text still validates.

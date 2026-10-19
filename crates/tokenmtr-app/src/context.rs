@@ -12,7 +12,7 @@ use tokenmtr_agents::ingest::{
     DoctorReport, IngestSettings, Ingestor, ScanPriority, ScanReport, ScanRequest,
 };
 use tokenmtr_agents::{AgentKind, AgentSource, claude};
-use tokenmtr_config::{Config, Env, MenubarRing, RawProject};
+use tokenmtr_config::{Config, Env, GitName, MenubarRing, RawProject};
 use tokenmtr_core::{AgentId, Plan, ProfileId, SubscriptionSpec};
 use tokenmtr_export::Target;
 use tokenmtr_platform::{ControlTransport, Paths};
@@ -29,7 +29,7 @@ use crate::report::{RenderedReport, ReportRequest, generate_report};
 use crate::retention::set_claude_retention;
 use crate::settings::{
     add_project_rule, add_subscription, backup_dir, budget_specs, load_config, query_context,
-    recap_config, set_menubar_rings, sink_specs, store_path,
+    recap_config, set_git_defaults, set_menubar_rings, sink_specs, store_path,
 };
 
 /// The detected plan of one account (from the provider's account endpoint).
@@ -459,6 +459,26 @@ impl AppContext {
         hidden_profiles: &[ProfileId],
     ) -> Result<(), AppError> {
         self.config = set_menubar_rings(&self.config_path, rings, hidden_profiles, &*self.env)?;
+        Ok(())
+    }
+
+    /// Sets the remote that keys projects and the default branch, keeping the config file's
+    /// comments. Projects move to the new remote's key on the next scan.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::Config`] when the result is invalid; the file is untouched then.
+    pub fn set_git_defaults(
+        &mut self,
+        default_remote: &GitName,
+        default_branch: Option<&GitName>,
+    ) -> Result<(), AppError> {
+        self.config = set_git_defaults(
+            &self.config_path,
+            default_remote,
+            default_branch,
+            &*self.env,
+        )?;
         Ok(())
     }
 

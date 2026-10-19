@@ -3,7 +3,7 @@ import { useDataSource } from "./app-context";
 import type { DataSource } from "./data-source";
 import type { Filters } from "./filters";
 import type { Currency } from "./format";
-import type { FilterOptions, Granularity, GroupBy, Period } from "./schemas";
+import type { FilterOptions, Granularity, GroupBy, Period, ProjectGrouping } from "./schemas";
 
 /** One React Query hook per `DataSource` read; keys carry every input so filters refetch. */
 function useRead<T>(
@@ -41,10 +41,12 @@ export const useSeries = (filters: Filters, groupBy: GroupBy) =>
   useRead(["series", filters, groupBy], (ds) => ds.series(filters, groupBy), KEEP);
 export const useModels = (filters: Filters) =>
   useRead(["models", filters], (ds) => ds.models(filters), KEEP);
-export const useProjects = (filters: Filters) =>
-  useRead(["projects", filters], (ds) => ds.projects(filters), KEEP);
-export const useProjectModels = (filters: Filters) =>
-  useRead(["project-models", filters], (ds) => ds.projectModels(filters), KEEP);
+export const useProjects = (filters: Filters, grouping: ProjectGrouping = "project") =>
+  useRead(["projects", filters, grouping], (ds) => ds.projects(filters, grouping), KEEP);
+export const useProjectModels = (filters: Filters, grouping: ProjectGrouping) =>
+  useRead(["project-models", filters, grouping], (ds) => ds.projectModels(filters, grouping), KEEP);
+export const useProjectRemotes = (project: string) =>
+  useRead(["project-remotes", project], (ds) => ds.projectRemotes(project));
 export const useBranches = (filters: Filters) =>
   useRead(["branches", filters], (ds) => ds.branches(filters), KEEP);
 export const useUnresolvedCwds = (filters: Filters) =>

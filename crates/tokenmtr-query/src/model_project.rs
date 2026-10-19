@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use tokenmtr_store::StoreReader;
 
-use crate::breakdowns::{Breakdown, project_names};
+use crate::breakdowns::{Breakdown, ProjectGrouping, RowNames};
 use crate::context::QueryContext;
-use crate::engine::{Dim, Scope, fetch};
+use crate::engine::{Scope, fetch};
 use crate::error::QueryError;
 use crate::filters::Filters;
 use crate::usage::Usage;
@@ -25,15 +25,15 @@ pub struct ModelSlice {
 /// One project split by model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProjectModelsRow {
-    /// Project key; absent for events no rule or repository could place.
+    /// Project key, or folder path; absent for events no rule, repository or cwd could place.
     pub project: Option<String>,
-    /// Display name from the project map.
+    /// Display name: from the project map, or the folder's last component.
     pub name: Option<String>,
     /// The project's models, biggest API value first.
     pub models: Vec<ModelSlice>,
 }
 
-/// Projects of `filters` split by model, biggest API value first. Like [`crate::models`], the
+/// Projects of `filters` grouped by `grouping` and split by model, biggest API value first. Like [`crate::models`], the
 /// split leaves Claude extra usage out; paid cost carries each event's share of the fees.
 ///
 /// # Errors
@@ -43,8 +43,9 @@ pub fn project_models(
     reader: &StoreReader,
     ctx: &QueryContext,
     filters: &Filters,
+    grouping: ProjectGrouping,
 ) -> Result<Breakdown<ProjectModelsRow>, QueryError> {
-    let fetched = fetch(reader, ctx, filters, Dim::ProjectModel, Scope::Usage)?;
+    let fetched = fetch(reader, ctx, filters, grouping.model_dim(), Scope::Usage)?;
     let mut by_project: BTreeMap<Option<String>, BTreeMap<String, Usage>> = BTreeMap::new();
     for row in &fetched.rows {
         by_project
@@ -54,7 +55,7 @@ pub fn project_models(
             .or_default()
             .add(row);
     }
-    let names = project_names(reader)?;
+    let names = RowNames::load(reader, grouping)?;
     let mut rows: Vec<(i64, ProjectModelsRow)> = by_project
         .into_iter()
         .map(|(project, models)| {
@@ -69,9 +70,7 @@ pub fn project_models(
                     .then_with(|| a.model.cmp(&b.model))
             });
             let api: i64 = models.iter().map(|m| m.usage.api_value_micros).sum();
-            let name = project
-                .as_ref()
-                .and_then(|p| names.get(p).cloned().flatten());
+            let name = names.of(project.as_ref());
             (
                 api,
                 ProjectModelsRow {

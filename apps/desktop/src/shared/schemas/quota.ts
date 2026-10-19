@@ -83,14 +83,27 @@ const planFitSchema = z.object({
   fits: z.boolean(),
 });
 
+/** Where the current plan's quota size came from (`QuotaSizing`, tagged by `source`). */
+const quotaSizingSchema = z.discriminatedUnion("source", [
+  z.object({ source: z.literal("catalog") }),
+  /** Claude's rate-limit tier: the seat has `plan`'s quota. */
+  z.object({ source: z.literal("rate_tier"), plan: planSchema }),
+]);
+
 /** The advisor's output (`Advice`, tagged by `advice`; `recommend` is flattened). */
 const adviceSchema = z.discriminatedUnion("advice", [
   z.object({ advice: z.literal("not_enough_data"), span_days: countSchema }),
-  z.object({ advice: z.literal("not_applicable") }),
+  /** No plan is known for the account. */
+  z.object({ advice: z.literal("no_plan") }),
+  /** The plan has no catalog quota and no rate-limit tier sizes it. */
+  z.object({ advice: z.literal("unknown_quota") }),
   z.object({
     advice: z.literal("recommend"),
     verdict: verdictSchema,
     current: planSchema,
+    sizing: quotaSizingSchema,
+    /** Declared fee, else the list fee; `null` when neither is known. */
+    current_monthly_fee: microsSchema.nullable(),
     headroom: countSchema,
     fits: z.array(planFitSchema),
   }),
@@ -101,6 +114,8 @@ export const advisorReportSchema = z.object({
   agent: z.string(),
   profile: z.string(),
   current_plan: planSchema.nullable(),
+  /** Organization of the Claude login, e.g. a Team's name. */
+  organization: z.string().nullable(),
   snapshots: countSchema,
   monthly_api_value_usd_micros: microsSchema,
   advice: adviceSchema,

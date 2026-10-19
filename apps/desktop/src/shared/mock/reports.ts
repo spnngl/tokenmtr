@@ -7,7 +7,9 @@ import type {
   GroupBy,
   Heatmap,
   ModelRow,
+  ProjectGrouping,
   ProjectModelsRow,
+  ProjectRemote,
   ProjectRow,
   Series,
   SignalsReport,
@@ -79,6 +81,8 @@ function groupKey(fact: Fact, by: GroupBy): string {
     case "project":
       // The backend's `NO_GROUP`.
       return fact.project ?? "(none)";
+    case "folder":
+      return folderOf(fact);
     default:
       by satisfies never;
       throw new Error("unreachable group");
@@ -154,15 +158,43 @@ export function modelsOf(facts: readonly Fact[], currency: Currency): ModelRow[]
     .sort((a, b) => b.api_value_usd_micros - a.api_value_usd_micros);
 }
 
-export function projectsOf(facts: readonly Fact[], currency: Currency): ProjectRow[] {
+/** The checkout folder of each mock project; events without one ran in the home folder. */
+const FOLDERS: Readonly<Record<string, string>> = {
+  tokenmtr: "/Users/ada/code/tokenmtr",
+  "acme-web": "/Users/ada/clients/acme-web",
+  dotfiles: "/Users/ada/.dotfiles",
+  blog: "/Users/ada/code/blog",
+};
+const HOME = "/Users/ada";
+
+function folderOf(fact: Fact): string {
+  return fact.project === null ? HOME : (FOLDERS[fact.project] ?? `${HOME}/${fact.project}`);
+}
+
+function rowKey(fact: Fact, grouping: ProjectGrouping): string {
+  return grouping === "folder" ? folderOf(fact) : (fact.project ?? UNASSIGNED);
+}
+
+/** Like the backend: a folder row is named after its last path component. */
+function rowName(project: string | null, grouping: ProjectGrouping): string | null {
+  return project !== null && grouping === "folder"
+    ? project.slice(project.lastIndexOf("/") + 1)
+    : project;
+}
+
+export function projectsOf(
+  facts: readonly Fact[],
+  currency: Currency,
+  grouping: ProjectGrouping = "project",
+): ProjectRow[] {
   const total = sumRaw(facts).valueUsd;
-  return [...groupBy(facts, (fact) => fact.project ?? UNASSIGNED)]
+  return [...groupBy(facts, (fact) => rowKey(fact, grouping))]
     .map(([key, rows]): ProjectRow => {
       const raw = sumRaw(rows);
       const project = key === UNASSIGNED ? null : key;
       return {
         project,
-        name: project,
+        name: rowName(project, grouping),
         client: rows[0]?.client ?? null,
         ...wireUsage(raw, currency),
         share_percent: total === 0 ? 0 : (raw.valueUsd / total) * 100,
@@ -172,16 +204,55 @@ export function projectsOf(facts: readonly Fact[], currency: Currency): ProjectR
 }
 
 /** Projects split by model, biggest API value first (like `project_models`). */
-export function projectModelsOf(facts: readonly Fact[], currency: Currency): ProjectModelsRow[] {
-  return [...groupBy(facts, (fact) => fact.project ?? UNASSIGNED)]
+export function projectModelsOf(
+  facts: readonly Fact[],
+  currency: Currency,
+  grouping: ProjectGrouping = "project",
+): ProjectModelsRow[] {
+  return [...groupBy(facts, (fact) => rowKey(fact, grouping))]
     .map(([key, rows]): ProjectModelsRow => {
       const project = key === UNASSIGNED ? null : key;
       const models = [...groupBy(rows, (fact) => fact.model)]
         .map(([model, members]) => ({ model, ...wireUsage(sumRaw(members), currency) }))
         .sort((a, b) => b.api_value_micros - a.api_value_micros);
-      return { project, name: project, models };
+      return { project, name: rowName(project, grouping), models };
     })
     .sort((a, b) => apiOf(b) - apiOf(a));
+}
+
+/** The git remotes of the mock projects (`project_remotes`); the rest are not repositories. */
+export function projectRemotesOf(project: string): ProjectRemote[] {
+  switch (project) {
+    case "tokenmtr":
+      return [
+        {
+          name: "origin",
+          host: "github.com",
+          repository: "ada/tokenmtr",
+          default_branch: "main",
+          keys_project: true,
+        },
+        {
+          name: "upstream",
+          host: "gitlab.com",
+          repository: "acme/platform/tokenmtr",
+          default_branch: null,
+          keys_project: false,
+        },
+      ];
+    case "acme-web":
+      return [
+        {
+          name: "origin",
+          host: "github.com",
+          repository: "acme/acme-web",
+          default_branch: "develop",
+          keys_project: true,
+        },
+      ];
+    default:
+      return [];
+  }
 }
 
 function apiOf(row: ProjectModelsRow): number {

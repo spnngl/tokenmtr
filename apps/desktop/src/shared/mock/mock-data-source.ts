@@ -17,6 +17,7 @@ import {
   heatmapOf,
   modelsOf,
   projectModelsOf,
+  projectRemotesOf,
   projectsOf,
   seriesOf,
   signalsOf,
@@ -108,6 +109,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     rings: ["session", "weekly"],
     hidden_profiles: [],
   };
+  let git: Settings["git"] = { default_remote: "origin", default_branch: null };
   let onboarded = scenario !== "onboarding";
   let notifications: NotificationPermissionState = "undetermined";
   let daemonInstalled = false;
@@ -211,7 +213,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     settings: () =>
       read(() => {
         const settings = settingsOf(tenYears);
-        return { ...settings, tray: { ...settings.tray, ...menubarRings } };
+        return { ...settings, tray: { ...settings.tray, ...menubarRings }, git };
       }),
 
     overview: (filters) =>
@@ -238,20 +240,21 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       const currency = answered(filters.currency);
       return read(() => ({ currency, rows: modelsOf(empty ? [] : factsFor(filters), currency) }));
     },
-    projects: (filters) => {
+    projects: (filters, grouping) => {
       const currency = answered(filters.currency);
       return read(() => ({
         currency,
-        rows: projectsOf(empty ? [] : factsFor(filters), currency),
+        rows: projectsOf(empty ? [] : factsFor(filters), currency, grouping),
       }));
     },
-    projectModels: (filters) => {
+    projectModels: (filters, grouping) => {
       const currency = answered(filters.currency);
       return read(() => ({
         currency,
-        rows: projectModelsOf(empty ? [] : factsFor(filters), currency),
+        rows: projectModelsOf(empty ? [] : factsFor(filters), currency, grouping),
       }));
     },
+    projectRemotes: (project) => read(() => (empty ? [] : projectRemotesOf(project))),
     branches: (filters) => {
       const currency = answered(filters.currency);
       return read(() => ({
@@ -335,6 +338,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     setMenubarRings: (rings, hiddenProfiles) => {
       menubarRings = { rings: [...rings], hidden_profiles: [...hiddenProfiles] };
       return act("setMenubarRings", rings, hiddenProfiles);
+    },
+    setGitDefaults: (defaultRemote, defaultBranch) => {
+      git = { default_remote: defaultRemote, default_branch: defaultBranch };
+      return act("setGitDefaults", defaultRemote, defaultBranch);
     },
     connectKeychain: () => act("connectKeychain"),
     keepTenYears: (agent, profile) => {
