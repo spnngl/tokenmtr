@@ -14,11 +14,19 @@ env:
 
 jobs:
   check:
-    runs-on: macos-latest # Apple Silicon (arm64)
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple Silicon (arm64). The Ubuntu image is the one the release builds
+        # on, so a pull request meets the release's headers and glibc.
+        os: [macos-latest, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - if: runner.os == 'Linux'
+        uses: ./.github/actions/linux-deps
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy, rustfmt
