@@ -6,6 +6,7 @@
 *.md            text diff=markdown
 *.css           text diff=css
 *.html          text diff=html
+*.svg           text eol=lf
 Cargo.lock      text
 
 # Byte-exact test data.
@@ -19,8 +20,12 @@ apps/desktop/src-tauri/gen/schemas/*.json       linguist-generated -diff
 apps/desktop/src/shared/bindings.ts             linguist-generated
 apps/desktop/src/shared/schemas/__fixtures__/** linguist-generated
 apps/desktop/pnpm-lock.yaml                     -diff
+# Rendered from assets/brand/app-icon.svg and tray-icon.py by `just icons`.
+apps/desktop/src-tauri/icons/**                 linguist-generated
 
 # Binary assets.
 *.png           binary
 *.icns          binary
 *.ico           binary
+*.jpg           binary
+*.jpeg          binary

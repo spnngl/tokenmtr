@@ -3,6 +3,7 @@ import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Dialog, DialogTrigger, Modal, ModalOverlay } from "react-aria-components";
 import { APP_NAME } from "../shared/brand";
+import { BrandMark } from "../shared/brand-mark";
 import { Button } from "../shared/button";
 import { NAV_ITEMS } from "../shared/nav";
 import { AppBanners, AppGate } from "./app-gate";
@@ -34,7 +35,12 @@ function NavList({ onNavigate }: { readonly onNavigate?: () => void }): ReactNod
 }
 
 function Brand(): ReactNode {
-  return <span className="text-base font-semibold">{APP_NAME}</span>;
+  return (
+    <span className="flex items-center gap-2 text-base font-semibold">
+      <BrandMark className="size-6 shrink-0" />
+      {APP_NAME}
+    </span>
+  );
 }
 
 /** Below `md` the sidebar becomes a drawer opened from the top bar. */

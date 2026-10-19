@@ -1,4 +1,7 @@
-"""Generate the macOS menu-bar template icon: a gauge arc with a needle, black on transparent.
+"""Generate the macOS menu-bar template icon: the TokenMtr mark, black on transparent.
+
+The geometry is assets/brand/tokenmtr-logo.svg (100-unit viewBox): two arcs open at the top
+right, a hub ring and a needle, all 6 units wide.
 
 macOS tints a template image by its alpha channel only, so every pixel is black and the shape
 lives in the alpha. Writes `tray-icon.png` (22x22) and `tray-icon@2x.png` (44x44) into DIR.
@@ -15,25 +18,35 @@ from pathlib import Path
 SAMPLES = 8  # supersampling per axis, for anti-aliased edges
 
 
+HALF_STROKE = 3.0
+# The mark spans 11..89 units on both axes (outer arc radius 36 plus half a stroke).
+MARK_MIN, MARK_SPAN = 11.0, 78.0
+# Ring radius and the open angle range (degrees, 0 = right, 90 = up) of each arc.
+ARCS = ((36.0, 20.0, 70.0), (22.0, 15.0, 75.0))
+HUB_RADIUS = 9.0
+NEEDLE = ((56.4, 43.6), (83.2, 16.8))
+
+
 def coverage(x: float, y: float, size: int) -> bool:
-    """Whether the point (in pixels) lies on the arc or the needle."""
-    scale = size / 22
-    cx, cy = 11 * scale, 12.5 * scale
-    dx, dy = x - cx, y - cy
+    """Whether the point (in pixels) lies on the mark."""
+    padding = size / 44  # half a pixel at 22 px
+    scale = MARK_SPAN / (size - 2 * padding)
+    ux = MARK_MIN + (x - padding) * scale
+    uy = MARK_MIN + (y - padding) * scale
+    dx, dy = ux - 50.0, uy - 50.0
     dist = math.hypot(dx, dy)
-    angle = math.degrees(math.atan2(-dy, dx))  # 0 = right, 90 = up
-    on_ring = 7.0 * scale <= dist <= 9.5 * scale
-    # The arc runs from 210 (left) over 90 (top) to -30 (right); the bottom is open.
-    if on_ring and (angle >= -30 or angle <= -150):
+    angle = math.degrees(math.atan2(-dy, dx))
+    for radius, gap_from, gap_to in ARCS:
+        if abs(dist - radius) <= HALF_STROKE and not gap_from < angle < gap_to:
+            return True
+    if abs(dist - HUB_RADIUS) <= HALF_STROKE:
         return True
-    # The needle points up and to the right, ending in a hub.
-    needle = math.radians(55)
-    ux, uy = math.cos(needle), -math.sin(needle)
-    along = dx * ux + dy * uy
-    across = abs(-dx * uy + dy * ux)
-    if 0 <= along <= 6.0 * scale and across <= 0.9 * scale:
-        return True
-    return dist <= 1.8 * scale
+    (x1, y1), (x2, y2) = NEEDLE
+    length = math.hypot(x2 - x1, y2 - y1)
+    tx, ty = (x2 - x1) / length, (y2 - y1) / length
+    along = (ux - x1) * tx + (uy - y1) * ty
+    across = abs(-(ux - x1) * ty + (uy - y1) * tx)
+    return 0 <= along <= length and across <= HALF_STROKE
 
 
 def alpha(px: int, py: int, size: int) -> int:

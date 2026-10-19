@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { useDataAction, useInstallDaemon, useKeepTenYears } from "../shared/actions";
 import { APP_NAME } from "../shared/brand";
+import { BrandMark } from "../shared/brand-mark";
 import { Button } from "../shared/button";
 import { MoveToApplicationsHint } from "../shared/move-to-applications";
 import type { AgentInfo, AppState, ProfileInfo } from "../shared/schemas";
@@ -77,6 +78,7 @@ export function Onboarding({ state }: { readonly state: OnboardingState }): Reac
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-col gap-1">
+        <BrandMark className="mb-2 size-12" />
         <h1 className="text-xl font-semibold">Welcome to {APP_NAME}</h1>
         <p className="text-sm text-fg-muted">
           Local usage, cost and quota for your coding agents. Nothing leaves this machine.

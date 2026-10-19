@@ -6,7 +6,7 @@ Read `PLAN.md` before any task: it holds every numbered decision, the phase orde
 
 - Write Rust per the `rs-coding` skill and TypeScript per the `ts-coding` skill.
 - Write agent-facing documents (every `AGENTS.md`, skills, docs reached by a pointer) per the `writing-for-agents` skill. Each `AGENTS.md` has a `CLAUDE.md` symlink beside it.
-- Keep one source of truth per fact: version in the workspace `Cargo.toml`, product names in the `tokenmtr-brand` crate (the UI reads them from the generated `apps/desktop/src/shared/bindings.ts`), pricing in `pricing/`.
+- Keep one source of truth per fact: version in the workspace `Cargo.toml`, product names in the `tokenmtr-brand` crate (the UI reads them from the generated `apps/desktop/src/shared/bindings.ts`), pricing in `pricing/`, logos in `assets/brand/` (app icons are rendered from `assets/brand/app-icon.svg` by `just icons`).
 - Finish a change when `just check` passes.
 - Commit per phase using the `git-commit` skill; the human pushes.
 

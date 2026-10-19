@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 120" width="450" height="120">
+  <title>TokenMtr: token metering and observability</title>
+  <!-- For light backgrounds. -->
+  <g transform="translate(10, 10)" fill="none" stroke-width="6" stroke-linecap="butt">
+    <path d="M 83.8 37.7 A 36 36 0 1 1 62.3 16.2" stroke="#e05273"/>
+    <path d="M 71.3 44.3 A 22 22 0 1 1 55.7 28.7" stroke="#6b94b7"/>
+    <circle cx="50" cy="50" r="9" stroke="#6b94b7"/>
+    <line x1="56.4" y1="43.6" x2="83.2" y2="16.8" stroke="#6b94b7"/>
+  </g>
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="125" y="72" font-weight="700" font-size="52" letter-spacing="-1"><tspan fill="#1e293b">token</tspan><tspan fill="#e05273">mtr</tspan></text>
+    <text x="128" y="100" font-weight="600" font-size="12" fill="#6b94b7" letter-spacing="2.16">TOKEN METERING &amp; OBSERVABILITY</text>
+  </g>
+</svg>

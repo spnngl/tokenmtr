@@ -1,4 +1,9 @@
-# TokenMtr
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/tokenmtr-dark.svg">
+    <img src="assets/brand/tokenmtr-light.svg" alt="TokenMtr" width="450" height="120">
+  </picture>
+</h1>
 
 Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, and CSV/JSONL/SQLite exports. Session data stays on your machine; only quota, FX-rate and price-list lookups use the network.
 

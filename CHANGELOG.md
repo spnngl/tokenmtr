@@ -9,6 +9,7 @@ First release candidate: macOS app (universal, Apple Silicon and Intel) plus the
 
 ### Added
 
+- TokenMtr logo: app and menu-bar icons, sidebar and welcome screen, README; sources in `assets/brand/`, icons rebuilt with `just icons`.
 - Collectors for Claude Code and pi transcripts, with incremental checkpoints, streaming and fork deduplication, tool calls, session signals, and Claude's `stats-cache.json` daily totals for days before the first transcript.
 - Permanent SQLite store with revisioned rows, integrity-checked zstd backups (`tokenmtr backup`, `tokenmtr restore`) and `tokenmtr erase`.
 - Pricing from a vendored LiteLLM snapshot with a daily conditional refresh, config overrides (optionally per provider) and `tokenmtr reprice [--all]`.

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Source of the app icons: `just icons` renders it into apps/desktop/src-tauri/icons/.
+       macOS icon grid: 824 px rounded square centered on a 1024 px canvas. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#161c2a"/>
+  <g transform="translate(152, 152) scale(7.2)" fill="none" stroke-width="6" stroke-linecap="butt">
+    <path d="M 83.8 37.7 A 36 36 0 1 1 62.3 16.2" stroke="#e05273"/>
+    <path d="M 71.3 44.3 A 22 22 0 1 1 55.7 28.7" stroke="#6b94b7"/>
+    <circle cx="50" cy="50" r="9" stroke="#6b94b7"/>
+    <line x1="56.4" y1="43.6" x2="83.2" y2="16.8" stroke="#6b94b7"/>
+  </g>
+</svg>

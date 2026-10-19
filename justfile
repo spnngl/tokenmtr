@@ -39,6 +39,16 @@ bindings:
 goldens:
     UPDATE_GOLDENS=1 cargo test -p tokenmtr-desktop --lib goldens
 
+# Render the app icons from assets/brand/app-icon.svg and the menu-bar template icon from tray-icon.py.
+icons:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out=$(mktemp -d)
+    trap 'rm -rf "$out"' EXIT
+    pnpm -C {{ui}} exec tauri icon ../../assets/brand/app-icon.svg -o "$out" >/dev/null
+    for f in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico icon.png; do cp "$out/$f" {{ui}}/src-tauri/icons/; done
+    python3 {{ui}}/src-tauri/tray-icon.py {{ui}}/src-tauri/icons
+
 # .app and .dmg (docs/release.md): gates, then sidecar and `tauri build`, signed with the local identity when it exists.
 # Extra flags pass through, e.g. `just release --target universal-apple-darwin` or `--unsigned`.
 release *FLAGS: check
