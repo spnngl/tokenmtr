@@ -1,0 +1,30 @@
+[package]
+name = "tokenmtr-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokenmtr-config.workspace = true
+tokenmtr-core.workspace = true
+tokenmtr-store.workspace = true
+
+jiff.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokenmtr-query.workspace = true
+
+camino.workspace = true
+divan.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "metrics"
+harness = false
