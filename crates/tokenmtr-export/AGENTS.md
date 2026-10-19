@@ -4,7 +4,6 @@ The crate doc in `src/lib.rs` maps the pipeline; `docs/export-schema.md` is the 
 
 - Adding a sink kind: follow `docs/adding-a-sink.md` (the sink contract, then the steps).
 - Export rows carry stored values only: USD amounts, flags, revisions. EUR and billing mode are derived at query time, so consumers join `fx_rates` themselves.
-- Delivery is at-least-once: every write is idempotent on `(id, revision)`, and the cursor moves only after a durable `Ok`.
 
 ## Changing a column
 

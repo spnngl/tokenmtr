@@ -1,6 +1,6 @@
 # TokenMtr
 
-Read `PLAN.md` before any task: it holds every decision (D1–D58), the phase order, and each phase's "Done when". `PLAN.md` is git-ignored and local. Update it in the same change whenever the code deviates from it.
+Read `PLAN.md` before any task: it holds every numbered decision, the phase order, and each phase's "Done when". `PLAN.md` is git-ignored and local. Update it in the same change whenever the code deviates from it.
 
 ## Rules
 

@@ -13,4 +13,6 @@ React UI of the menu-bar app; the Tauri shell is `src-tauri/` (read `src-tauri/A
 1. Run `just check-ui`.
 2. Look at the result: `pnpm exec playwright test` (from this directory) screenshots every screen and state in light and dark from the mock into `e2e/screenshots/<theme>/`. Done when the screens you touched read right at every width shot (1280 and 390 px, the recap at 360 px).
 
+A new screen or state? Add the route to `SCREENS` and `ROUTES`, or the mock scenario to `STATES`, in `e2e/screenshots.spec.ts` so step 2 shoots it.
+
 A Rust response type changed? Follow `crates/tokenmtr-query/AGENTS.md`.

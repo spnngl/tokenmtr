@@ -6,13 +6,13 @@ Collectors (one module per agent) and the ingest engine (`src/ingest/`). The cra
 
 - A dedup key format is permanent. The store upserts on `(agent, dedup_key)`, and a file re-parsed from zero after a rewrite must land on the same rows; a new format duplicates history.
 - Parsers never panic on any input: a bad line becomes a counted, classified line and at most a parse issue, which carries a `KeySkeleton`, never line content.
-- Ingest only reads agent files; it never edits them or spawns `git`.
+- Ingest opens everything it reads read-only: agent files, git metadata (through `gix`, never a spawned `git`) and Superset's database (`src/project/superset.rs`). Another app's schema can change: an unknown shape turns that source off with an `integration_drift` issue and the scan goes on.
 
 ## Adding an agent
 
 1. Collector: `src/<agent>/` per the crate doc, a variant in `AgentKind` (`src/lib.rs`), and an `AgentId` constant listed in `AgentId::KNOWN` (`crates/tokenmtr-core/src/ids.rs`). Done when `cargo check --workspace --all-targets` compiles; its errors list every `AgentKind` match to extend.
 2. Config: an `[agents.<agent>]` table (`crates/tokenmtr-config/src/raw.rs`, `build_agent` in `crates/tokenmtr-config/src/build.rs`), wired in `src/ingest/settings.rs`; follow `crates/tokenmtr-config/AGENTS.md`.
-3. Tests: sample files under `fixtures/<agent>/` and `tests/<agent>.rs` with insta snapshots, shaped like `tests/claude.rs`. Done when `cargo test -p tokenmtr-agents` passes with reviewed snapshots.
+3. Tests: sample files under the repository's `fixtures/<agent>/` and `tests/<agent>.rs` with insta snapshots, shaped like `tests/claude.rs`. Done when `cargo test -p tokenmtr-agents` passes with reviewed snapshots.
 4. Fuzz: a `<agent>_line` target per `fuzz/AGENTS.md`.
 5. App: the agent's `capabilities` (`apps/desktop/src-tauri/src/backend/shell.rs`), its resume command (`apps/desktop/src/features/sessions/resume-command.ts`) and the "Supported agents" list in `README.md`.
 

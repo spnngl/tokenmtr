@@ -2,6 +2,14 @@
 
 The crate doc in `src/lib.rs` is the reference: inputs, time bucketing, money rules and the JSON shape of every result. Keep it current when a rule or a shape changes.
 
+## Adding a query
+
+1. The function in its module, re-exported from `src/lib.rs`, with its row in the crate doc's "JSON shapes" table.
+2. A bench in `mod read` of `benches/queries.rs`, timed with `cargo bench -p tokenmtr-query --bench queries` on the default 1,000,000-event store.
+3. For a screen, the command that serves it: follow "Adding a command" in `apps/desktop/src-tauri/AGENTS.md`.
+
+Done when `cargo test -p tokenmtr-query` passes.
+
 ## Changing a result's JSON shape
 
 The serde output of these types is a contract with the UI, and `Status` and `Recap` also with scripts.

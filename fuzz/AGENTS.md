@@ -12,7 +12,7 @@ Done when `just fuzz-smoke` passes: it checks that `TARGETS`, `fuzz_targets/` an
 
 ## After a fixture changes
 
-Run `just fuzz-seeds` and commit `seeds/`: the seeds are copies of `fixtures/` and the crates' test fixtures.
+Run `just fuzz-seeds` and commit `seeds/`: the seeds are copies of `fixtures/` and the crates' test fixtures. Transcripts are globbed, but HTTP and config fixtures are listed by name in `scripts/fuzz-seeds.nu`: add a new one there first.
 
 ## Fixing a crash
 

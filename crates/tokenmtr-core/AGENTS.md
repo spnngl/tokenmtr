@@ -7,6 +7,7 @@ Domain types and pure rules. The module docs of `src/money.rs`, `src/pricing.rs`
 - Money is integer micro-units (`UsdMicros`, `EurMicros`). A float enters once, through `from_f64` at a parse boundary; rates and prices go through `rust_decimal`. Sums stay exact, so totals match across screens, reports and exports.
 - USD is the only stored currency. EUR is derived at read time from FX rates, so a new rate never rewrites history.
 - `EventId::new` is permanent: `event_id` is the exported primary key, documented to consumers as stable per machine, agent and dedup key. A sink that outlives an erase or a reinstall merges re-ingested events only while the derivation holds.
+- A `WindowId` string is permanent: it is stored, exported as `window_id` and part of the `quota_snapshots` id. Changing the slug of `WindowId::weekly_scoped` splits a model's window history in two.
 - An event no catalog entry or override prices stays unpriced; it is never guessed.
 
 ## Changing estimation
