@@ -6,12 +6,17 @@ on:
       - main
   pull_request:
 
+# Each job grants only what it needs.
+permissions: {}
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   check:
     runs-on: macos-latest # Apple Silicon (arm64)
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -32,3 +37,18 @@ jobs:
       # `cargo test --workspace` includes tokenmtr-desktop, whose `bindings_file_is_current`
       # test fails when apps/desktop/src/shared/bindings.ts is stale.
       - run: just check
+
+  # Shared workflows of spnngl/.github, at @main on purpose (its Renovate preset never pins them).
+  conventional-commits:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: spnngl/.github/.github/workflows/conventional-commits.yml@main
+
+  # Secrets in the whole git history; reads .betterleaks.toml and .betterleaksignore when present.
+  betterleaks:
+    permissions:
+      contents: read
+      security-events: write
+    uses: spnngl/.github/.github/workflows/betterleaks.yml@main
