@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, and CSV/JSONL/SQLite exports. Session data stays on your machine; only quota, FX-rate and price-list lookups use the network, plus the Prometheus remote-write endpoints you configure (token counts only, and off unless configured).
+Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, CSV/JSONL/SQLite exports and a Prometheus exporter or remote write (tokens, never money; per-project exclusions). Session data stays on your machine; only quota, FX-rate and price-list lookups use the network, plus the Prometheus remote-write endpoints you configure (token counts only, and off unless configured).
 
 Screenshots: not added yet.
 
@@ -97,7 +97,7 @@ just goldens # regenerate the UI's golden fixtures (apps/desktop/src/shared/sche
 
 ## Architecture
 
-A Rust workspace. The daemon (`tokenmtr-daemon`) scans the agents' session files through per-agent parsers (`tokenmtr-agents`) into a local SQLite store (`tokenmtr-store`). `tokenmtr-query` turns the store into every figure shown, `tokenmtr-export` pumps rows to the sinks, `tokenmtr-report` renders reports, and `tokenmtr-remote` fetches quota, FX rates and prices. The CLI (`apps/cli`) and the Tauri menu-bar app (`apps/desktop`, a React UI over Tauri commands) share `tokenmtr-app`, read the store directly and control the daemon over a local socket ([docs/control-protocol.md](docs/control-protocol.md)). OS services (paths, background service, control transport, secrets) sit behind one trait in `tokenmtr-platform`. Product names live in `tokenmtr-brand`.
+A Rust workspace. The daemon (`tokenmtr-daemon`) scans the agents' session files through per-agent parsers (`tokenmtr-agents`) into a local SQLite store (`tokenmtr-store`). `tokenmtr-query` turns the store into every figure shown, `tokenmtr-export` pumps rows to the sinks, `tokenmtr-metrics` folds the store into Prometheus metrics, `tokenmtr-report` renders reports, and `tokenmtr-remote` fetches quota, FX rates and prices and serves or pushes the metrics. The CLI (`apps/cli`) and the Tauri menu-bar app (`apps/desktop`, a React UI over Tauri commands) share `tokenmtr-app`, read the store directly and control the daemon over a local socket ([docs/control-protocol.md](docs/control-protocol.md)). OS services (paths, background service, control transport, secrets) sit behind one trait in `tokenmtr-platform`. Product names live in `tokenmtr-brand`.
 
 ## License
 
