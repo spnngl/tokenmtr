@@ -16,8 +16,9 @@ Every build must be signed by the same certificate, `TokenMtr Local Signing`: ma
 
 The `.p12` holds the private key: it goes into repository secrets only, never into the repository or a release.
 
-1. In Keychain Access, open the **login** keychain, **My Certificates**, right-click `TokenMtr Local Signing` and choose **Export**. Save it as a Personal Information Exchange (`.p12`) file with a new password.
-2. Store the file and its password, then delete the file:
+1. In Keychain Access, open the **login** keychain, **My Certificates**, right-click `TokenMtr Local Signing` (the row whose disclosure triangle shows its private key) and choose **Export**. Save it as a Personal Information Exchange (`.p12`) file with a new random password: GitHub masks the secret's value in every log, so a word such as `tokenmtr` turns into `***` wherever it appears.
+2. Check that the file holds the private key: `/usr/bin/openssl pkcs12 -in TokenMtr.p12 -info -noout` asks for the password and must print `Shrouded Keybag`. Without it the release fails with "The .p12 has no private key".
+3. Store the file and its password, then delete the file:
 
    ```sh
    base64 -i TokenMtr.p12 | gh secret set MACOS_SIGNING_P12_BASE64 --repo spnngl/tokenmtr
