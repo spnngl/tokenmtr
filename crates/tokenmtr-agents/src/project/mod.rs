@@ -6,18 +6,26 @@
 //!    resolves to its main repository. The normalized `remote.origin.url` is the key, so clones
 //!    of one remote on several machines or paths are one project.
 //! 3. The main repository's root path, when it has no `origin`.
-//! 4. The cwd itself.
+//! 4. When git cannot inspect the cwd (a deleted worktree, a folder outside git), another app's
+//!    record of it ([`superset::Hints`]): the main repository it names goes through steps 2-3,
+//!    so the key matches its live worktrees; when that repository is gone too, its recorded
+//!    remote URL is the key. Source [`ProjectSource::Inferred`].
+//! 5. The cwd itself.
 //!
 //! A cwd under a macOS protected folder is never touched: the check is lexical, so the
 //! daemon cannot trigger a consent prompt. A cwd that no longer exists, that the OS refuses to
 //! list or that is not a readable directory also skips the git steps. Each is reported as a
-//! [`CwdProblem`] so the caller can raise one issue.
+//! [`CwdProblem`] so the caller can raise one issue, unless step 4 named the project.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use tokenmtr_config::ProjectRule;
 use tokenmtr_core::ProjectKey;
 use tokenmtr_store::{ProjectResolution, ProjectSource};
+
+pub mod superset;
+
+use superset::{Hints, WorktreeHint};
 
 /// Why a cwd could not be inspected for git metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +43,7 @@ pub enum CwdProblem {
 pub struct Resolved {
     /// The resolution to store.
     pub resolution: ProjectResolution,
-    /// Set when the git steps were skipped.
+    /// Set when the git steps were skipped and no hint named the project.
     pub problem: Option<CwdProblem>,
 }
 
@@ -60,10 +68,16 @@ impl ProjectResolver {
         self.rules.iter().find(|rule| rule.matches(cwd))
     }
 
-    /// Resolves `cwd`; the cwd itself is the last fallback. `None` only for a blank cwd, which
-    /// names no project.
+    fn is_protected(&self, path: &Utf8Path) -> bool {
+        self.protected
+            .iter()
+            .any(|folder| tokenmtr_platform::paths::is_under(path, folder))
+    }
+
+    /// Resolves `cwd`, asking `hints` when git cannot; the cwd itself is the last fallback.
+    /// `None` only for a blank cwd, which names no project.
     #[must_use]
-    pub fn resolve(&self, cwd: &Utf8Path, at: Timestamp) -> Option<Resolved> {
+    pub fn resolve(&self, cwd: &Utf8Path, at: Timestamp, hints: &mut Hints) -> Option<Resolved> {
         if cwd.as_str().trim().is_empty() {
             return None;
         }
@@ -73,11 +87,7 @@ impl ProjectResolver {
                 problem: None,
             });
         }
-        let protected = self
-            .protected
-            .iter()
-            .any(|folder| tokenmtr_platform::paths::is_under(cwd, folder));
-        let problem = if protected {
+        let problem = if self.is_protected(cwd) {
             Some(CwdProblem::Protected)
         } else {
             match std::fs::read_dir(cwd) {
@@ -94,14 +104,58 @@ impl ProjectResolver {
         } else {
             None
         };
-        let resolution = match git.and_then(|facts| git_resolution(facts, cwd, at)) {
-            Some(resolution) => resolution,
-            None => cwd_resolution(cwd, at)?,
-        };
+        if let Some(resolution) = git.and_then(|facts| git_resolution(facts, cwd, at)) {
+            return Some(Resolved {
+                resolution,
+                problem,
+            });
+        }
+        if let Some(resolution) = hints
+            .for_cwd(cwd)
+            .and_then(|hint| self.inferred_resolution(hint, cwd, at))
+        {
+            return Some(Resolved {
+                resolution,
+                problem: None,
+            });
+        }
         Some(Resolved {
-            resolution,
+            resolution: cwd_resolution(cwd, at)?,
             problem,
         })
+    }
+
+    /// The project `hint` names: its main repository through git when it still exists (so the
+    /// key matches the repository's live worktrees), else its recorded path and remote URL.
+    fn inferred_resolution(
+        &self,
+        hint: &WorktreeHint,
+        cwd: &Utf8Path,
+        at: Timestamp,
+    ) -> Option<ProjectResolution> {
+        let repo = hint.repo_path.as_deref()?;
+        let live = (!self.is_protected(repo))
+            .then(|| git_facts(repo))
+            .flatten();
+        let facts = live.unwrap_or_else(|| GitFacts {
+            root: repo.to_owned(),
+            remote: hint.repo_url.as_deref().and_then(normalize_remote),
+        });
+        let mut resolution = git_resolution(facts, cwd, at)?;
+        resolution.source = ProjectSource::Inferred;
+        Some(resolution)
+    }
+
+    /// The branch checked out in the git repository containing `cwd`, now. `None` under a
+    /// protected folder, outside git, or on a detached HEAD.
+    #[must_use]
+    pub fn head_branch(&self, cwd: &Utf8Path) -> Option<String> {
+        if self.is_protected(cwd) {
+            return None;
+        }
+        let repo = gix::discover(cwd.as_std_path()).ok()?;
+        let head = repo.head_name().ok()??;
+        Some(head.shorten().to_string())
     }
 }
 

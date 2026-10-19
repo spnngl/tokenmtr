@@ -306,6 +306,36 @@ pub fn reprice(setup: &Setup, args: &RepriceArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `tokenmtr quota connect`: asks the daemon to read the Claude credentials once with the
+/// Keychain's consent prompt allowed, then prints each profile's quota status. The prompt
+/// names the daemon, so only a grant to it lets its silent polls work.
+pub fn quota_connect(setup: &Setup, json: bool) -> anyhow::Result<()> {
+    let ctx = setup.context()?;
+    if !ctx.daemon_running() {
+        bail!("the daemon is not running: start it (`tokenmtr service install`), then retry");
+    }
+    eprintln!("waiting for the Keychain prompt: choose \"Always Allow\"");
+    let summary = with_daemon(ctx.transport(), |mut client| async move {
+        client
+            .connect_keychain()
+            .await
+            .context("the daemon could not read the Keychain")
+    })?;
+    if json {
+        return print_json(&summary);
+    }
+    for profile in &summary.profiles {
+        let status = serde_json::to_value(profile.status)?;
+        println!(
+            "{}/{}: {}",
+            profile.agent,
+            profile.profile,
+            status.as_str().unwrap_or("unknown")
+        );
+    }
+    Ok(())
+}
+
 /// The format of a report.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum FormatArg {

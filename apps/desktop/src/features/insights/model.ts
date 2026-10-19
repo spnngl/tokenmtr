@@ -8,6 +8,7 @@ import type {
   ToolRow,
   ToolsReport,
 } from "../../shared/schemas/usage";
+import { type WeekHourGrid, weekHourGrid } from "../../shared/week-hour-table";
 
 export type SignalDay = SignalsReport["days"][number];
 
@@ -59,8 +60,6 @@ export function signalPoints(days: readonly SignalDay[], max?: number): readonly
 
 export type HeatMetric = "events" | "total_tokens" | "api_value_micros";
 
-export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
-
 /** The metric of one cell. */
 function heatValue(cell: HeatCell, metric: HeatMetric): number {
   switch (metric) {
@@ -75,26 +74,7 @@ function heatValue(cell: HeatCell, metric: HeatMetric): number {
   }
 }
 
-export interface HeatGrid {
-  /** Seven rows (Monday first) of 24 hourly values. */
-  readonly rows: readonly (readonly number[])[];
-  readonly max: number;
-}
-
 /** Lays the cells out as weekday rows by hour columns; missing cells are zero. */
-export function heatGrid(cells: readonly HeatCell[], metric: HeatMetric): HeatGrid {
-  const rows = WEEKDAYS.map(() => new Array<number>(24).fill(0));
-  for (const cell of cells) {
-    const row = rows[cell.weekday - 1];
-    if (row !== undefined) {
-      row[cell.hour] = heatValue(cell, metric);
-    }
-  }
-  const max = Math.max(0, ...rows.flat());
-  return { rows, max };
-}
-
-/** Fill strength 0-1 of a cell; zero activity is exactly 0. */
-export function heatIntensity(value: number, max: number): number {
-  return max <= 0 || value <= 0 ? 0 : value / max;
+export function heatGrid(cells: readonly HeatCell[], metric: HeatMetric): WeekHourGrid {
+  return weekHourGrid(cells, (cell) => heatValue(cell, metric));
 }

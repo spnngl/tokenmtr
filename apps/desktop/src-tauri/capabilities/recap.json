@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "recap",
-  "description": "The tray popover: reads the recap, opens the main window, starts a scan.",
+  "description": "The tray popover: reads the recap, opens the main window, starts a scan, connects the Keychain.",
   "windows": ["recap"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-recap",
     "allow-open-dashboard",
-    "allow-scan-now"
+    "allow-scan-now",
+    "allow-connect-keychain"
   ]
 }

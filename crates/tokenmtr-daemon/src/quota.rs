@@ -67,7 +67,8 @@ struct ProfileRuntime {
     location: Option<CredentialLocation>,
     /// Credentials reused until they expire or the server answers 401/403.
     credentials: Option<Arc<ClaudeCredentials>>,
-    /// The Keychain refused once: only files are read until the daemon restarts.
+    /// The Keychain refused once: only files are read, and without one the profile is
+    /// `keychain_denied`, until [`Ctx::connect_keychain`] or a restart.
     keychain_denied: bool,
     /// Consecutive failed polls; 0 after a success.
     failures: u32,
@@ -156,6 +157,48 @@ impl Ctx {
         Ok(summaries)
     }
 
+    /// Reads every Claude profile's credentials once with the Keychain's consent prompt
+    /// allowed, waiting for the user, so they can grant this binary access for good; then
+    /// polls as [`Ctx::poll_quota`]. Credentials read this way are cached like a poll's, so
+    /// quota works until they expire even when the user allowed access only once.
+    ///
+    /// # Errors
+    /// As [`Ctx::poll_quota`].
+    pub(crate) async fn connect_keychain(
+        self: &Arc<Self>,
+    ) -> Result<Vec<QuotaProfileSummary>, DaemonError> {
+        let active = self.active();
+        if !active.config.quota.enabled {
+            return Err(DaemonError::Disabled("quota polling"));
+        }
+        for profile in claude_profiles(&active.config) {
+            let location = credential_location(&self.settings.paths, &profile);
+            let lookup = location.clone();
+            let loaded = self
+                .blocking(ThreadPriority::UserInitiated, move |ctx| {
+                    ClaudeCredentials::load_interactive(&lookup, &*ctx.settings.secrets)
+                })
+                .await?;
+            let (credentials, keychain_denied) = match loaded {
+                Ok(credentials) => (credentials.map(Arc::new), false),
+                Err(error) => {
+                    tracing::warn!(profile = %profile.id, %error, "cannot read the Claude credentials");
+                    (None, error.is_keychain_denied())
+                }
+            };
+            lock(&self.run).quota.profiles.insert(
+                profile.id,
+                ProfileRuntime {
+                    location: Some(location),
+                    credentials,
+                    keychain_denied,
+                    ..ProfileRuntime::default()
+                },
+            );
+        }
+        self.poll_quota().await
+    }
+
     async fn poll_profile(
         self: &Arc<Self>,
         source: &ClaudeQuota,
@@ -196,20 +239,32 @@ impl Ctx {
                 })
                 .await?;
             match loaded {
+                // Without the Keychain, finding no file says nothing about being signed in.
+                Ok(None) if keychain_denied => {
+                    return Ok(Polled::without_windows(
+                        profile.id,
+                        Some(QuotaOutcome::KeychainDenied),
+                        Status::KeychainDenied,
+                    ));
+                }
                 Ok(credentials) => credentials.map(Arc::new),
                 Err(error) => {
                     if error.is_keychain_denied() {
                         tracing::warn!(
                             profile = %profile.id,
                             "the Keychain denied access to the Claude credentials; \
-                             not asking again until the daemon restarts"
+                             not asking again until `tokenmtr quota connect` or a restart"
                         );
                         if let Some(state) = lock(&self.run).quota.profiles.get_mut(&profile.id) {
                             state.keychain_denied = true;
                         }
-                    } else {
-                        tracing::warn!(profile = %profile.id, %error, "cannot read the Claude credentials");
+                        return Ok(Polled::without_windows(
+                            profile.id,
+                            Some(QuotaOutcome::KeychainDenied),
+                            Status::KeychainDenied,
+                        ));
                     }
+                    tracing::warn!(profile = %profile.id, %error, "cannot read the Claude credentials");
                     return Ok(Polled::without_windows(
                         profile.id,
                         Some(QuotaOutcome::Failed),

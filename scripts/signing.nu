@@ -4,3 +4,8 @@
 # `APPLE_SIGNING_IDENTITY` (Tauri) and `codesign --sign`. Keychain access-list entries and macOS
 # folder grants are tied to the signature, so this name and the certificate must stay stable.
 export const IDENTITY = "TokenMtr Local Signing"
+
+# Whether the login keychain holds the signing identity (`just signing-cert` creates it).
+export def has-identity [] {
+    ^security find-identity -v -p codesigning | lines | any {|line| $line | str contains $IDENTITY }
+}

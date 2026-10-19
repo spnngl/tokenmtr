@@ -69,7 +69,7 @@ export const useRevealPath = () =>
     refetch: false,
   });
 
-/** Show the config file in the OS file manager, where plans and price overrides are added. */
+/** Show the config file in the OS file manager, where price overrides are added. */
 export const useRevealConfig = () =>
   useDataAction((ds) => ds.revealPath({ kind: "config_file" }), {
     failure: "Could not open the config file",
@@ -88,4 +88,14 @@ export const useRestartDaemon = () =>
 export const useKeepTenYears = (agent: string, profile: string, label: string) =>
   useDataAction((ds) => ds.keepTenYears(agent, profile), {
     failure: `Could not change ${label} retention`,
+  });
+
+/**
+ * Let the daemon read the Claude credentials in the Keychain: macOS asks once, and "Always
+ * Allow" keeps quota polling silent from then on.
+ */
+export const useConnectKeychain = () =>
+  useDataAction((ds) => ds.connectKeychain(), {
+    failure: "Could not connect the Claude account",
+    success: () => "Claude account connected",
   });

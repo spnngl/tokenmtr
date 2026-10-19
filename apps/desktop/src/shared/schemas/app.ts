@@ -124,3 +124,15 @@ export const sessionOriginSchema = z.object({
   transcript_exists: z.boolean(),
 });
 export type SessionOrigin = z.infer<typeof sessionOriginSchema>;
+
+/**
+ * The `[[projects]]` rule the shell suggests for an unresolved directory (`RawProject` in
+ * `tokenmtr-config`): `match` is the escaped directory, `name` its repository name when git or
+ * Superset knows it, else its folder name.
+ */
+export const projectRuleSchema = z.object({
+  match: z.string(),
+  name: z.string(),
+  client: z.string().optional(),
+});
+export type ProjectRule = z.infer<typeof projectRuleSchema>;

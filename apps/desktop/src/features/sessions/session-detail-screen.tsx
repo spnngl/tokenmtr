@@ -14,6 +14,7 @@ import { useNotify } from "../../shared/toasts";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
 import { buildResumeCommand } from "./resume-command";
+import { SessionChartsPanel } from "./session-charts";
 
 const COST_SOURCE_LABEL = {
   reported: "Reported",
@@ -205,6 +206,12 @@ export function SessionDetailScreen(props: {
         {(detail) => (
           <>
             <OriginSection agent={props.agent} session={props.session} />
+            <SessionChartsPanel
+              agent={props.agent}
+              session={props.session}
+              currency={filters.currency}
+              timeZone={timeZone}
+            />
             {detail.signals.length === 0 ? null : (
               <Card title="Signals">
                 <ul className="flex flex-col gap-1 text-sm">

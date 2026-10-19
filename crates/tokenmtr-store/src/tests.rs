@@ -469,9 +469,10 @@ fn quota_snapshots_store_windows_and_failures() {
             },
         ),
         poll(200, QuotaOutcome::TokenExpired),
+        poll(300, QuotaOutcome::KeychainDenied),
     ];
     let stats = f.store.upsert_quota_snapshots(&polls, &utc()).unwrap();
-    assert_eq!(stats.inserted, 3);
+    assert_eq!(stats.inserted, 4);
     assert_eq!(
         f.store
             .upsert_quota_snapshots(&polls, &utc())
@@ -480,13 +481,19 @@ fn quota_snapshots_store_windows_and_failures() {
         0
     );
     let rows = f.store.quota_snapshots_after(Revision::ZERO, 10).unwrap();
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), 4);
     let labels: Vec<_> = rows.iter().map(|r| r.row.window_label()).collect();
     assert_eq!(
         labels,
-        [Some("5-hour".to_owned()), Some("7-day".to_owned()), None]
+        [
+            Some("5-hour".to_owned()),
+            Some("7-day".to_owned()),
+            None,
+            None
+        ]
     );
     assert!(matches!(rows[2].row.reading, QuotaReading::TokenExpired));
+    assert!(matches!(rows[3].row.reading, QuotaReading::KeychainDenied));
     assert_eq!(
         rows[0].row.window().unwrap(),
         window(WindowId::FIVE_HOUR, 42.5)

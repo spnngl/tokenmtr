@@ -7,7 +7,7 @@
 pub mod header;
 mod line;
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use tokenmtr_core::{AgentId, Capabilities, ProfileId};
 
 use crate::AgentSource;
@@ -52,21 +52,55 @@ impl PiSource {
     }
 }
 
-/// The `default` profile, one root: `$PI_CODING_AGENT_SESSION_DIR` when set, otherwise
-/// `$PI_CODING_AGENT_DIR/sessions` when set, otherwise `~/.pi/agent/sessions`. The caller reads
-/// the environment; this stays pure.
+/// The `default` profile. Its root is `$PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it is
+/// `<agent dir>/sessions`, the agent dir being `$PI_CODING_AGENT_DIR` when set, else
+/// `~/.pi/agent`; plus `configured`, the `sessionDir` of pi's settings
+/// ([`configured_session_dir`]), where pi writes new sessions while older ones stay put. The
+/// caller reads the environment and the settings; this stays pure.
 #[must_use]
 pub fn default_profile(
     home: &Utf8Path,
     session_dir: Option<&Utf8Path>,
     agent_dir: Option<&Utf8Path>,
+    configured: Option<&Utf8Path>,
 ) -> Profile {
-    let root = match (session_dir, agent_dir) {
-        (Some(sessions), _) => sessions.to_owned(),
-        (None, Some(agent_dir)) => agent_dir.join("sessions"),
-        (None, None) => home.join(".pi").join("agent").join("sessions"),
+    if let Some(sessions) = session_dir {
+        return Profile::new(ProfileId::default_profile(), vec![sessions.to_owned()]);
+    }
+    let mut roots: Vec<Utf8PathBuf> = configured.map(Utf8Path::to_owned).into_iter().collect();
+    let sessions = default_agent_dir(home, agent_dir).join("sessions");
+    if !roots.contains(&sessions) {
+        roots.push(sessions);
+    }
+    Profile::new(ProfileId::default_profile(), roots)
+}
+
+/// pi's agent dir: `agent_dir` (`$PI_CODING_AGENT_DIR`) when set, else `~/.pi/agent`.
+#[must_use]
+pub fn default_agent_dir(home: &Utf8Path, agent_dir: Option<&Utf8Path>) -> Utf8PathBuf {
+    agent_dir.map_or_else(|| home.join(".pi").join("agent"), Utf8Path::to_owned)
+}
+
+/// The `sessionDir` of pi's `<agent_dir>/settings.json`, with a leading `~` expanded. `None`
+/// when the file or key is absent, unreadable, or the path is relative (pi would resolve it
+/// against its own working directory, which is unknown here).
+#[must_use]
+pub fn configured_session_dir(home: &Utf8Path, agent_dir: &Utf8Path) -> Option<Utf8PathBuf> {
+    #[derive(serde::Deserialize)]
+    struct Settings {
+        #[serde(rename = "sessionDir")]
+        session_dir: Option<String>,
+    }
+    let text = std::fs::read_to_string(agent_dir.join("settings.json")).ok()?;
+    let dir = serde_json::from_str::<Settings>(&text).ok()?.session_dir?;
+    let dir = match dir.trim() {
+        "~" => home.to_owned(),
+        other => match other.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None => Utf8PathBuf::from(other),
+        },
     };
-    Profile::new(ProfileId::default_profile(), vec![root])
+    dir.is_absolute().then_some(dir)
 }
 
 /// A profile whose pi agent dir is `agent_dir` (used through `PI_CODING_AGENT_DIR`): the one root
@@ -155,18 +189,46 @@ mod tests {
         let home = Utf8Path::new("/home/u");
         let sessions = Utf8Path::new("/s");
         let agent = Utf8Path::new("/a");
+        let configured = Utf8Path::new("/c");
         assert_eq!(
-            roots(&default_profile(home, Some(sessions), Some(agent))),
+            roots(&default_profile(
+                home,
+                Some(sessions),
+                Some(agent),
+                Some(configured)
+            )),
             ["/s"]
         );
         assert_eq!(
-            roots(&default_profile(home, None, Some(agent))),
+            roots(&default_profile(home, None, Some(agent), None)),
             ["/a/sessions"]
         );
         assert_eq!(
-            roots(&default_profile(home, None, None)),
+            roots(&default_profile(home, None, None, None)),
             ["/home/u/.pi/agent/sessions"]
         );
+        assert_eq!(
+            roots(&default_profile(home, None, None, Some(configured))),
+            ["/c", "/home/u/.pi/agent/sessions"]
+        );
+    }
+
+    #[test]
+    fn configured_session_dir_reads_pi_settings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = Utf8Path::from_path(tmp.path()).unwrap();
+        let home = Utf8Path::new("/home/u");
+        assert_eq!(configured_session_dir(home, agent), None);
+        let write = |json: &str| std::fs::write(agent.join("settings.json"), json).unwrap();
+        write(r#"{"sessionDir": "~/pi-sessions", "theme": "dark"}"#);
+        assert_eq!(
+            configured_session_dir(home, agent),
+            Some(Utf8PathBuf::from("/home/u/pi-sessions"))
+        );
+        write(r#"{"sessionDir": "relative/dir"}"#);
+        assert_eq!(configured_session_dir(home, agent), None);
+        write(r#"{"theme": "dark"}"#);
+        assert_eq!(configured_session_dir(home, agent), None);
     }
 
     #[test]

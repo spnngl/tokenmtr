@@ -4,16 +4,17 @@ import { PageHeader } from "../../shared/ui";
 import { AdvisorPanel } from "./advisor-panel";
 import { BudgetsPanel } from "./budgets-panel";
 import { type BillingData, isBillingEmpty, type UntrackedPlan } from "./model";
-import { MonthlyPanel } from "./monthly-panel";
 import { SubscriptionsPanel } from "./subscriptions-panel";
 
 interface BillingScreenProps {
   readonly remote: Remote<BillingData>;
   readonly onTrackPlan: (plan: UntrackedPlan) => void;
+  /** The "Paid against API value" panel; it fetches its own range, so the route supplies it. */
+  readonly valuePanel: ReactNode;
 }
 
 /** The Billing page: subscriptions, paid against API value, budgets and the plan advisor. */
-export function BillingScreen({ remote, onTrackPlan }: BillingScreenProps): ReactNode {
+export function BillingScreen({ remote, onTrackPlan, valuePanel }: BillingScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader to="/billing" />
@@ -35,7 +36,7 @@ export function BillingScreen({ remote, onTrackPlan }: BillingScreenProps): Reac
               advisor={data.advisor}
               onTrackPlan={onTrackPlan}
             />
-            <MonthlyPanel report={data.report} />
+            {valuePanel}
             <BudgetsPanel budgets={data.budgets} />
             <AdvisorPanel reports={data.advisor} />
           </div>

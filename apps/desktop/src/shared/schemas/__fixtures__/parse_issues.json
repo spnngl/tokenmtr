@@ -48,5 +48,15 @@
     "first_seen": "2026-05-01T17:02:11Z",
     "last_seen": "2026-05-01T17:02:11Z",
     "resolved_at": null
+  },
+  {
+    "agent": "pi",
+    "kind": "integration_drift",
+    "subject": "superset",
+    "occurrences": 1,
+    "sample": "no such column: w.worktree_path",
+    "first_seen": "2026-05-03T14:10:00Z",
+    "last_seen": "2026-05-03T14:10:00Z",
+    "resolved_at": null
   }
 ]

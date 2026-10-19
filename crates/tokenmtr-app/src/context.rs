@@ -447,6 +447,13 @@ impl AppContext {
         Ok(())
     }
 
+    /// The name a new `[[projects]]` rule for `cwd` suggests: its repository's when git or
+    /// Superset knows it, else its folder's ([`IngestSettings::suggested_project_name`]).
+    #[must_use]
+    pub fn suggested_project_name(&self, cwd: &Utf8Path, now: Timestamp) -> Option<String> {
+        self.ingest_settings().suggested_project_name(cwd, now)
+    }
+
     fn ingest_settings(&self) -> IngestSettings {
         IngestSettings::from_config(&self.config, &self.paths, &*self.env)
     }

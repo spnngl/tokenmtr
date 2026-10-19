@@ -1,4 +1,4 @@
-//! Wire types of control protocol v1.
+//! Wire types of control protocol v2.
 //!
 //! Every message is one JSON object on one line. The `type` field names the variant. Requests go
 //! client → daemon; each gets exactly one [`Response`], except [`Request::Subscribe`], which is
@@ -10,9 +10,9 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use tokenmtr_core::{AgentId, Alert, SinkId};
 
-/// The protocol version this build speaks. Bumped on any change a v1 peer would misread; a
+/// The protocol version this build speaks. Bumped on any change an older peer would misread; a
 /// daemon answers a [`Request::Hello`] with another version with [`Response::Incompatible`].
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// A dataset whose rows changed.
 pub use tokenmtr_core::Dataset;
@@ -60,6 +60,10 @@ pub enum Request {
     },
     /// Poll Claude quota now.
     RefreshQuota,
+    /// Read the Claude credentials from the Keychain once with macOS's consent prompt allowed,
+    /// so the user can grant the daemon access ("Always Allow"), then poll quota as
+    /// [`Request::RefreshQuota`] does. Answered with [`Response::QuotaRefreshed`].
+    ConnectKeychain,
     /// Re-read the config file now.
     Reload,
     /// Open problems: parse issues and the last config error.
@@ -120,7 +124,7 @@ pub enum Response {
     BackedUp(BackupSummary),
     /// Answer to [`Request::Reprice`].
     Repriced(RepriceSummary),
-    /// Answer to [`Request::RefreshQuota`].
+    /// Answer to [`Request::RefreshQuota`] and [`Request::ConnectKeychain`].
     QuotaRefreshed(QuotaSummary),
     /// Answer to [`Request::Reload`]: the new config is active.
     Reloaded,
@@ -298,6 +302,9 @@ pub enum QuotaProfileStatus {
     SignedOut,
     /// The token expired, locally or by a 401.
     TokenExpired,
+    /// The Keychain refused to hand the credentials to the daemon; see
+    /// [`Request::ConnectKeychain`].
+    KeychainDenied,
     /// The server answered 403.
     Forbidden,
     /// The server answered 429.
@@ -331,10 +338,12 @@ pub enum IssueKind {
     UnknownVersion,
     /// A folder the OS refuses to let us read.
     ProtectedFolder,
-    /// Events without a working directory.
+    /// Events whose working directory no longer exists.
     MissingCwd,
     /// A line that failed to parse.
     ParseError,
+    /// Another app's data read for hints has an unknown shape; the hints are off.
+    IntegrationDrift,
 }
 
 /// One unresolved parse issue.

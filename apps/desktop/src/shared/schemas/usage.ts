@@ -158,7 +158,7 @@ const sessionToolCallSchema = z.object({
 });
 export type SessionToolCall = z.infer<typeof sessionToolCallSchema>;
 
-const SIGNAL_KINDS = ["api_error", "compaction"] as const;
+export const SIGNAL_KINDS = ["api_error", "compaction"] as const;
 
 export const sessionDetailSchema = z.object({
   currency: currencySchema,

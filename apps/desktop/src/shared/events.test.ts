@@ -195,9 +195,12 @@ describe("command bindings", () => {
       tauri.tools(filters),
       tauri.signals(filters),
       tauri.billing(filters),
+      tauri.billingSeries(filters, "daily", false),
       tauri.sessions(filters, 0, 25),
       tauri.sessionDetail("claude", "s", "USD"),
       tauri.sessionOrigin("claude", "s"),
+      tauri.sessionAnalytics(filters),
+      tauri.sessionTimeline("claude", "s", "USD"),
       tauri.quotaLatest(filters),
       tauri.quotaHistory(filters, "claude"),
       tauri.advisor(filters),
@@ -216,7 +219,20 @@ describe("command bindings", () => {
       tauri.installDaemon(),
       tauri.restartDaemon(),
       tauri.revealPath({ kind: "exports_dir" }),
-      tauri.addProjectRule("/tmp"),
+      tauri.projectRuleFor("/tmp"),
+      tauri.addProjectRule("/tmp", "scratch"),
+      tauri.addSubscription({
+        id: "claude-pro",
+        provider: "anthropic",
+        plan: "pro",
+        agents: ["claude"],
+        profiles: ["default"],
+        fee: { usd: 20_000_000 },
+        period: "monthly",
+        start: "2026-05-01",
+        end: null,
+      }),
+      tauri.connectKeychain(),
       tauri.keepTenYears("claude", "default"),
       tauri.setLaunchAtLogin(true),
       tauri.eraseAllData(),
@@ -230,9 +246,8 @@ describe("command bindings", () => {
     for (const command of calls) {
       expect(registered.has(command), command).toBe(true);
     }
-    // No screen adds a subscription yet: plans are edited in the config file (Billing links to it).
     const unused = COMMANDS.filter((command) => !calls.has(command));
-    expect(unused).toEqual(["add_subscription"]);
+    expect(unused).toEqual([]);
   });
 
   it("classifies a serialised command error by kind and keeps unknown kinds' text", () => {

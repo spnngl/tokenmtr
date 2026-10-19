@@ -160,7 +160,7 @@
         "profile": { "type": "string" },
         "fetched_at": { "$ref": "#/$defs/timestamp" },
         "age_secs": { "type": "integer" },
-        "status": { "enum": ["ok", "signed_out", "token_expired", "failed"] },
+        "status": { "enum": ["ok", "signed_out", "token_expired", "failed", "keychain_denied"] },
         "account": { "type": ["string", "null"] },
         "windows": {
           "type": "array",

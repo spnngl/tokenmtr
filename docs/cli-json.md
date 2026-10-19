@@ -58,7 +58,7 @@ A recap (also the body of `recap --json`):
 | `currency`, `currency_fallback` | `USD` \| `EUR`, boolean | `currency_fallback` is true when EUR was configured but no FX rate exists yet; amounts are then USD. |
 | `totals` | object (`$defs/totals`) | Tokens, money and data quality of the period. It repeats `currency` and `currency_fallback`; `api_value_usd_micros` is the API value in USD whatever the currency. `reasoning` is part of `output`, so `total_tokens` sums `input_uncached`, `cache_read`, `cache_write_5m`, `cache_write_1h` and `output`. |
 | `projected_paid_micros` | integer | Paid cost projected to the end of the period. |
-| `quota[]` | object (`$defs/meter`) | Latest poll per profile, with its `agent`, `fetched_at` and `status` (`ok`, `signed_out`, `token_expired`, `failed`), and one entry per window with `used_percent`, `resets_at`, `eta` and `spend`. |
+| `quota[]` | object (`$defs/meter`) | Latest poll per profile, with its `agent`, `fetched_at` and `status` (`ok`, `signed_out`, `token_expired`, `failed`, `keychain_denied`), and one entry per window with `used_percent`, `resets_at`, `eta` and `spend`. |
 | `budgets[]` | object (`$defs/budget`) | One entry per configured budget in scope, amounts in the budget's own `currency`. |
 | `sparkline[]` | object | API value of the last seven days: `date`, `api_value_micros`. |
 | `live` | object or `null` | `tokens_per_minute`, `api_value_per_hour_usd_micros`, `active_sessions`; `null` when the recent window has no events. |

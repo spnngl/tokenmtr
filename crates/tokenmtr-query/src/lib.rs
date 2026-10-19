@@ -48,7 +48,10 @@
 //!   cache savings and the advisor leave it out; model and project series groups
 //!   too (it stays in the bucket totals).
 //! - Session and heatmap views skip daily aggregates and extra usage and carry
-//!   no fees.
+//!   no fees: a session's `paid_micros` is its pay-as-you-go spend.
+//! - [`billing_series`] splits `paid_micros` into `subscription_fee_micros`,
+//!   `extra_usage_micros` and `pay_as_you_go_micros`. A day's fee lands on its
+//!   local day; hourly buckets share it evenly over the day's 23, 24 or 25 hours.
 //!
 //! # JSON shapes
 //!
@@ -68,6 +71,8 @@
 //! | [`sessions`], [`session_detail`] | [`SessionPage`], [`SessionDetail`] |
 //! | [`tools`], [`signals`], [`heatmap`] | [`ToolsReport`], [`SignalsReport`], [`Heatmap`] |
 //! | [`billing`] | [`BillingReport`]: total, api, per-subscription lines, months |
+//! | [`billing_series`] | [`BillingSeries`]: [`BillingPoint`]s with paid split, savings, `roi`, cumulative sums, optional per-agent amounts |
+//! | [`session_analytics`], [`session_timeline`] | [`SessionAnalytics`] (top [`SESSION_ROWS_LIMIT`] sessions, cost histogram, days, start grid), [`SessionTimeline`] |
 //! | [`quota_latest`], [`quota_history`], [`advisor`] | [`QuotaMeter`], [`QuotaHistory`], [`AdvisorReport`] |
 //! | [`budgets`] | [`BudgetView`]: spent, limit, percent, projected |
 //! | [`recap`], [`status`] | [`Recap`], [`Status`] |
@@ -80,6 +85,7 @@
 //! `disabled`.
 
 mod billing;
+mod billing_series;
 mod breakdowns;
 mod context;
 mod engine;
@@ -90,9 +96,13 @@ mod quota;
 mod range;
 mod recap;
 mod series;
+mod session_analytics;
 mod usage;
 
 pub use billing::{BillingMonth, BillingReport, SubscriptionLine, billing};
+pub use billing_series::{
+    BillingAmounts, BillingPoint, BillingSeries, Granularity, billing_series,
+};
 pub use breakdowns::{
     BranchRow, Breakdown, HeatCell, Heatmap, ModelRow, ProjectRow, SessionCompactions,
     SessionDetail, SessionEvent, SessionPage, SessionRow, SessionToolCall, SignalDay,
@@ -118,6 +128,11 @@ pub use recap::{
     status,
 };
 pub use series::{GroupBy, GroupValue, NO_GROUP, Series, SeriesPoint, series};
+pub use session_analytics::{
+    COST_EDGES_MICROS, CostBucket, SESSION_ROWS_LIMIT, SessionAnalytics, SessionDay, SessionPoint,
+    SessionStartCell, SessionTimeline, TIMELINE_LIMIT, TimelineEvent, TimelineSignal, TimelineTool,
+    session_analytics, session_timeline,
+};
 pub use usage::Usage;
 
 #[cfg(test)]

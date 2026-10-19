@@ -78,7 +78,15 @@ const PARSE_ISSUE_KINDS = [
   "protected_folder",
   "missing_cwd",
   "parse_error",
+  "integration_drift",
 ] as const;
+
+/** Kinds that leave the totals complete (`IssueKind::is_informational`): shown, never a failure. */
+export const INFORMATIONAL_ISSUE_KINDS: ReadonlySet<ParseIssue["kind"]> = new Set([
+  "protected_folder",
+  "missing_cwd",
+  "integration_drift",
+]);
 
 export const parseIssueSchema = z.object({
   agent: z.string(),

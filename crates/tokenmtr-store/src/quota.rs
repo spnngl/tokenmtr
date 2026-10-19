@@ -36,6 +36,8 @@ pub enum QuotaStatus {
     SignedOut,
     /// The credentials expired.
     TokenExpired,
+    /// The Keychain refused the credentials and no file holds them.
+    KeychainDenied,
     /// The request failed.
     Failed,
 }
@@ -48,6 +50,7 @@ impl QuotaStatus {
             Self::Ok => "ok",
             Self::SignedOut => "signed_out",
             Self::TokenExpired => "token_expired",
+            Self::KeychainDenied => "keychain_denied",
             Self::Failed => "failed",
         }
     }
@@ -74,6 +77,8 @@ pub enum QuotaOutcome {
     SignedOut,
     /// The credentials expired.
     TokenExpired,
+    /// The Keychain refused the credentials and no file holds them.
+    KeychainDenied,
     /// The request failed.
     Failed,
 }
@@ -104,6 +109,8 @@ pub enum QuotaReading {
     SignedOut,
     /// The poll found the credentials expired.
     TokenExpired,
+    /// The Keychain refused the credentials.
+    KeychainDenied,
     /// The poll failed.
     Failed,
 }
@@ -131,6 +138,7 @@ impl QuotaSample {
             QuotaReading::Window(_) | QuotaReading::ExtraUsage(_) => QuotaStatus::Ok,
             QuotaReading::SignedOut => QuotaStatus::SignedOut,
             QuotaReading::TokenExpired => QuotaStatus::TokenExpired,
+            QuotaReading::KeychainDenied => QuotaStatus::KeychainDenied,
             QuotaReading::Failed => QuotaStatus::Failed,
         }
     }
@@ -141,7 +149,10 @@ impl QuotaSample {
         match &self.reading {
             QuotaReading::Window(window) => Some(window.clone()),
             QuotaReading::ExtraUsage(extra) => Some(extra.window()),
-            QuotaReading::SignedOut | QuotaReading::TokenExpired | QuotaReading::Failed => None,
+            QuotaReading::SignedOut
+            | QuotaReading::TokenExpired
+            | QuotaReading::KeychainDenied
+            | QuotaReading::Failed => None,
         }
     }
 
@@ -257,9 +268,10 @@ fn flatten(polls: &[QuotaPoll]) -> Vec<Flat<'_>> {
                     .map(|w| (poll, Some(Window::Quota(w))))
                     .chain(extra_usage.iter().map(|e| (poll, Some(Window::Extra(e)))))
                     .collect(),
-                QuotaOutcome::SignedOut | QuotaOutcome::TokenExpired | QuotaOutcome::Failed => {
-                    vec![(poll, None)]
-                }
+                QuotaOutcome::SignedOut
+                | QuotaOutcome::TokenExpired
+                | QuotaOutcome::KeychainDenied
+                | QuotaOutcome::Failed => vec![(poll, None)],
             }
         })
         .collect()
@@ -270,6 +282,7 @@ fn status_of(row: &Flat<'_>) -> QuotaStatus {
         QuotaOutcome::Windows { .. } => QuotaStatus::Ok,
         QuotaOutcome::SignedOut => QuotaStatus::SignedOut,
         QuotaOutcome::TokenExpired => QuotaStatus::TokenExpired,
+        QuotaOutcome::KeychainDenied => QuotaStatus::KeychainDenied,
         QuotaOutcome::Failed => QuotaStatus::Failed,
     }
 }
@@ -456,6 +469,7 @@ fn decode(row: &Row<'_>) -> Result<Versioned<QuotaSample>, StoreError> {
         }
         QuotaStatus::SignedOut => QuotaReading::SignedOut,
         QuotaStatus::TokenExpired => QuotaReading::TokenExpired,
+        QuotaStatus::KeychainDenied => QuotaReading::KeychainDenied,
         QuotaStatus::Failed => QuotaReading::Failed,
     };
     Ok(Versioned {

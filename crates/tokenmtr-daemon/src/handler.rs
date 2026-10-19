@@ -92,6 +92,9 @@ impl ControlHandler {
             Request::RefreshQuota => Ok(Response::QuotaRefreshed(QuotaSummary {
                 profiles: ctx.poll_quota().await?,
             })),
+            Request::ConnectKeychain => Ok(Response::QuotaRefreshed(QuotaSummary {
+                profiles: ctx.connect_keychain().await?,
+            })),
             Request::Reload => {
                 ctx.reload(ReloadCause::Requested).await?;
                 Ok(Response::Reloaded)
@@ -182,6 +185,7 @@ const fn issue_kind(kind: StoreIssueKind) -> IssueKind {
         StoreIssueKind::ProtectedFolder => IssueKind::ProtectedFolder,
         StoreIssueKind::MissingCwd => IssueKind::MissingCwd,
         StoreIssueKind::ParseError => IssueKind::ParseError,
+        StoreIssueKind::IntegrationDrift => IssueKind::IntegrationDrift,
     }
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-project-rule-for"
+description = "Enables the project_rule_for command without any pre-configured scope."
+commands.allow = ["project_rule_for"]
+
+[[permission]]
+identifier = "deny-project-rule-for"
+description = "Denies the project_rule_for command without any pre-configured scope."
+commands.deny = ["project_rule_for"]

@@ -14,18 +14,20 @@ use serde::Serialize;
 use serde_json::Value;
 use tokenmtr_core::{
     Advice, AgentId, AlertKind, BillingPeriod, BudgetMeasure, BudgetPeriod, CostSource, Currency,
-    Dataset, EventKind, Plan, PlanFit, QuotaEta, Recommendation, SignalKind, UsdMicros, Verdict,
-    WindowId,
+    Dataset, EventKind, Plan, PlanFit, QuotaEta, Recommendation, SignalKind, TokenCounts,
+    UsdMicros, Verdict, WindowId,
 };
 use tokenmtr_query::{
-    AdvisorReport, AgentRecap, AlertView, BackupView, BillingMonth, BillingReport, BranchRow,
-    Breakdown, Bucket, BudgetState, BudgetView, DaemonHealth, DaemonState, DateRange, FxRateView,
+    AdvisorReport, AgentRecap, AlertView, BackupView, BillingAmounts, BillingMonth, BillingPoint,
+    BillingReport, BillingSeries, BranchRow, Breakdown, Bucket, BudgetState, BudgetView,
+    COST_EDGES_MICROS, CostBucket, DaemonHealth, DaemonState, DateRange, FxRateView, Granularity,
     GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, ModelRow, NO_GROUP,
     ParseIssueView, Period, ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend,
-    QuotaWindowView, STATUS_SCHEMA, Series, SeriesPoint, SessionCompactions, SessionDetail,
-    SessionEvent, SessionPage, SessionRow, SessionToolCall, SignalDay, SignalsReport, SinkHealth,
-    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, ToolRow,
-    ToolsReport, Totals, UnresolvedCwd, Usage,
+    QuotaWindowView, STATUS_SCHEMA, Series, SeriesPoint, SessionAnalytics, SessionCompactions,
+    SessionDay, SessionDetail, SessionEvent, SessionPage, SessionPoint, SessionRow,
+    SessionStartCell, SessionTimeline, SessionToolCall, SignalDay, SignalsReport, SinkHealth,
+    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent,
+    TimelineSignal, TimelineTool, ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -541,6 +543,210 @@ fn session_detail() -> Value {
     })
 }
 
+/// Bucket money `[api_value, subscription_fee, extra_usage, pay_as_you_go]`; paid is the sum of
+/// the last three.
+fn amounts([api, fee, extra, payg]: [i64; 4]) -> BillingAmounts {
+    BillingAmounts {
+        api_value_micros: api,
+        paid_micros: fee + extra + payg,
+        subscription_fee_micros: fee,
+        extra_usage_micros: extra,
+        pay_as_you_go_micros: payg,
+    }
+}
+
+/// Three Paris days of a $100 monthly subscription: covered usage, a day of extra usage that
+/// costs more than its API value, and a future day with nothing paid.
+fn billing_series() -> Value {
+    let mut cumulative = [0, 0];
+    let mut point = |start: &str, local: &str, money, agents: &[(&str, [i64; 4])], approx| {
+        let amounts = amounts(money);
+        cumulative[0] += amounts.api_value_micros;
+        cumulative[1] += amounts.paid_micros;
+        BillingPoint {
+            start: at(start),
+            local: local.parse().unwrap(),
+            minutes: 1440,
+            amounts,
+            savings_micros: amounts.api_value_micros - amounts.paid_micros,
+            roi: (amounts.paid_micros != 0).then(|| {
+                let ratio = amounts.api_value_micros * 100 / amounts.paid_micros;
+                f64::from(i32::try_from(ratio).unwrap()) / 100.0
+            }),
+            cumulative_api_value_micros: cumulative[0],
+            cumulative_paid_micros: cumulative[1],
+            agents: agents
+                .iter()
+                .map(|(agent, money)| ((*agent).to_owned(), self::amounts(*money)))
+                .collect(),
+            approximate: approx,
+        }
+    };
+    let points = vec![
+        point(
+            "2026-05-01T22:00:00Z",
+            "2026-05-02T00:00:00",
+            [4_200_000, 3_225_806, 0, 300_000],
+            &[
+                ("claude", [3_900_000, 3_225_806, 0, 0]),
+                ("pi", [300_000, 0, 0, 300_000]),
+            ],
+            true,
+        ),
+        point(
+            "2026-05-02T22:00:00Z",
+            "2026-05-03T00:00:00",
+            [1_000_000, 3_225_806, 12_345_000, 0],
+            &[("claude", [1_000_000, 3_225_806, 12_345_000, 0])],
+            false,
+        ),
+        point(
+            "2026-05-03T22:00:00Z",
+            "2026-05-04T00:00:00",
+            [0; 4],
+            &[],
+            false,
+        ),
+    ];
+    json(BillingSeries {
+        currency: Currency::Usd,
+        granularity: Granularity::Daily,
+        points,
+    })
+}
+
+fn tokens([input_uncached, cache_read, short, long, output, reasoning]: Tokens) -> TokenCounts {
+    TokenCounts {
+        input_uncached,
+        cache_read,
+        cache_write_5m: short,
+        cache_write_1h: long,
+        output,
+        reasoning,
+    }
+}
+
+/// Two sessions of a Paris week; the Pi one is pay-as-you-go and has no input.
+fn session_analytics() -> Value {
+    let rows = vec![
+        SessionPoint {
+            agent: AgentId::CLAUDE,
+            session: SESSION.to_owned(),
+            started_at: at("2026-05-03T12:01:20Z"),
+            duration_secs: 5380,
+            api_value_micros: 1_618_100,
+            paid_micros: 0,
+            cache_hit_percent: Some(97.5),
+            tokens: tokens([2_000, 195_000, 2_500, 500, 6_366, 0]),
+            tool_calls: 3,
+            tool_errors: 1,
+        },
+        SessionPoint {
+            agent: AgentId::PI,
+            session: PI_SESSION.to_owned(),
+            started_at: at("2026-05-02T09:14:00Z"),
+            duration_secs: 0,
+            api_value_micros: 4_000,
+            paid_micros: 4_000,
+            cache_hit_percent: None,
+            tokens: tokens([0, 0, 0, 0, 120, 40]),
+            tool_calls: 0,
+            tool_errors: 0,
+        },
+    ];
+    let histogram = COST_EDGES_MICROS
+        .iter()
+        .enumerate()
+        .map(|(i, &min_micros)| CostBucket {
+            min_micros,
+            max_micros: COST_EDGES_MICROS.get(i + 1).copied(),
+            sessions: u64::from(min_micros == 0 || min_micros == 1_000_000),
+        })
+        .collect();
+    let days = [("2026-05-01", 0), ("2026-05-02", 1), ("2026-05-03", 1)]
+        .into_iter()
+        .map(|(d, sessions)| SessionDay {
+            day: day(d),
+            sessions,
+        })
+        .collect();
+    // Saturday 11:00 and Sunday 14:00 in Paris.
+    let starts = (1..=7u8)
+        .flat_map(|weekday| (0..24u8).map(move |hour| (weekday, hour)))
+        .map(|(weekday, hour)| SessionStartCell {
+            weekday,
+            hour,
+            sessions: u64::from((weekday, hour) == (6, 11) || (weekday, hour) == (7, 14)),
+        })
+        .collect();
+    json(SessionAnalytics {
+        currency: Currency::Usd,
+        total: 2,
+        rows,
+        histogram,
+        days,
+        starts,
+    })
+}
+
+fn session_timeline() -> Value {
+    let event = |time, model: &str, counts, api, paid, cumulative: [i64; 2]| TimelineEvent {
+        at: at(time),
+        model: model.to_owned(),
+        tokens: tokens(counts),
+        api_value_micros: api,
+        paid_micros: paid,
+        cumulative_api_value_micros: cumulative[0],
+        cumulative_paid_micros: cumulative[1],
+    };
+    json(SessionTimeline {
+        currency: Currency::Usd,
+        events: vec![
+            event(
+                "2026-05-03T12:01:20Z",
+                "claude-opus-4-1",
+                [1_200, 45_000, 800, 0, 1_204, 0],
+                912_300,
+                0,
+                [912_300, 0],
+            ),
+            event(
+                "2026-05-03T12:01:41Z",
+                "claude-sonnet-4-5",
+                [400, 50_000, 300, 0, 310, 0],
+                160_400,
+                160_400,
+                [1_072_700, 160_400],
+            ),
+        ],
+        events_truncated: false,
+        signals: vec![
+            TimelineSignal {
+                at: at("2026-05-03T12:40:11Z"),
+                kind: SignalKind::ApiError,
+            },
+            TimelineSignal {
+                at: at("2026-05-03T13:30:02Z"),
+                kind: SignalKind::Compaction,
+            },
+        ],
+        tools: vec![
+            TimelineTool {
+                tool_name: "Bash".to_owned(),
+                mcp_server: None,
+                calls: 2,
+                failed: 0,
+            },
+            TimelineTool {
+                tool_name: "mcp__linear__get_issue".to_owned(),
+                mcp_server: Some("linear".to_owned()),
+                calls: 1,
+                failed: 1,
+            },
+        ],
+    })
+}
+
 fn billing() -> Value {
     let total = period_usage();
     json(BillingReport {
@@ -671,6 +877,14 @@ fn quota_meters() -> Vec<QuotaMeter> {
             "2026-05-03T14:05:00Z",
             419,
             QuotaStatus::Failed,
+            None,
+            Vec::new(),
+        ),
+        meter(
+            "locked",
+            "2026-05-03T14:06:00Z",
+            359,
+            QuotaStatus::KeychainDenied,
             None,
             Vec::new(),
         ),
@@ -1046,6 +1260,14 @@ fn parse_issues() -> Value {
             1,
             Some(r#"{"type":"message","#),
             ["2026-05-01T17:02:11Z", "2026-05-01T17:02:11Z"],
+        ),
+        issue(
+            AgentId::PI,
+            IssueKind::IntegrationDrift,
+            "superset",
+            1,
+            Some("no such column: w.worktree_path"),
+            ["2026-05-03T14:10:00Z", "2026-05-03T14:10:00Z"],
         ),
     ])
 }
@@ -1440,6 +1662,14 @@ fn generate_report() -> Value {
     })
 }
 
+fn project_rule_for() -> Value {
+    json(tokenmtr_config::RawProject {
+        pattern: "/Users/ada/.superset/worktrees/tokenmtr/quiet-otter".to_owned(),
+        name: tokenmtr_core::ProjectKey::try_from("tokenmtr".to_owned()).unwrap(),
+        client: None,
+    })
+}
+
 fn save_report() -> Value {
     json(Some(format!("/Users/ada/Documents/TokenMtr/{REPORT_FILE}")))
 }
@@ -1456,6 +1686,7 @@ fn goldens() -> Vec<(&'static str, Value)> {
         ("session_origin", session_origin()),
         ("generate_report", generate_report()),
         ("save_report", save_report()),
+        ("project_rule_for", project_rule_for()),
         ("billing", billing()),
         ("quota_latest", quota_latest()),
         ("quota_history", quota_history()),
@@ -1479,6 +1710,9 @@ fn goldens() -> Vec<(&'static str, Value)> {
         ("signals", signals()),
         ("sessions", sessions()),
         ("session_detail", session_detail()),
+        ("billing_series", billing_series()),
+        ("session_analytics", session_analytics()),
+        ("session_timeline", session_timeline()),
     ]
 }
 

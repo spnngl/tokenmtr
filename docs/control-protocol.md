@@ -1,4 +1,4 @@
-# Control protocol v1
+# Control protocol v2
 
 How clients (CLI, menu-bar app) talk to the daemon. Types live in `crates/tokenmtr-control/src/protocol.rs`; that file is the source of truth, this page is the map.
 
@@ -11,7 +11,7 @@ How clients (CLI, menu-bar app) talk to the daemon. Types live in `crates/tokenm
 
 ## Handshake
 
-1. The client sends `{"type":"hello","protocol":1,"client":{"name":"…","version":"…","schema":null}}` first. Any other first message, or none within the handshake timeout, ends the connection (`error` / `bad_request` for a wrong first message).
+1. The client sends `{"type":"hello","protocol":2,"client":{"name":"…","version":"…","schema":null}}` first. Any other first message, or none within the handshake timeout, ends the connection (`error` / `bad_request` for a wrong first message).
 2. Same `protocol`: the daemon answers `welcome` (`protocol`, `daemon_version`, `store_schema`).
 3. Different `protocol`: the daemon answers `incompatible` (`daemon_protocol`, `daemon_version`, `store_schema`, `reason`), sends nothing else and closes. A client that reads the store directly compares `store_schema` with its own and refuses to open a newer store.
 
@@ -21,7 +21,7 @@ Each request gets exactly one response, in order.
 
 Limits:
 
-- The client gives up when connect plus handshake take over 2 s, when a quick request (`status`, `reload`, `issues`, `subscribe`, `shutdown`) takes over 10 s, or a work request (`scan_now`, `export_now`, `backup_now`, `reprice`, `refresh_quota`) over 300 s. After a timeout the connection is unusable. Events of a subscription have no timeout.
+- The client gives up when connect plus handshake take over 2 s, when a quick request (`status`, `reload`, `issues`, `subscribe`, `shutdown`) takes over 10 s, or a work request (`scan_now`, `export_now`, `backup_now`, `reprice`, `refresh_quota`, `connect_keychain`) over 300 s. After a timeout the connection is unusable. Events of a subscription have no timeout.
 - The daemon serves at most 16 connections; it closes further ones at once. It drops a client that does not read a response within 1 s.
 - A response that would exceed 1 MiB is replaced by `error` / `failed`.
 - A request still running at shutdown is answered `error` / `shutting_down`.
@@ -33,9 +33,10 @@ Limits:
 | `export_now {sink?}` | `exported` | Unknown sink: `error` / `bad_request`. A failing sink is reported in its summary, not as `error`. |
 | `backup_now` | `backed_up` | Works when `backup.enabled` is off. |
 | `reprice {all}` | `repriced {repriced}` | Re-estimates stored events with the active pricing snapshot: the unpriced ones, or every event with `all`. Reported costs never change. |
-| `refresh_quota` | `quota_refreshed` | `error` / `disabled` when `quota.enabled` is off. Per profile `status`: `ok`, `signed_out`, `token_expired`, `forbidden` (HTTP 403), `rate_limited` (HTTP 429), `malformed`, `network_down`, `failed`, `backoff` (skipped after earlier failures; nothing stored). The store keeps only `ok`, `signed_out`, `token_expired` and `failed`: every other failure is stored as `failed`. |
+| `refresh_quota` | `quota_refreshed` | `error` / `disabled` when `quota.enabled` is off. Per profile `status`: `ok`, `signed_out`, `token_expired`, `keychain_denied` (the Keychain refused the credentials to the daemon), `forbidden` (HTTP 403), `rate_limited` (HTTP 429), `malformed`, `network_down`, `failed`, `backoff` (skipped after earlier failures; nothing stored). The store keeps only `ok`, `signed_out`, `token_expired`, `keychain_denied` and `failed`: every other failure is stored as `failed`. |
+| `connect_keychain` | `quota_refreshed` | Reads each Claude profile's Keychain item once with the macOS consent prompt allowed, so the user can choose "Always Allow" for the daemon, then polls as `refresh_quota`. Waits while the prompt is open. `error` / `disabled` when `quota.enabled` is off. |
 | `reload` | `reloaded` | Invalid config: `error` / `invalid_config`, the old config stays active. |
-| `issues` | `issues` | Open parse issues and the last `config_error`. |
+| `issues` | `issues` | Open parse issues and the last `config_error`. Issue `kind`: `format_drift`, `unknown_version`, `protected_folder`, `missing_cwd`, `parse_error`, `integration_drift` (Superset's database has an unknown shape). |
 | `shutdown` | `shutting_down` | Graceful stop, same as SIGTERM; the process exits 0, so launchd (`KeepAlive { SuccessfulExit = false }`) does not restart it. The answer comes first; the socket is removed, then `daemon.lock` released, when the daemon has stopped. `restore` and `erase` send it before they take `daemon.lock`. |
 | `subscribe` | `subscribed`, then `event` lines | Events are interleaved with later responses on the same connection; a subscriber that falls behind gets one `store_changed` listing every dataset. |
 
@@ -60,5 +61,5 @@ Clients re-read the store after `store_changed`; the event carries no row data.
 ## Versioning
 
 - `PROTOCOL_VERSION` is bumped for any change an older peer would misread: removing or renaming a message or field, changing a meaning, adding a required field.
-- Adding an optional field is compatible. A new event or an unsolicited response type is not: v1 clients fail to parse it, so it bumps the version. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
+- Adding an optional field is compatible. A new event, an unsolicited response type or a new value of a closed enum (a quota status, an issue kind) is not: older clients fail to parse it, so it bumps the version. v2 added `keychain_denied` and `integration_drift`. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
 - There is no negotiation: a mismatch ends the connection. Ship the daemon and its clients together: they come from one app bundle, and the app shows "Update required" on `incompatible`.

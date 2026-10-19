@@ -18,12 +18,13 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::DialogExt as _;
 use tauri_plugin_notification::NotificationExt as _;
 use tokenmtr_app::AppContext;
+use tokenmtr_config::RawProject;
 use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId, SubscriptionSpec};
 use tokenmtr_platform::service::is_transient;
 use tokenmtr_platform::{
     LaunchdService, ServiceError, ServiceManager as _, ServiceStatus, SystemRunner,
 };
-use tokenmtr_query::{GroupBy, Period};
+use tokenmtr_query::{Granularity, GroupBy, Period};
 
 use crate::backend::shell::{
     self, AppState, FilterOptions, Permission, SessionOrigin, Settings, StateInputs,
@@ -143,7 +144,22 @@ filtered_query!(
     billing,
     quota_latest,
     advisor,
+    session_analytics,
 );
+
+/// Spend over time in hourly, daily or monthly buckets, optionally per agent.
+#[tauri::command]
+pub async fn billing_series(
+    shell: State<'_, Shell>,
+    request: QueryRequest,
+    granularity: Granularity,
+    split_by_agent: bool,
+) -> Reply<Value> {
+    read(&shell, move |app, now| {
+        queries::billing_series(app, now, &request, granularity, split_by_agent)
+    })
+    .await
+}
 
 /// Usage over time, optionally grouped.
 #[tauri::command]
@@ -195,6 +211,20 @@ pub async fn session_detail(
 ) -> Reply<Value> {
     read(&shell, move |app, now| {
         queries::session_detail(app, now, agent, &session, currency)
+    })
+    .await
+}
+
+/// Cumulative spend, signals and tool counts of one session.
+#[tauri::command]
+pub async fn session_timeline(
+    shell: State<'_, Shell>,
+    agent: AgentId,
+    session: SessionId,
+    currency: Currency,
+) -> Reply<Value> {
+    read(&shell, move |app, now| {
+        queries::session_timeline(app, now, agent, &session, currency)
     })
     .await
 }
@@ -304,11 +334,12 @@ pub async fn add_project_rule(
     app: AppHandle<Wry>,
     shell: State<'_, Shell>,
     cwd: String,
+    name: String,
 ) -> Reply<()> {
     let backend = shell.backend.clone();
     blocking({
         let backend = backend.clone();
-        move || actions::add_project_rule(&backend, &cwd)
+        move || actions::add_project_rule(&backend, &cwd, &name)
     })
     .await?;
     actions::reload_daemon(&backend).await;
@@ -332,6 +363,19 @@ pub async fn add_subscription(
     actions::reload_daemon(&backend).await;
     crate::shortcut::sync(&app);
     Ok(())
+}
+
+/// The project rule the app suggests for a directory.
+#[tauri::command]
+pub async fn project_rule_for(shell: State<'_, Shell>, cwd: String) -> Reply<RawProject> {
+    let backend = shell.backend.clone();
+    blocking(move || actions::project_rule_for(&backend, &cwd, Timestamp::now())).await
+}
+
+/// Lets the daemon read the Claude credentials in the Keychain: macOS asks the user once.
+#[tauri::command]
+pub async fn connect_keychain(shell: State<'_, Shell>) -> Reply<()> {
+    actions::connect_keychain(&shell.backend).await
 }
 
 /// Raises a Claude profile's transcript retention to ten years.
@@ -465,11 +509,14 @@ command_table!(
     tools,
     signals,
     billing,
+    billing_series,
     quota_latest,
     quota_history,
     advisor,
     sessions,
     session_detail,
+    session_analytics,
+    session_timeline,
     budgets,
     recap,
     system_health,
@@ -487,6 +534,8 @@ command_table!(
     reveal_path,
     add_project_rule,
     add_subscription,
+    project_rule_for,
+    connect_keychain,
     keep_ten_years,
     set_launch_at_login,
     erase_all_data,

@@ -109,6 +109,10 @@ format = "text"                   # text | json
 [privacy]
 redact_paths = false
 
+[integrations.superset]
+enabled = true                 # read-only hints for deleted worktrees, when installed
+# dir = "~/.superset"
+
 [agents.claude]
 enabled = true
 
@@ -247,7 +251,7 @@ When the account has extra usage switched on (Claude's pay-as-you-go spend beyon
 
 ### `[[projects]]`
 
-Rules are tried in file order; the first match names the project. Without a match, the project is the session's git repository (its `origin` remote, else its root path), else the working directory.
+Rules are tried in file order; the first match names the project. Without a match, the project is the session's git repository (its `origin` remote, else its root path). A working directory that is gone, or is not a git repository, takes its project from the Superset worktree that was there (see `[integrations.superset]`): the main repository when it still exists, else the repository URL Superset recorded. Otherwise the project is the working directory.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -331,6 +335,17 @@ Known limit: session files do not record whether a call used an API key or a sub
 | --- | --- | --- | --- |
 | `redact_paths` | bool | `false` | Store a keyed hash (BLAKE3, 16 hex characters, key in the store) instead of each event's `cwd` and `git_branch`, and instead of the cwd and path-derived project key in the project map and parse issues. Projects and clients still resolve from the real cwd, which is never written. Applies to events ingested afterwards: rows already stored keep their paths until you erase the store. Rule changes are not re-resolved for hashed cwds. Agent transcript paths (checkpoints, file issues) stay, and so does the project display name (the directory's name). |
 
+### `[integrations.superset]`
+
+[Superset](https://superset.sh) creates git worktrees for agents and deletes them when a task ends. TokenMtr reads Superset's own database, read-only, to name the project of a session whose worktree is gone, and to give a pi session the worktree's branch.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | Read the Superset database when it exists. Nothing happens when Superset is not installed. |
+| `dir` | path | `"~/.superset"` | Superset's data directory; every `host/<id>/host.db` under it is read. |
+
+When the database cannot be read as expected (a Superset update changed it), the hints stop and Settings shows one `integration_drift` issue; scans go on without them.
+
 ### `[agents.<agent>]`
 
 `<agent>` is `claude` or `pi`. An unknown agent is an unknown key.
@@ -341,6 +356,8 @@ Known limit: session files do not record whether a call used an API key or a sub
 | `profiles[].id` | id | required | Unique within the agent. |
 | `profiles[].roots` | `[path]` | discovery | Session roots; non-empty. |
 | `profiles[].config_dir` | path | discovery | Claude only. Roots, credentials and stats cache come from here. Exclusive with `roots`. |
+
+The `default` pi profile reads `PI_CODING_AGENT_SESSION_DIR` when set; otherwise both the `sessionDir` of pi's `settings.json` and the `sessions` folder, each in pi's agent directory (`PI_CODING_AGENT_DIR`, default `~/.pi/agent`).
 
 Every agent has a `default` profile, added with discovery paths when the file omits it. Profiles of one agent must not use equal or nested paths. Discovery paths of an implicit or path-less profile are not checked.
 

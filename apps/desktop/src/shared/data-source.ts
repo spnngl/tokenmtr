@@ -6,26 +6,32 @@ import type {
   AppState,
   Backup,
   BillingReport,
+  BillingSeries,
   Branches,
   Budget,
   FilterOptions,
   FxRateView,
   GeneratedReport,
+  Granularity,
   GroupBy,
   Heatmap,
   IngestStatus,
   Models,
   ParseIssue,
   Period,
+  Plan,
+  ProjectRule,
   Projects,
   QuotaHistory,
   QuotaMeter,
   RecapSnapshot,
   ReportSpec,
   Series,
+  SessionAnalytics,
   SessionDetail,
   SessionOrigin,
   SessionPage,
+  SessionTimeline,
   Settings,
   SignalsReport,
   SystemHealth,
@@ -45,6 +51,22 @@ export type RevealTarget =
   | { readonly kind: "exports_dir" }
   | { readonly kind: "transcript"; readonly agent: string; readonly session: string }
   | { readonly kind: "transcript_folder"; readonly agent: string; readonly session: string };
+
+/**
+ * A subscription to add (`SubscriptionSpec` in `tokenmtr-core`): `fee` holds micro-units keyed by
+ * its currency, dates are ISO days, `profiles: null` covers every profile.
+ */
+export interface SubscriptionSpec {
+  readonly id: string;
+  readonly provider: string;
+  readonly plan: Plan;
+  readonly agents: readonly string[];
+  readonly profiles: readonly string[] | null;
+  readonly fee: { readonly usd: number } | { readonly eur: number };
+  readonly period: "monthly" | "yearly";
+  readonly start: string;
+  readonly end: string | null;
+}
 
 export interface DashboardTarget {
   readonly route: "/" | "/settings";
@@ -77,12 +99,22 @@ export interface DataSource {
   tools(filters: Filters): Promise<ToolsReport>;
   signals(filters: Filters): Promise<SignalsReport>;
   billing(filters: Filters): Promise<BillingReport>;
+  /** Paid versus API value per bucket; `splitByAgent` fills each point's `agents`. */
+  billingSeries(
+    filters: Filters,
+    granularity: Granularity,
+    splitByAgent: boolean,
+  ): Promise<BillingSeries>;
 
   // Sessions
   /** Newest activity first; `page` is 0-based. */
   sessions(filters: Filters, page: number, pageSize: number): Promise<SessionPage>;
   sessionDetail(agent: string, session: string, currency: Currency): Promise<SessionDetail>;
   sessionOrigin(agent: string, session: string): Promise<SessionOrigin>;
+  /** Session charts: top 500 sessions by API value, cost histogram, starts per day and hour. */
+  sessionAnalytics(filters: Filters): Promise<SessionAnalytics>;
+  /** Cumulative spend, signals and tool counts of one session. */
+  sessionTimeline(agent: string, session: string, currency: Currency): Promise<SessionTimeline>;
 
   // Quota and budgets
   quotaLatest(filters: Filters): Promise<QuotaMeter[]>;
@@ -110,8 +142,14 @@ export interface DataSource {
   restartDaemon(): Promise<void>;
   /** Shows `target` in the OS file manager. */
   revealPath(target: RevealTarget): Promise<void>;
-  /** Opens the config at a new project rule for `cwd`. */
-  addProjectRule(cwd: string): Promise<void>;
+  /** The rule the shell suggests for `cwd`, named after its repository when known. */
+  projectRuleFor(cwd: string): Promise<ProjectRule>;
+  /** Adds a `[[projects]]` rule naming the sessions started in `cwd` `name`. */
+  addProjectRule(cwd: string, name: string): Promise<void>;
+  /** Adds a `[[subscriptions]]` entry to the config (created when missing). */
+  addSubscription(spec: SubscriptionSpec): Promise<void>;
+  /** The daemon reads the Claude credentials once with the Keychain prompt allowed. */
+  connectKeychain(): Promise<void>;
   /** Sets `cleanupPeriodDays` to ten years for one profile. */
   keepTenYears(agent: string, profile: string): Promise<void>;
   setLaunchAtLogin(enabled: boolean): Promise<void>;

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
+import { Tab, TabList, TabPanel, Tabs } from "react-aria-components";
 import { useFilters } from "../../app/use-filters";
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
@@ -16,6 +17,7 @@ import { RemoteView } from "../../shared/remote-view";
 import type { SessionPage, SessionRow } from "../../shared/schemas";
 import { Amount, type Column, DataTable, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
+import { SessionAnalysisPanel } from "./session-analysis";
 
 /** Rows asked per page; the answer's `page_size` is what the pager counts with. */
 const PAGE_SIZE = 25;
@@ -153,14 +155,35 @@ function SessionsTable(): ReactNode {
   );
 }
 
-/** Sessions: server-paged, newest first; sorting reorders the loaded page. */
+const TAB_CLASS =
+  "-mb-px min-h-9 cursor-pointer border-b-2 border-transparent px-3 text-sm font-medium text-fg-muted data-hovered:text-fg data-selected:border-accent data-selected:text-fg";
+
+/**
+ * Sessions: a server-paged table (newest first; sorting reorders the loaded page) and, on its own
+ * tab, charts over every session of the filters.
+ */
 export function SessionsScreen(): ReactNode {
   const { filters } = useFilters();
   return (
     <>
       <PageHeader to="/sessions" />
-      {/* Keyed by the filters: a new filter set starts again at the first page. */}
-      <SessionsTable key={serializeFilters(filters).toString()} />
+      <Tabs defaultSelectedKey="table" className="flex flex-col gap-4">
+        <TabList aria-label="Sessions view" className="flex gap-1 border-b border-border">
+          <Tab id="table" className={TAB_CLASS}>
+            Table
+          </Tab>
+          <Tab id="analysis" className={TAB_CLASS}>
+            Analysis
+          </Tab>
+        </TabList>
+        <TabPanel id="table" className="flex flex-col gap-4 outline-offset-4">
+          {/* Keyed by the filters: a new filter set starts again at the first page. */}
+          <SessionsTable key={serializeFilters(filters).toString()} />
+        </TabPanel>
+        <TabPanel id="analysis" className="outline-offset-4">
+          <SessionAnalysisPanel />
+        </TabPanel>
+      </Tabs>
     </>
   );
 }

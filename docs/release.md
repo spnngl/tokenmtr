@@ -14,7 +14,7 @@ A release is a signed `TokenMtr.app` and `.dmg` built on the maintainer's Mac. T
 
 1. Set the new version in the workspace `Cargo.toml` (`[workspace.package] version`). It is the only place: the CLI, the daemon and the app read it, and `tauri.conf.json` has no `version` key on purpose.
 2. Move the `CHANGELOG.md` entries from "Unreleased" under the new version and date.
-3. Build: `just release --target universal-apple-darwin` for the published dmg (Apple silicon and Intel), or plain `just release` for the host architecture. `--unsigned` skips signing for a local test build.
+3. Build: `just release --target universal-apple-darwin` for the published dmg (Apple silicon and Intel), or plain `just release` for the host architecture. `--unsigned` skips signing for a local test build. Without the identity the build warns and is unsigned: never publish it.
 4. Commit, tag `v<version>`; the human pushes.
 
 **Done when:** the dmg passes [Verify the artifact](#verify-the-artifact) and the tag points at the release commit.
@@ -22,7 +22,7 @@ A release is a signed `TokenMtr.app` and `.dmg` built on the maintainer's Mac. T
 ## What `just release` does
 
 1. `just check`: Rust format, clippy and tests for the whole workspace, TypeScript typecheck, lint and tests. `bindings.ts` must be current (`just bindings` rewrites it).
-2. `scripts/release.nu`: checks the signing identity exists (unless `--unsigned`), then runs `pnpm tauri build --config src-tauri/tauri.release.conf.json [--target <triple>]` with `APPLE_SIGNING_IDENTITY` set.
+2. `scripts/release.nu`: signs when the login keychain holds the identity (unless `--unsigned`), else warns and builds unsigned, then runs `pnpm tauri build --config src-tauri/tauri.release.conf.json [--target <triple>]` with `APPLE_SIGNING_IDENTITY` set.
 3. `tauri.release.conf.json` adds two things to `tauri.conf.json`: `beforeBuildCommand` runs `scripts/build-sidecar.nu` (builds `tokenmtr` in release mode and copies it to `apps/desktop/src-tauri/binaries/tokenmtr-<target-triple>`; for `universal-apple-darwin` it builds both Apple triples and merges them with `lipo`) before the frontend build, and `bundle.externalBin` bundles it. Tauri strips the triple, so the daemon binary ends up at `TokenMtr.app/Contents/MacOS/tokenmtr`.
 4. The script prints the dmg path: `target/release/bundle/dmg/` for the host build, `target/universal-apple-darwin/release/bundle/dmg/` for the universal one.
 

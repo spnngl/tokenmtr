@@ -1,11 +1,13 @@
 # Builds the `.app` and `.dmg`. Run through `just release`, which runs the gates first.
 #
-# Signs with the stable local identity from `signing.nu`; create it once with `just signing-cert`.
-# `--unsigned` skips signing for a local test build (the linker's ad-hoc signature only).
+# Signs with the stable local identity from `signing.nu` when the login keychain holds it; create
+# it once with `just signing-cert`. A stable signature keeps the Keychain's "Always Allow" grant and
+# the macOS folder grants across rebuilds. Without the identity the build is unsigned (the linker's
+# ad-hoc signature only) and says so; `--unsigned` skips signing even when the identity exists.
 # `--target universal-apple-darwin` builds one bundle for Apple silicon and Intel.
 # `tauri build` runs `build-sidecar.nu` (see `tauri.release.conf.json`) before compiling the app.
 
-use signing.nu IDENTITY
+use signing.nu [IDENTITY has-identity]
 
 def main [
     --target: string # Rust target triple, or `universal-apple-darwin`; defaults to the host.
@@ -14,12 +16,11 @@ def main [
     let root = ($env.FILE_PWD | path expand | path dirname)
     let signing = if $unsigned {
         {}
-    } else {
-        let found = (^security find-identity -v -p codesigning | lines | where {|line| $line | str contains $IDENTITY })
-        if ($found | is-empty) {
-            error make { msg: $"no code-signing identity named '($IDENTITY)'; run `just signing-cert` first" }
-        }
+    } else if (has-identity) {
         { APPLE_SIGNING_IDENTITY: $IDENTITY }
+    } else {
+        print -e $"warning: no code-signing identity named '($IDENTITY)': building unsigned, so macOS asks for the Keychain again after each rebuild. Run `just signing-cert` once to sign."
+        {}
     }
     let target_args = if $target == null { [] } else { [--target $target] }
     with-env $signing {

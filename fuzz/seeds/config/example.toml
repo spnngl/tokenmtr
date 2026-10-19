@@ -19,7 +19,7 @@ enabled = true                 # ECB fetch
 agents = ["claude", "pi"]      # one recap tab each; default: all enabled agents
 title = "paid_today"           # paid_today | api_today | tightest_quota | none
 shortcut = "Alt+CommandOrControl+U"  # "" disables
-live_window = "10m"            # Live block window (D58)
+live_window = "10m"            # Live block window
 
 [alerts]
 quota_thresholds = [80, 95]    # percent
@@ -40,7 +40,7 @@ keep = 14
 [import]
 claude_stats_cache = true
 
-[[projects]]                   # first match wins; otherwise git resolution (D31)
+[[projects]]                   # first match wins; otherwise git resolution
 match = "~/work/acme-*/**"
 name = "acme"
 client = "Acme Corp"
@@ -61,13 +61,14 @@ model = "my-private-model"
 input_per_m = 3.0
 output_per_m = 15.0
 # cache_read_per_m, cache_write_5m_per_m, cache_write_1h_per_m: optional
+# provider = "bedrock"        # only events served by this provider
 
 [[subscriptions]]
 id = "claude-max"
 provider = "anthropic"
 plan = "max_20x"               # pro | max_5x | max_20x | team | enterprise | custom
 agents = ["claude", "pi"]
-# profiles = ["default"]       # optional narrowing (D28)
+# profiles = ["default"]       # optional narrowing
 # fee = 200.0                  # default from pricing/plans.toml
 fee_currency = "USD"           # USD | EUR
 period = "monthly"             # monthly | yearly
@@ -82,8 +83,15 @@ log_level = "info"
 [store]
 # path = "~/Library/Application Support/dev.tokenmtr.app/usage.db"  # platform default
 
+[logging]
+format = "text"                   # text | json
+
 [privacy]
 redact_paths = false
+
+[integrations.superset]
+enabled = true                 # read-only hints for deleted worktrees, when installed
+# dir = "~/.superset"
 
 [agents.claude]
 enabled = true
@@ -106,7 +114,7 @@ id = "default"
 [[sinks]]
 id = "local-csv"
 kind = "csv"
-# dir = "~/Library/Application Support/dev.tokenmtr.app/exports"  # default (D21, D50)
+# dir = "~/Library/Application Support/dev.tokenmtr.app/exports"  # default
 mode = "append"                # append | snapshot
 partition = "month"            # month | day | all
 datasets = ["usage_events", "tool_calls", "quota_snapshots", "fx_rates", "subscriptions"]
@@ -121,11 +129,11 @@ interval = "5m"
 [[sinks]]
 id = "shared-jsonl"
 kind = "jsonl"
-dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant access first (D50)
+dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant access first
 mode = "append"
-redact = { cwd = "hash", git_branch = "drop" }   # D40
+redact = { cwd = "hash", git_branch = "drop" }
 
-# [[sinks]]                    # later (Phase 13)
+# [[sinks]]                    # planned, not accepted yet
 # id = "warehouse"
 # kind = "postgres"
 # url_env = "TOKENMTR_PG_URL"   # secrets never live in the file

@@ -616,3 +616,59 @@ fn unresolved_cwds_skip_from_directory_to_directory() {
     );
     assert!(!plan.contains("SCAN usage_event"), "{plan}");
 }
+
+#[test]
+fn filling_branches_sets_only_missing_ones_and_a_reread_keeps_them() {
+    let mut f = fixture();
+    let machine = f.store.machine_id();
+    let mut named = in_dir(&machine, "a2", "/a");
+    named.git_branch = Some("logged".to_owned());
+    let bare = in_dir(&machine, "a1", "/a");
+    f.store
+        .upsert_events(&[bare.clone(), named, in_dir(&machine, "b1", "/b")])
+        .unwrap();
+    let before = head(&f.store, Dataset::UsageEvents);
+    let fill = [(Utf8PathBuf::from("/a"), "feat/x".to_owned())];
+    assert_eq!(f.store.fill_branches(&fill).unwrap(), 1);
+    assert_eq!(head(&f.store, Dataset::UsageEvents).get(), before.get() + 1);
+    assert_eq!(f.store.fill_branches(&fill).unwrap(), 0, "idempotent");
+
+    // Re-reading the line, which names no branch, keeps the one learned later.
+    f.store.upsert_events(&[bare]).unwrap();
+    let branches: Vec<Option<String>> = f
+        .store
+        .usage_events_after(Revision::ZERO, 10)
+        .unwrap()
+        .into_iter()
+        .map(|v| v.row.git_branch)
+        .collect();
+    assert!(branches.contains(&Some("feat/x".to_owned())));
+    assert!(branches.contains(&Some("logged".to_owned())));
+    assert!(branches.contains(&None), "/b had no hint");
+}
+
+#[test]
+fn an_inferred_resolution_round_trips() {
+    let mut f = fixture();
+    let mut inferred = resolution("/gone/wt", "github.com/acme/tool", None);
+    inferred.source = crate::ProjectSource::Inferred;
+    inferred.remote = Some("github.com/acme/tool".to_owned());
+    f.store.save_project(&inferred).unwrap();
+    assert_eq!(
+        f.store.project(Utf8Path::new("/gone/wt")).unwrap(),
+        Some(inferred)
+    );
+}
+
+#[test]
+fn the_last_scan_time_is_the_newest_of_any_agent() {
+    let mut f = fixture();
+    assert_eq!(f.store.last_scan_finished_at().unwrap(), None);
+    f.store
+        .record_scan_finished(AgentId::CLAUDE, at(20))
+        .unwrap();
+    f.store.record_scan_finished(AgentId::PI, at(10)).unwrap();
+    assert_eq!(f.store.last_scan_finished_at().unwrap(), Some(at(20)));
+    f.store.record_scan_finished(AgentId::PI, at(30)).unwrap();
+    assert_eq!(f.store.last_scan_finished_at().unwrap(), Some(at(30)));
+}

@@ -473,9 +473,10 @@ mod read {
     use tokenmtr_core::AgentId;
     use tokenmtr_export::fetch_batch;
     use tokenmtr_query::{
-        Bucket, GroupBy, Period, QueryContext, Selection, billing, branches, heatmap,
-        ingest_status, models, overview, projects, quota_history, quota_latest, recap, series,
-        session_detail, sessions, status, tools, unresolved_cwds,
+        Bucket, Granularity, GroupBy, Period, QueryContext, Selection, billing, billing_series,
+        branches, heatmap, ingest_status, models, overview, projects, quota_history, quota_latest,
+        recap, series, session_analytics, session_detail, session_timeline, sessions, status,
+        tools, unresolved_cwds,
     };
     use tokenmtr_store::{Dataset, Revision, StoreRead, StoreReader};
 
@@ -565,6 +566,36 @@ mod read {
     #[divan::bench]
     fn billing_1y(bencher: Bencher<'_, '_>) {
         run(bencher, |r, c| billing(r, c, &last_days(365)).expect("q"));
+    }
+
+    #[divan::bench]
+    fn billing_series_30d_hourly_by_agent(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| {
+            billing_series(r, c, &last_days(30), Granularity::Hourly, true).expect("q")
+        });
+    }
+
+    #[divan::bench]
+    fn billing_series_30d_daily(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| {
+            billing_series(r, c, &last_days(30), Granularity::Daily, false).expect("q")
+        });
+    }
+
+    #[divan::bench]
+    fn session_analytics_30d(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| {
+            session_analytics(r, c, &last_days(30)).expect("q")
+        });
+    }
+
+    #[divan::bench]
+    fn session_timeline_one(bencher: Bencher<'_, '_>) {
+        let n = fixture().events / SESSION_EVENTS / 2;
+        let session = session_id("", n);
+        run(bencher, |r, c| {
+            session_timeline(r, c, agent_of(n), &session).expect("q")
+        });
     }
 
     #[divan::bench]

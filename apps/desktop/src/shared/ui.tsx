@@ -114,13 +114,18 @@ interface ChartFrameProps {
   readonly table: ReactNode;
   /** Controls next to the title, e.g. a segmented control. */
   readonly actions?: ReactNode;
+  /**
+   * The chart keeps Recharts' `accessibilityLayer` (a named, keyboard-browsable tooltip), so the
+   * picture stays in the accessibility tree. Default: hidden, the table speaks for it.
+   */
+  readonly interactive?: boolean;
   readonly children: ReactNode;
 }
 
 /**
  * Accessible chart wrapper: a figure with a caption, a description, and the data as a table
- * behind a disclosure (every chart has one). The picture itself is hidden from assistive
- * tech so the table, which carries every value, is the only thing it reads.
+ * behind a disclosure (every chart has one). Unless `interactive`, the picture itself is hidden
+ * from assistive tech so the table, which carries every value, is the only thing it reads.
  */
 export function ChartFrame({
   title,
@@ -128,6 +133,7 @@ export function ChartFrame({
   points,
   table,
   actions,
+  interactive = false,
   children,
 }: ChartFrameProps): ReactNode {
   const descriptionId = useId();
@@ -145,7 +151,7 @@ export function ChartFrame({
       <p id={descriptionId} className="text-xs text-fg-muted">
         {description}
       </p>
-      <div aria-hidden className="min-w-0">
+      <div aria-hidden={interactive ? undefined : true} className="min-w-0">
         {children}
       </div>
       <details className="text-sm">

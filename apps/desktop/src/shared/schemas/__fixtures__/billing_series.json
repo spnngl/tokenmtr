@@ -1,0 +1,77 @@
+{
+  "currency": "USD",
+  "granularity": "daily",
+  "points": [
+    {
+      "start": "2026-05-01T22:00:00Z",
+      "local": "2026-05-02T00:00:00",
+      "minutes": 1440,
+      "api_value_micros": 4200000,
+      "paid_micros": 3525806,
+      "subscription_fee_micros": 3225806,
+      "extra_usage_micros": 0,
+      "pay_as_you_go_micros": 300000,
+      "savings_micros": 674194,
+      "roi": 1.19,
+      "cumulative_api_value_micros": 4200000,
+      "cumulative_paid_micros": 3525806,
+      "agents": {
+        "claude": {
+          "api_value_micros": 3900000,
+          "paid_micros": 3225806,
+          "subscription_fee_micros": 3225806,
+          "extra_usage_micros": 0,
+          "pay_as_you_go_micros": 0
+        },
+        "pi": {
+          "api_value_micros": 300000,
+          "paid_micros": 300000,
+          "subscription_fee_micros": 0,
+          "extra_usage_micros": 0,
+          "pay_as_you_go_micros": 300000
+        }
+      },
+      "approximate": true
+    },
+    {
+      "start": "2026-05-02T22:00:00Z",
+      "local": "2026-05-03T00:00:00",
+      "minutes": 1440,
+      "api_value_micros": 1000000,
+      "paid_micros": 15570806,
+      "subscription_fee_micros": 3225806,
+      "extra_usage_micros": 12345000,
+      "pay_as_you_go_micros": 0,
+      "savings_micros": -14570806,
+      "roi": 0.06,
+      "cumulative_api_value_micros": 5200000,
+      "cumulative_paid_micros": 19096612,
+      "agents": {
+        "claude": {
+          "api_value_micros": 1000000,
+          "paid_micros": 15570806,
+          "subscription_fee_micros": 3225806,
+          "extra_usage_micros": 12345000,
+          "pay_as_you_go_micros": 0
+        }
+      },
+      "approximate": false
+    },
+    {
+      "start": "2026-05-03T22:00:00Z",
+      "local": "2026-05-04T00:00:00",
+      "minutes": 1440,
+      "api_value_micros": 0,
+      "paid_micros": 0,
+      "subscription_fee_micros": 0,
+      "extra_usage_micros": 0,
+      "pay_as_you_go_micros": 0,
+      "savings_micros": 0,
+      "roi": null,
+      "cumulative_api_value_micros": 5200000,
+      "cumulative_paid_micros": 19096612,
+      "agents": {},
+      "approximate": false
+    }
+  ]
+}

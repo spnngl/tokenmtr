@@ -190,6 +190,15 @@ pub trait StoreRead: sealed::Sealed {
         meta::heartbeat(self.connection())
     }
 
+    /// When the newest scan of any agent finished ([`Store::record_scan_finished`]), even one
+    /// that found nothing to read.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt value.
+    fn last_scan_finished_at(&self) -> Result<Option<Timestamp>, StoreError> {
+        meta::last_scan_finished_at(self.connection())
+    }
+
     /// The newest revision of a dataset; [`Revision::ZERO`] when it is empty.
     ///
     /// # Errors
@@ -648,6 +657,16 @@ impl Store {
         self.in_transaction(|conn, now| project::reassign(conn, now, resolutions))
     }
 
+    /// Gives the events of each working directory that have no git branch the branch paired
+    /// with it, in one transaction. Each changed event gets a new revision. Returns how many
+    /// changed.
+    ///
+    /// # Errors
+    /// `SQLite` failures (the transaction is rolled back).
+    pub fn fill_branches(&mut self, branches: &[(Utf8PathBuf, String)]) -> Result<u64, StoreError> {
+        self.in_transaction(|conn, now| project::fill_branches(conn, now, branches))
+    }
+
     /// Flags as superseded the stats-cache daily aggregates of `(agent, profile)` that
     /// transcript events now cover: those on or after the local day (in `zone`) of the
     /// profile's earliest transcript event. Rows are kept; each newly flagged row gets a new
@@ -771,6 +790,18 @@ impl Store {
     /// `SQLite` failures.
     pub fn set_heartbeat(&mut self) -> Result<(), StoreError> {
         meta::set_heartbeat(&self.conn, (self.clock)())
+    }
+
+    /// Records that a scan of `agent` finished at `at`, whether or not it read anything.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    pub fn record_scan_finished(
+        &mut self,
+        agent: AgentId,
+        at: Timestamp,
+    ) -> Result<(), StoreError> {
+        meta::set_scan_finished(&self.conn, agent, at)
     }
 
     /// Inserts or replaces the resolution of its working directory.

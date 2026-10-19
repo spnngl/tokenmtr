@@ -1,0 +1,62 @@
+{
+  "currency": "USD",
+  "events": [
+    {
+      "at": "2026-05-03T12:01:20Z",
+      "model": "claude-opus-4-1",
+      "tokens": {
+        "input_uncached": 1200,
+        "cache_read": 45000,
+        "cache_write_5m": 800,
+        "cache_write_1h": 0,
+        "output": 1204,
+        "reasoning": 0
+      },
+      "api_value_micros": 912300,
+      "paid_micros": 0,
+      "cumulative_api_value_micros": 912300,
+      "cumulative_paid_micros": 0
+    },
+    {
+      "at": "2026-05-03T12:01:41Z",
+      "model": "claude-sonnet-4-5",
+      "tokens": {
+        "input_uncached": 400,
+        "cache_read": 50000,
+        "cache_write_5m": 300,
+        "cache_write_1h": 0,
+        "output": 310,
+        "reasoning": 0
+      },
+      "api_value_micros": 160400,
+      "paid_micros": 160400,
+      "cumulative_api_value_micros": 1072700,
+      "cumulative_paid_micros": 160400
+    }
+  ],
+  "events_truncated": false,
+  "signals": [
+    {
+      "at": "2026-05-03T12:40:11Z",
+      "kind": "api_error"
+    },
+    {
+      "at": "2026-05-03T13:30:02Z",
+      "kind": "compaction"
+    }
+  ],
+  "tools": [
+    {
+      "tool_name": "Bash",
+      "mcp_server": null,
+      "calls": 2,
+      "failed": 0
+    },
+    {
+      "tool_name": "mcp__linear__get_issue",
+      "mcp_server": "linear",
+      "calls": 1,
+      "failed": 1
+    }
+  ]
+}

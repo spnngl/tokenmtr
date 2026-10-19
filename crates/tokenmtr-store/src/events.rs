@@ -25,7 +25,7 @@ const VALUES: [(&str, Merge); 25] = [
     ("subagent", Merge::Replace),
     ("is_sidechain", Merge::Replace),
     ("cwd", Merge::Replace),
-    ("git_branch", Merge::Replace),
+    ("git_branch", Merge::KeepStored),
     ("project", Merge::Replace),
     ("client", Merge::Replace),
     ("source_file_id", Merge::Replace),

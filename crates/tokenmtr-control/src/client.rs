@@ -29,7 +29,8 @@ const fn request_timeout(request: &Request) -> Duration {
         | Request::ExportNow { .. }
         | Request::BackupNow
         | Request::Reprice { .. }
-        | Request::RefreshQuota => WORK_TIMEOUT,
+        | Request::RefreshQuota
+        | Request::ConnectKeychain => WORK_TIMEOUT,
         Request::Hello { .. }
         | Request::Status
         | Request::Reload
@@ -227,6 +228,18 @@ impl Client {
     /// As [`Client::request`]; `Disabled` when `[quota]` is off.
     pub async fn refresh_quota(&mut self) -> Result<QuotaSummary, ClientError> {
         match self.request(&Request::RefreshQuota).await? {
+            Response::QuotaRefreshed(summary) => Ok(summary),
+            other => Err(ClientError::Unexpected(type_name(&other))),
+        }
+    }
+
+    /// Reads the Claude credentials from the Keychain once with the consent prompt allowed,
+    /// then polls quota.
+    ///
+    /// # Errors
+    /// As [`Client::request`]; `Disabled` when `[quota]` is off.
+    pub async fn connect_keychain(&mut self) -> Result<QuotaSummary, ClientError> {
+        match self.request(&Request::ConnectKeychain).await? {
             Response::QuotaRefreshed(summary) => Ok(summary),
             other => Err(ClientError::Unexpected(type_name(&other))),
         }

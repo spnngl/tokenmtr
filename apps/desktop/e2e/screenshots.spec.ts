@@ -130,6 +130,14 @@ for (const theme of THEMES) {
           await settle(page);
           await shoot(page, theme, `${viewport.name}-session-detail`);
         });
+
+        test("sessions analysis", async ({ page }) => {
+          await page.goto("/?mock=populated#/sessions");
+          await page.getByRole("tab", { name: "Analysis" }).click();
+          await expect(page.getByRole("figure", { name: "Sessions per day" })).toBeVisible();
+          await settle(page);
+          await shoot(page, theme, `${viewport.name}-sessions-analysis`);
+        });
       });
     }
 

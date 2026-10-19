@@ -277,7 +277,7 @@ impl Sandbox {
         stream.set_read_timeout(Some(Duration::from_secs(10)))?;
         let mut reader = BufReader::new(stream.try_clone()?);
         let hello =
-            r#"{"type":"hello","protocol":1,"client":{"name":"e2e","version":"0","schema":null}}"#;
+            r#"{"type":"hello","protocol":2,"client":{"name":"e2e","version":"0","schema":null}}"#;
         let mut lines = Vec::new();
         for request in std::iter::once(&hello).chain(requests) {
             writeln!(stream, "{request}")?;

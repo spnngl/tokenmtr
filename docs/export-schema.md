@@ -96,7 +96,7 @@ Primary key: `event_id`. Partitioned by: `at_utc`.
 | `project` | text | yes | `project` | Resolved project key. |
 | `client` | text | yes | `client` | Client label of the project. |
 | `cwd` | text | yes | `cwd` | Working directory of the session. |
-| `git_branch` | text | yes | `git_branch` | Git branch at the event. |
+| `git_branch` | text | yes | `git_branch` | Git branch at the event. Claude logs it; pi does not, so a pi event takes its directory's current branch when it is at most two scan intervals old, else the last branch Superset recorded for that worktree. |
 | `at_utc` | timestamp (UTC) | no |  | When the event happened; partitions files. |
 | `kind` | text | no |  | `message`, `tool_result`, `compaction`, `branch_summary`, `auxiliary`, `daily_aggregate` or `extra_usage` (one row per profile and local day of Claude extra-usage spend, in `cost_reported_usd`, no tokens). |
 | `approximate` | boolean | no |  | True when the row is an estimate, e.g. an imported daily aggregate. |
@@ -168,7 +168,7 @@ Primary key: `snapshot_id`. Partitioned by: `fetched_at_utc`.
 | `used_percent` | real | yes |  | Percent of the window used; may exceed 100. |
 | `resets_at_utc` | timestamp (UTC) | yes |  | When the window resets, when the provider says. |
 | `fetched_at_utc` | timestamp (UTC) | no |  | When the poll happened; partitions files. |
-| `status` | text | no |  | `ok`, `signed_out`, `token_expired` or `failed`. |
+| `status` | text | no |  | `ok`, `signed_out`, `token_expired`, `keychain_denied` or `failed`. |
 | `spent_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Spent this month, in USD; only on the `extra_usage` window (Claude pay-as-you-go spend). |
 | `limit_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Monthly cap, in USD; only on the `extra_usage` window. |
 

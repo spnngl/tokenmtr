@@ -6,8 +6,8 @@ use serde_json::Value;
 use tokenmtr_app::AppContext;
 use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId};
 use tokenmtr_query::{
-    AgentRecap, Bucket, DateRange, Filters, GroupBy, Period, QueryContext, QueryError, Selection,
-    Status,
+    AgentRecap, Bucket, DateRange, Filters, Granularity, GroupBy, Period, QueryContext, QueryError,
+    Selection, Status,
 };
 use tokenmtr_store::StoreReader;
 
@@ -149,6 +149,28 @@ pub fn billing(
     filtered(app, now, request, tokenmtr_query::billing)
 }
 
+/// `billing_series`.
+pub fn billing_series(
+    app: &AppContext,
+    now: Timestamp,
+    request: &QueryRequest,
+    granularity: Granularity,
+    split_by_agent: bool,
+) -> Result<Value, CommandError> {
+    filtered(app, now, request, |reader, ctx, filters| {
+        tokenmtr_query::billing_series(reader, ctx, filters, granularity, split_by_agent)
+    })
+}
+
+/// `session_analytics`.
+pub fn session_analytics(
+    app: &AppContext,
+    now: Timestamp,
+    request: &QueryRequest,
+) -> Result<Value, CommandError> {
+    filtered(app, now, request, tokenmtr_query::session_analytics)
+}
+
 /// `quota_latest`.
 pub fn quota_latest(
     app: &AppContext,
@@ -254,6 +276,23 @@ pub fn session_detail(
 ) -> Result<Value, CommandError> {
     let ctx = tokenmtr_app::query_context(app.config(), app.reader(), now, Some(currency))?;
     json(tokenmtr_query::session_detail(
+        app.reader(),
+        &ctx,
+        agent,
+        session,
+    ))
+}
+
+/// `session_timeline`.
+pub fn session_timeline(
+    app: &AppContext,
+    now: Timestamp,
+    agent: AgentId,
+    session: &SessionId,
+    currency: Currency,
+) -> Result<Value, CommandError> {
+    let ctx = tokenmtr_app::query_context(app.config(), app.reader(), now, Some(currency))?;
+    json(tokenmtr_query::session_timeline(
         app.reader(),
         &ctx,
         agent,

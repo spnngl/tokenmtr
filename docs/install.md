@@ -108,17 +108,23 @@ The quota poll reads Claude Code's OAuth token, read-only, from:
 - any other profile: `<config_dir>/.credentials.json`, then the item
   `Claude Code-credentials-<first 8 hex characters of sha256(config_dir)>`.
 
-TokenMtr never shows a Keychain prompt: the item belongs to Claude Code, so macOS refuses the read
-until you add TokenMtr to the item's access list. After a refusal the daemon reads only the
-credentials files until it restarts. To grant access:
+The item belongs to Claude Code, so macOS refuses the daemon's background read until you allow it.
+Polls never show a prompt: after a refusal the quota shows `keychain_denied` and the daemon reads
+only the credentials files. To allow it once:
+
+1. Click **Connect Claude account** on the Quota screen or in the menu bar recap, or run
+   `tokenmtr quota connect` while the daemon runs.
+2. macOS asks whether `tokenmtr` may use the item: enter your login password and choose
+   **Always Allow**.
+
+The daemon then polls silently. The grant is tied to the code signature, which stays the same
+across updates of a signed build. If the prompt never appears, grant access by hand:
 
 1. Open Keychain Access, select the **login** keychain and search for `Claude Code-credentials`.
 2. Double-click the item, open **Access Control**, click **+** and add
    `/Applications/TokenMtr.app/Contents/MacOS/tokenmtr` (⇧⌘G accepts the path).
 3. Click **Save Changes** and enter your login password.
 4. Restart the daemon: **Restart daemon** in Settings, or `tokenmtr service install`.
-
-The grant is tied to the code signature, which stays the same across updates.
 
 **Done when:** `tokenmtr quota` reports `ok` for the profile, also after an update and relaunch.
 
@@ -152,7 +158,7 @@ format drift, unresolved working directories, paths under protected folders, and
 | App shows "daemon offline" | `tokenmtr service status`; read `~/Library/Logs/tokenmtr/launchd.err.log`; run `tokenmtr service install`. |
 | "Move TokenMtr to Applications" | The app runs from the disk image or a translocated copy. Move it to `/Applications` and open it from there. |
 | "Update required" | The daemon speaks an older control protocol than the app. Click **Restart daemon from this app**: it repairs the plist to the bundled binary. |
-| Quota says `failed` and the log mentions the Keychain | TokenMtr is missing from the item's access list: [step 6](#6-keychain-access-for-quota). After an update, `codesign -dv --verbose=2 /Applications/TokenMtr.app` must show `Authority=TokenMtr Local Signing`; another authority, or none, means the app was rebuilt or re-signed: reinstall it from the release `.dmg` and add it again. |
+| Quota says `keychain_denied` | TokenMtr is missing from the item's access list: [step 6](#6-keychain-access-for-quota). After an update, `codesign -dv --verbose=2 /Applications/TokenMtr.app` must show `Authority=TokenMtr Local Signing`; another authority, or none, means the app was rebuilt or re-signed: reinstall it from the release `.dmg` and add it again. |
 | Quota says `signed_out` or `token_expired` | Run `claude` and sign in again; TokenMtr never refreshes the token. |
 | Usage older than 30 days is missing | `doctor` shows `cleanupPeriodDays`: Claude already deleted those transcripts. Set it as in step 3. |
 | `protected_folder` issue | [Step 5](#5-folder-access). |
@@ -161,7 +167,10 @@ format drift, unresolved working directories, paths under protected folders, and
 
 Release builds sign the app and the bundled CLI with the self-signed certificate **TokenMtr Local
 Signing** until Developer ID notarization replaces it. The name is the constant `IDENTITY` in
-[`scripts/signing.nu`](../scripts/signing.nu); `just release` passes it as `APPLE_SIGNING_IDENTITY`.
+[`scripts/signing.nu`](../scripts/signing.nu); `just release` passes it as `APPLE_SIGNING_IDENTITY`
+whenever the login keychain holds it, so local builds are signed too and keep the Keychain grant
+across rebuilds. Without the certificate `just release` warns and builds unsigned: macOS then asks
+for the Keychain again after every rebuild.
 
 1. Run `just signing-cert` once per Mac: it creates the certificate in the login keychain and asks
    you to trust it for code signing. It does nothing if the certificate exists;

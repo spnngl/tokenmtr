@@ -141,6 +141,7 @@ const fn status_name(status: QuotaStatus) -> &'static str {
         QuotaStatus::Ok => "ok",
         QuotaStatus::SignedOut => "signed_out",
         QuotaStatus::TokenExpired => "token_expired",
+        QuotaStatus::KeychainDenied => "keychain_denied",
         QuotaStatus::Failed => "failed",
     }
 }

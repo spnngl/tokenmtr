@@ -19,6 +19,10 @@ pub enum ProjectSource {
     Remote,
     /// The git repository root, for repositories without a remote.
     RepoRoot,
+    /// Git could not inspect the cwd (deleted worktree, folder outside git): another app's record
+    /// of it (Superset's workspaces) named its repository. The key is the remote when known,
+    /// else the repository root, like [`Self::Remote`] and [`Self::RepoRoot`].
+    Inferred,
     /// The working directory itself: no rule, no git. The project is "unresolved".
     Cwd,
 }
@@ -29,6 +33,7 @@ impl ProjectSource {
             Self::Rule(id) => ("rule", Some(id)),
             Self::Remote => ("remote", None),
             Self::RepoRoot => ("repo_root", None),
+            Self::Inferred => ("inferred", None),
             Self::Cwd => ("cwd", None),
         }
     }
@@ -38,6 +43,7 @@ impl ProjectSource {
             ("rule", Some(id)) => Ok(Self::Rule(id)),
             ("remote", None) => Ok(Self::Remote),
             ("repo_root", None) => Ok(Self::RepoRoot),
+            ("inferred", None) => Ok(Self::Inferred),
             ("cwd", None) => Ok(Self::Cwd),
             (other, _) => Err(CodecError::Value {
                 column: "source",
@@ -135,6 +141,40 @@ pub(crate) fn reassign(
                 to_us(now),
                 id
             ])?;
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        conn.execute(
+            "UPDATE dataset_revision SET revision = ?1 WHERE dataset = ?2",
+            params![revision, Dataset::UsageEvents.as_str()],
+        )?;
+    }
+    Ok(changed)
+}
+
+/// Sets the git branch of the events of each `(cwd, branch)` that have none. Each changed
+/// event gets its own revision and the dataset counter moves once. Returns how many changed.
+pub(crate) fn fill_branches(
+    conn: &Connection,
+    now: Timestamp,
+    branches: &[(Utf8PathBuf, String)],
+) -> Result<u64, StoreError> {
+    let mut revision = versioned::head(conn, Dataset::UsageEvents)?;
+    let mut changed = 0_u64;
+    let mut missing = conn.prepare_cached(
+        "SELECT id FROM usage_event WHERE cwd = ?1 AND git_branch IS NULL ORDER BY id",
+    )?;
+    let mut fill = conn.prepare_cached(
+        "UPDATE usage_event SET git_branch = ?1, revision = ?2, updated_at_us = ?3 WHERE id = ?4",
+    )?;
+    for (cwd, branch) in branches {
+        let ids = missing
+            .query_map([cwd.as_str()], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for id in ids {
+            revision = revision.next();
+            fill.execute(params![branch, revision, to_us(now), id])?;
             changed += 1;
         }
     }

@@ -89,6 +89,10 @@ format = "text"                   # text | json
 [privacy]
 redact_paths = false
 
+[integrations.superset]
+enabled = true                 # read-only hints for deleted worktrees, when installed
+# dir = "~/.superset"
+
 [agents.claude]
 enabled = true
 

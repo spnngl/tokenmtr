@@ -120,6 +120,8 @@ fn ingestor(root: &Utf8Path, rules_toml: &str, redact_paths: bool) -> Ingestor {
         import_claude_stats_cache: true,
         protected: vec![root.join("protected")],
         redact_paths,
+        superset_dir: Some(root.join("superset")),
+        live_branch_within: jiff::SignedDuration::from_mins(10),
     };
     Ingestor::open(settings, &root.join("store.db")).unwrap()
 }
@@ -1098,4 +1100,124 @@ fn full_mode_reparses_every_file() {
         paths: None,
     });
     assert_eq!(claude_agent(&report).files[0].reason, ParseReason::Forced);
+}
+
+/// A pi session in `cwd` with one message per `(id, at)`.
+fn pi_session(machine: &Machine, name: &str, cwd: &str, messages: &[(&str, &str)]) {
+    let header = json!({"type": "session", "version": 3, "id": name,
+        "timestamp": "2026-03-03T07:00:00.000Z", "cwd": cwd})
+    .to_string();
+    let mut items = vec![header];
+    for (id, at) in messages {
+        items.push(
+            json!({"type": "message", "id": id, "parentId": null, "timestamp": at,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "x"}],
+                    "api": "anthropic-messages", "provider": "anthropic",
+                    "model": "claude-sonnet-4-5", "responseId": format!("resp_{id}"),
+                    "usage": {"input": 10, "output": 1, "cacheRead": 0, "cacheWrite": 0,
+                        "totalTokens": 11, "cost": {"input": 0, "output": 0, "cacheRead": 0,
+                        "cacheWrite": 0, "total": 0.1}},
+                    "stopReason": "stop"}})
+            .to_string(),
+        );
+    }
+    let path = machine
+        .pi_dir()
+        .join(format!("2026-03-03T07-00-00-000Z_{name}.jsonl"));
+    write(&path, &lines(&items));
+}
+
+fn branch_of(machine: &Machine, id: &str) -> Option<String> {
+    machine
+        .events()
+        .into_iter()
+        .find(|e| e.row.dedup_key.as_str().contains(id))
+        .and_then(|e| e.row.git_branch)
+}
+
+#[test]
+fn a_deleted_worktree_is_inferred_from_superset_with_its_last_branch() {
+    let mut machine = Machine::new();
+    let main = machine.root.join("src/widgets");
+    crate::testkit::init_repo(main.as_std_path(), Some("git@github.com:acme/widgets.git"));
+    let gone = machine.root.join("worktrees/brave-otter");
+    pi_session(
+        &machine,
+        "p1",
+        gone.as_str(),
+        &[("m1", "2026-03-03T07:00:05.000Z")],
+    );
+
+    // First seen before Superset knew it: a cwd fallback with a missing_cwd issue.
+    machine.scan();
+    let open = |machine: &Machine, kind: IssueKind| {
+        machine
+            .store
+            .open_parse_issues()
+            .unwrap()
+            .iter()
+            .filter(|i| i.kind == kind)
+            .count()
+    };
+    assert_eq!(open(&machine, IssueKind::MissingCwd), 1);
+    assert_eq!(branch_of(&machine, "m1"), None);
+
+    // After a restart, the fallback is re-resolved through Superset's record.
+    crate::project::superset::fixture::fake_superset(&machine.root.join("superset"), &gone, &main);
+    machine.reconfigure("");
+    machine.scan();
+    let event = machine.events().into_iter().next().unwrap().row;
+    assert_eq!(event.project.unwrap().as_str(), "github.com/acme/widgets");
+    assert_eq!(event.git_branch.as_deref(), Some("feat/otter"));
+    assert_eq!(open(&machine, IssueKind::MissingCwd), 0);
+    let stored = machine.store.projects().unwrap();
+    assert_eq!(stored[0].source, tokenmtr_store::ProjectSource::Inferred);
+
+    // A new session in the same worktree is stamped while staged, and a full rescan keeps it.
+    pi_session(
+        &machine,
+        "p2",
+        gone.as_str(),
+        &[("m2", "2026-03-03T07:10:00.000Z")],
+    );
+    machine.scan_with(&ScanRequest::full(ScanPriority::UserInitiated));
+    assert_eq!(branch_of(&machine, "m1").as_deref(), Some("feat/otter"));
+    assert_eq!(branch_of(&machine, "m2").as_deref(), Some("feat/otter"));
+}
+
+#[test]
+fn only_recent_events_take_the_live_head_branch() {
+    let mut machine = Machine::new();
+    let main = machine.root.join("src/app");
+    crate::testkit::init_repo(main.as_std_path(), None);
+    let worktree = machine.root.join("wt");
+    crate::testkit::add_worktree(main.as_std_path(), worktree.as_std_path(), "feature");
+    pi_session(
+        &machine,
+        "p1",
+        worktree.as_str(),
+        &[
+            ("old", "2026-03-03T07:00:05.000Z"),
+            ("new", "2026-03-03T07:55:00.000Z"),
+        ],
+    );
+    // Ten minutes trust the live HEAD: "new" is five minutes old, "old" an hour.
+    machine.ingestor = std::mem::replace(&mut machine.ingestor, ingestor(&machine.root, "", false))
+        .with_clock(|| "2026-03-03T08:00:00Z".parse().unwrap());
+    machine.scan();
+    assert_eq!(branch_of(&machine, "new").as_deref(), Some("feature"));
+    assert_eq!(branch_of(&machine, "old"), None);
+}
+
+#[test]
+fn a_scan_that_reads_nothing_still_records_when_it_finished() {
+    let mut machine = Machine::new();
+    session_file(&machine, "s1", 0..2, "/work/app");
+    machine.scan();
+    let first = machine.store.last_scan_finished_at().unwrap().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let report = machine.scan();
+    assert_eq!(claude_agent(&report).files_parsed, 0);
+    let second = machine.store.last_scan_finished_at().unwrap().unwrap();
+    assert!(second > first, "an idle scan moves the time too");
 }

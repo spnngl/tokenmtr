@@ -16,7 +16,7 @@ import {
 afterEach(cleanup);
 
 function renderScreen(remote: Remote<BillingData>, onTrackPlan = vi.fn()) {
-  return render(<BillingScreen remote={remote} onTrackPlan={onTrackPlan} />);
+  return render(<BillingScreen remote={remote} onTrackPlan={onTrackPlan} valuePanel={null} />);
 }
 
 const EMPTY: BillingData = {
@@ -72,7 +72,7 @@ describe("BillingScreen", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it("populated shows a budget over 100%, the estimate label and the monthly table", async () => {
+  it("populated shows a budget over 100% and the estimate label", async () => {
     const onTrackPlan = vi.fn();
     const { container } = renderScreen({ kind: "ready", data: BILLING_DATA }, onTrackPlan);
     const user = userEvent.setup();
@@ -92,14 +92,6 @@ describe("BillingScreen", () => {
     expect(screen.getByText(/Not applicable/)).toBeTruthy();
     expect(screen.getByText(/Consider Max 20x/)).toBeTruthy();
 
-    const months = screen.getByRole("table", { name: "Billing per month", hidden: true });
-    expect(within(months).getAllByRole("row")).toHaveLength(BILLING_DATA.report.months.length + 1);
-    expect(
-      screen
-        .getByRole("figure", { name: "Paid and API value per month" })
-        .getAttribute("data-points"),
-    ).toBe("3");
-
     await user.click(screen.getByRole("button", { name: /Track it: claude-code/ }));
     expect(onTrackPlan).toHaveBeenCalledWith({
       agent: "claude-code",
@@ -114,10 +106,6 @@ describe("BillingScreen", () => {
     const kpi = screen.getByText("Extra usage", { selector: "dt" }).parentElement;
     expect(within(kpi ?? document.body).getByText("$12.35")).toBeTruthy();
     expect(screen.getByText("API cost, fees and extra usage")).toBeTruthy();
-    const months = screen.getByRole("table", { name: "Billing per month", hidden: true });
-    expect(
-      within(months).getByRole("columnheader", { name: /Extra usage/, hidden: true }),
-    ).toBeTruthy();
     cleanup();
 
     const none = (u: BillingData["report"]["total"]) => ({ ...u, extra_usage_micros: 0 });

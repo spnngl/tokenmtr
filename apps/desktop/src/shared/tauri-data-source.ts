@@ -9,6 +9,7 @@ import {
   appStateSchema,
   backupSchema,
   billingReportSchema,
+  billingSeriesSchema,
   branchesSchema,
   budgetSchema,
   filterOptionsSchema,
@@ -18,14 +19,17 @@ import {
   ingestStatusSchema,
   modelsSchema,
   parseIssueSchema,
+  projectRuleSchema,
   projectsSchema,
   quotaHistorySchema,
   quotaMeterSchema,
   recapSnapshotSchema,
   seriesSchema,
+  sessionAnalyticsSchema,
   sessionDetailSchema,
   sessionOriginSchema,
   sessionPageSchema,
+  sessionTimelineSchema,
   settingsSchema,
   signalsReportSchema,
   systemHealthSchema,
@@ -95,6 +99,12 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     tools: (filters) => read("tools", request(filters), toolsReportSchema),
     signals: (filters) => read("signals", request(filters), signalsReportSchema),
     billing: (filters) => read("billing", request(filters), billingReportSchema),
+    billingSeries: (filters, granularity, splitByAgent) =>
+      read(
+        "billing_series",
+        { ...request(filters), granularity, splitByAgent },
+        billingSeriesSchema,
+      ),
 
     sessions: (filters, page, pageSize) =>
       read("sessions", { ...request(filters), page, pageSize }, sessionPageSchema),
@@ -102,6 +112,10 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
       read("session_detail", { agent, session, currency }, sessionDetailSchema),
     sessionOrigin: (agent, session) =>
       read("session_origin", { agent, session }, sessionOriginSchema),
+    sessionAnalytics: (filters) =>
+      read("session_analytics", request(filters), sessionAnalyticsSchema),
+    sessionTimeline: (agent, session, currency) =>
+      read("session_timeline", { agent, session, currency }, sessionTimelineSchema),
 
     quotaLatest: (filters) => read("quota_latest", request(filters), z.array(quotaMeterSchema)),
     quotaHistory: (filters, agent) =>
@@ -125,7 +139,10 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     installDaemon: () => act("install_daemon"),
     restartDaemon: () => act("restart_daemon"),
     revealPath: (target) => act("reveal_path", { target }),
-    addProjectRule: (cwd) => act("add_project_rule", { cwd }),
+    projectRuleFor: (cwd) => read("project_rule_for", { cwd }, projectRuleSchema),
+    addProjectRule: (cwd, name) => act("add_project_rule", { cwd, name }),
+    addSubscription: (spec) => act("add_subscription", { spec }),
+    connectKeychain: () => act("connect_keychain"),
     keepTenYears: (agent, profile) => act("keep_ten_years", { agent, profile }),
     setLaunchAtLogin: (enabled) => act("set_launch_at_login", { enabled }),
     eraseAllData: () => act("erase_all_data"),

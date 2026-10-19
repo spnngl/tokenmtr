@@ -39,7 +39,7 @@ bindings:
 goldens:
     UPDATE_GOLDENS=1 cargo test -p tokenmtr-desktop --lib goldens
 
-# Signed .app and .dmg (docs/release.md): gates, then sidecar and `tauri build` with the local identity.
+# .app and .dmg (docs/release.md): gates, then sidecar and `tauri build`, signed with the local identity when it exists.
 # Extra flags pass through, e.g. `just release --target universal-apple-darwin` or `--unsigned`.
 release *FLAGS: check
     nu scripts/release.nu {{FLAGS}}

@@ -81,5 +81,14 @@
     "status": "failed",
     "account": null,
     "windows": []
+  },
+  {
+    "agent": "claude",
+    "profile": "locked",
+    "fetched_at": "2026-05-03T14:06:00Z",
+    "age_secs": 359,
+    "status": "keychain_denied",
+    "account": null,
+    "windows": []
   }
 ]

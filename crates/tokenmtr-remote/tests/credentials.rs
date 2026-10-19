@@ -286,3 +286,42 @@ fn a_corrupt_file_is_malformed() -> TestResult {
     assert!(matches!(result, Err(CredentialsError::Malformed)));
     Ok(())
 }
+
+/// A Keychain whose item is readable only through the consent prompt, which the user accepts.
+struct PromptStore;
+
+impl SecretStore for PromptStore {
+    fn get(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
+        Err(SecretError::Denied)
+    }
+
+    fn get_interactive(&self, _service: &str) -> Result<Option<SecretString>, SecretError> {
+        Ok(Some(SecretString::from(token_json("granted"))))
+    }
+}
+
+#[test]
+fn only_an_interactive_load_may_prompt() -> TestResult {
+    let (_dir, home) = temp_home()?;
+    let location = CredentialLocation::default_profile(&home);
+
+    let quiet = ClaudeCredentials::load(&location, &PromptStore);
+    assert!(quiet.err().ok_or("expected a denial")?.is_keychain_denied());
+    assert_eq!(
+        token_of(ClaudeCredentials::load_interactive(
+            &location,
+            &PromptStore
+        )?)?,
+        "granted"
+    );
+    // A store without a prompt answers an interactive load as a quiet one.
+    let denied = FakeStore::default().with(DEFAULT_KEYCHAIN_SERVICE, Err(()));
+    let result = ClaudeCredentials::load_interactive(&location, &denied);
+    assert!(
+        result
+            .err()
+            .ok_or("expected a denial")?
+            .is_keychain_denied()
+    );
+    Ok(())
+}

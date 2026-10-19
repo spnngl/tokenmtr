@@ -1,4 +1,4 @@
-//! The daemon's control channel: protocol v1 types, an async [`Client`] and a
+//! The daemon's control channel: protocol v2 types, an async [`Client`] and a
 //! [`Server`] building block.
 //!
 //! Messages are JSON objects, one per line, over the platform's control transport (a Unix domain

@@ -125,6 +125,17 @@ fn quota_shows_the_window_and_the_percent() -> TestResult {
 }
 
 #[test]
+fn quota_connect_needs_the_daemon() -> TestResult {
+    let home = seeded()?;
+    home.tokenmtr()
+        .args(["quota", "connect"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("the daemon is not running"));
+    Ok(())
+}
+
+#[test]
 fn fx_shows_the_latest_rate_and_its_date() -> TestResult {
     let home = seeded()?;
     home.tokenmtr()

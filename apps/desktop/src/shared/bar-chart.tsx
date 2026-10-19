@@ -20,6 +20,13 @@ interface HorizontalBarChartProps {
   readonly rows: readonly BarDatum[];
   readonly series: readonly BarSeries[];
   readonly formatValue: (value: number) => string;
+  /**
+   * Names the chart and turns on Recharts' accessibility layer (keyboard-browsable tooltip);
+   * pair it with `ChartFrame interactive`. Without it the chart is decoration only.
+   */
+  readonly title?: string;
+  /** Stacks the series in one bar per row. */
+  readonly stacked?: boolean;
 }
 
 const ROW_HEIGHT = 30;
@@ -40,17 +47,20 @@ function formatTooltip(formatValue: (value: number) => string) {
 }
 
 /**
- * Horizontal bars, one group per row. Decoration only: pair it with a `ChartFrame` whose table
- * carries the values.
+ * Horizontal bars, one group (or stack) per row. Pair it with a `ChartFrame` whose table carries
+ * the values.
  */
 export function HorizontalBarChart({
   rows,
   series,
   formatValue,
+  title,
+  stacked = false,
 }: HorizontalBarChartProps): ReactNode {
   const animate = useChartAnimation();
   const data = toRecords(rows);
-  const height = rows.length * ROW_HEIGHT * Math.max(1, series.length * 0.7) + 40;
+  const perRow = stacked ? 1 : Math.max(1, series.length * 0.7);
+  const height = rows.length * ROW_HEIGHT * perRow + 40;
   return (
     <ResponsiveChart height={Math.round(height)}>
       {(size) => (
@@ -59,12 +69,14 @@ export function HorizontalBarChart({
           height={size.height}
           data={data}
           layout="vertical"
-          accessibilityLayer={false}
+          accessibilityLayer={title !== undefined}
+          {...(title === undefined ? {} : { title })}
           margin={{ top: 4, right: 16, bottom: 4, left: 0 }}
         >
           <CartesianGrid horizontal={false} stroke="var(--border)" />
           <XAxis
             type="number"
+            allowDecimals={false}
             tick={AXIS_STYLE}
             tickFormatter={formatValue}
             stroke="var(--border)"
@@ -72,6 +84,7 @@ export function HorizontalBarChart({
           <YAxis
             type="category"
             dataKey="label"
+            interval={0}
             width={AXIS_WIDTH}
             tick={AXIS_STYLE}
             stroke="var(--border)"
@@ -84,6 +97,7 @@ export function HorizontalBarChart({
               name={entry.name}
               dataKey={`s${index}`}
               fill={entry.color ?? chartColor(index)}
+              {...(stacked ? { stackId: "row" } : {})}
               isAnimationActive={animate}
             />
           ))}

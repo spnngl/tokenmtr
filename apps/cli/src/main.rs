@@ -57,8 +57,8 @@ enum Command {
     /// Install, remove or inspect the background service.
     #[command(subcommand)]
     Service(service::ServiceAction),
-    /// Show the latest quota windows and the detected plans.
-    Quota(read::JsonArgs),
+    /// Show the latest quota windows and the detected plans, or connect the Keychain.
+    Quota(read::QuotaArgs),
     /// Show the latest FX rate.
     Fx(read::JsonArgs),
     /// Show the active pricing snapshot and the models it cannot price.

@@ -7,7 +7,13 @@ import { Button } from "../../shared/button";
 import { formatCount, formatDateTime, PLACEHOLDER } from "../../shared/format";
 import { useAlerts, useParseIssues } from "../../shared/queries";
 import { CardRemote } from "../../shared/remote-view";
-import type { Alert, Backup, ParseIssue, Settings } from "../../shared/schemas";
+import {
+  type Alert,
+  type Backup,
+  INFORMATIONAL_ISSUE_KINDS,
+  type ParseIssue,
+  type Settings,
+} from "../../shared/schemas";
 import { Card, type Column, DataTable } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
 
@@ -17,7 +23,16 @@ const ISSUE_LABELS: Record<ParseIssue["kind"], string> = {
   protected_folder: "Protected folder",
   missing_cwd: "Missing working directory",
   parse_error: "Parse error",
+  integration_drift: "Superset data unreadable",
 };
+
+/** "Open" for a failure; an informational issue leaves the totals complete. */
+function issueStatus(issue: ParseIssue): string {
+  if (issue.resolved_at !== null) {
+    return "Resolved";
+  }
+  return INFORMATIONAL_ISSUE_KINDS.has(issue.kind) ? "Info" : "Open";
+}
 
 const CONFIRMATION = "erase all data";
 
@@ -142,7 +157,7 @@ function ParseIssuesCard({ issues }: { readonly issues: readonly ParseIssue[] })
     },
     {
       header: "Status",
-      cell: (row) => (row.resolved_at === null ? "Open" : "Resolved"),
+      cell: issueStatus,
     },
   ];
   return (
@@ -156,6 +171,13 @@ function ParseIssuesCard({ issues }: { readonly issues: readonly ParseIssue[] })
           format may be missing until {APP_NAME} is updated.
         </p>
       )}
+      {open.some((issue) => INFORMATIONAL_ISSUE_KINDS.has(issue.kind)) ? (
+        <p className="text-sm text-fg-muted">
+          Info rows leave the totals complete. A missing working directory (a deleted worktree)
+          keeps its usage under the directory until a project rule names it or Superset still knows
+          the worktree.
+        </p>
+      ) : null}
       {issues.length === 0 ? (
         <p className="text-sm text-fg-muted">No parse issue. Every log line was understood.</p>
       ) : (

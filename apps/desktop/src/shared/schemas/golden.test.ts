@@ -109,6 +109,12 @@ describe("golden command responses", () => {
     expect(billing.subscriptions[0]?.usage.events).toBe(1618);
   });
 
+  it("billing_series", async () => {
+    const series = await serve("billing_series").billingSeries(FILTERS, "daily", true);
+    expect(series.points[1]?.savings_micros).toBe(-14570806);
+    expect(series.points[2]?.roi).toBeNull();
+  });
+
   it("sessions", async () => {
     const page = await serve("sessions").sessions(FILTERS, 0, 2);
     expect(page.total).toBe(63);
@@ -125,9 +131,21 @@ describe("golden command responses", () => {
     expect(origin.transcript_exists).toBe(true);
   });
 
+  it("session_analytics", async () => {
+    const analytics = await serve("session_analytics").sessionAnalytics(FILTERS);
+    expect(analytics.rows[0]?.cache_hit_percent).toBe(97.5);
+    expect(analytics.starts).toHaveLength(168);
+  });
+
+  it("session_timeline", async () => {
+    const timeline = await serve("session_timeline").sessionTimeline("claude", "0b7c1d2e", "USD");
+    expect(timeline.signals[1]).toEqual({ at: "2026-05-03T13:30:02Z", kind: "compaction" });
+  });
+
   it("quota_latest", async () => {
     const meters = await serve("quota_latest").quotaLatest(FILTERS);
     expect(meters[0]?.windows[0]?.eta).toEqual({ kind: "will_hit", at: "2026-05-03T15:31:00Z" });
+    expect(meters.map((meter) => meter.status)).toContain("keychain_denied");
   });
 
   it("quota_history", async () => {
@@ -177,6 +195,7 @@ describe("golden command responses", () => {
       "protected_folder",
       "missing_cwd",
       "parse_error",
+      "integration_drift",
     ]);
   });
 
@@ -205,5 +224,10 @@ describe("golden command responses", () => {
 
   it("save_report", async () => {
     expect(await serve("save_report").saveReport(SPEC)).toMatch(/\.csv$/);
+  });
+
+  it("project_rule_for", async () => {
+    const rule = await serve("project_rule_for").projectRuleFor("/Users/ada/x");
+    expect(rule.name).toBe("tokenmtr");
   });
 });

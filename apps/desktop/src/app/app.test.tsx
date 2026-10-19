@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../shared/axe";
 import { DataSourceError } from "../shared/errors";
 import type { MockScenario } from "../shared/mock";
+import type { AdvisorReport, QuotaMeter } from "../shared/schemas";
 import { renderApp } from "./app-harness";
 
 afterEach(cleanup);
@@ -177,6 +178,63 @@ describe("Quota", () => {
     await renderApp("/quota?agent=pi");
     expect(await screen.findByText("No quota data")).toBeTruthy();
   });
+
+  it("offers to connect the Claude account when the Keychain refused", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    await renderApp("/quota", {
+      onAction,
+      wrap: (ds) => ({
+        ...ds,
+        quotaLatest: async (filters) =>
+          (await ds.quotaLatest(filters)).map(
+            (meter): QuotaMeter => ({ ...meter, status: "keychain_denied", windows: [] }),
+          ),
+      }),
+    });
+    expect((await screen.findAllByText(/did not let the daemon read/)).length).toBeGreaterThan(0);
+    await user.click(first(screen.getAllByRole("button", { name: "Connect Claude account" })));
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith("connectKeychain", []));
+  });
+});
+
+describe("Billing", () => {
+  it("tracks a detected plan through the subscription form", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    await renderApp("/billing", {
+      onAction,
+      wrap: (ds) => ({
+        ...ds,
+        advisor: async (filters) =>
+          (await ds.advisor(filters)).map(
+            (report): AdvisorReport => ({ ...report, current_plan: "team" }),
+          ),
+      }),
+    });
+    await user.click(await screen.findByRole("button", { name: /^Track it: claude/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Track subscription" });
+    // The fee is required: an empty form adds nothing.
+    await user.click(within(dialog).getByRole("button", { name: "Add subscription" }));
+    expect(onAction).not.toHaveBeenCalledWith("addSubscription", expect.anything());
+    await user.type(within(dialog).getByRole("textbox", { name: /Fee per month/ }), "30");
+    await user.click(within(dialog).getByRole("button", { name: "Add subscription" }));
+    await waitFor(() =>
+      expect(onAction).toHaveBeenCalledWith("addSubscription", [
+        expect.objectContaining({
+          id: "claude-default-team",
+          provider: "anthropic",
+          plan: "team",
+          agents: ["claude"],
+          profiles: ["default"],
+          fee: { usd: 30_000_000 },
+          period: "monthly",
+          start: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          end: null,
+        }),
+      ]),
+    );
+  });
 });
 
 describe("Sessions", () => {
@@ -256,9 +314,30 @@ describe("Projects", () => {
     await user.click(
       await screen.findByRole("button", { name: "Add rule for /Users/dev/scratch/experiments" }),
     );
+    // Prefilled with the suggested name, which the user may change.
+    const name = await screen.findByRole("textbox", { name: "Project name" });
+    expect(name).toHaveProperty("value", "experiments");
+    await user.clear(name);
+    await user.type(name, "Lab");
+    await user.click(screen.getByRole("button", { name: "Add rule" }));
     await waitFor(() =>
-      expect(onAction).toHaveBeenCalledWith("addProjectRule", ["/Users/dev/scratch/experiments"]),
+      expect(onAction).toHaveBeenCalledWith("addProjectRule", [
+        "/Users/dev/scratch/experiments",
+        "Lab",
+      ]),
     );
+  });
+
+  it("does not add a rule without a name", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    await renderApp("/projects", { onAction });
+    await user.click(
+      await screen.findByRole("button", { name: "Add rule for /Users/dev/scratch/experiments" }),
+    );
+    await user.clear(await screen.findByRole("textbox", { name: "Project name" }));
+    await user.click(screen.getByRole("button", { name: "Add rule" }));
+    expect(onAction).not.toHaveBeenCalledWith("addProjectRule", expect.anything());
   });
 });
 

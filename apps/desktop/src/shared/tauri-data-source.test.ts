@@ -34,6 +34,7 @@ function mockInvoke(mock: DataSource): Invoke {
     tools: () => mock.tools(FILTERS),
     signals: () => mock.signals(FILTERS),
     billing: () => mock.billing(FILTERS),
+    billing_series: () => mock.billingSeries(FILTERS, "hourly", true),
     sessions: () => mock.sessions(FILTERS, 0, 25),
     session_detail: async () => {
       const page = await mock.sessions(FILTERS, 0, 1);
@@ -44,6 +45,13 @@ function mockInvoke(mock: DataSource): Invoke {
       return mock.sessionDetail(row.agent, row.session, "USD");
     },
     session_origin: () => mock.sessionOrigin("pi", "any"),
+    session_analytics: () => mock.sessionAnalytics(FILTERS),
+    session_timeline: async () => {
+      const row = (await mock.sessionAnalytics(FILTERS)).rows[0];
+      return row === undefined
+        ? mock.sessionTimeline("pi", "any", "USD")
+        : mock.sessionTimeline(row.agent, row.session, "USD");
+    },
     quota_latest: () => mock.quotaLatest(FILTERS),
     quota_history: () => mock.quotaHistory(FILTERS, "claude"),
     advisor: () => mock.advisor(FILTERS),
@@ -91,6 +99,9 @@ describe("Tauri data source over the mock fixtures", () => {
       tauri.tools(FILTERS),
       tauri.signals(FILTERS),
       tauri.billing(FILTERS),
+      tauri.billingSeries(FILTERS, "hourly", true),
+      tauri.sessionAnalytics(FILTERS),
+      tauri.sessionTimeline("pi", "any", "USD"),
       tauri.sessionOrigin("pi", "any"),
       tauri.quotaLatest(FILTERS),
       tauri.quotaHistory(FILTERS, "claude"),

@@ -3,16 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
 import type { Remote } from "../../shared/remote-view";
+import { heatIntensity } from "../../shared/week-hour-table";
 import { INSIGHTS_DATA, signalDays } from "./fixtures";
 import { InsightsScreen } from "./insights-screen";
-import {
-  heatGrid,
-  heatIntensity,
-  type InsightsData,
-  type SignalDay,
-  signalPoints,
-  toolLabel,
-} from "./model";
+import { heatGrid, type InsightsData, type SignalDay, signalPoints, toolLabel } from "./model";
 
 afterEach(cleanup);
 

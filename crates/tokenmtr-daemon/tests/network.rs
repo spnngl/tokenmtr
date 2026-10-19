@@ -284,3 +284,64 @@ async fn with_every_networked_task_off_nothing_is_sent() -> TestResult {
     server.verify().await;
     Ok(())
 }
+
+/// A Keychain that refuses quiet lookups and grants the one the user answers.
+struct PromptingKeychain(String);
+
+impl tokenmtr_platform::SecretStore for PromptingKeychain {
+    fn get(
+        &self,
+        _service: &str,
+    ) -> Result<Option<secrecy::SecretString>, tokenmtr_platform::SecretError> {
+        Err(tokenmtr_platform::SecretError::Denied)
+    }
+
+    fn get_interactive(
+        &self,
+        _service: &str,
+    ) -> Result<Option<secrecy::SecretString>, tokenmtr_platform::SecretError> {
+        Ok(Some(secrecy::SecretString::from(self.0.clone())))
+    }
+}
+
+#[tokio::test]
+async fn a_denied_keychain_stays_denied_until_connected() -> TestResult {
+    let env = Env::new()?;
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        USAGE,
+        ResponseTemplate::new(200).set_body_bytes(fixture("claude_usage.json")?),
+    )
+    .await;
+    serve(&server, PROFILE, ResponseTemplate::new(404)).await;
+    env.write_config_with(&["quota"], "")?;
+    let mut settings = settings_for(&env, &server.uri())?;
+    let credentials = String::from_utf8(fixture("claude_credentials.json")?)?;
+    settings.secrets = std::sync::Arc::new(PromptingKeychain(credentials));
+    let daemon = tokenmtr_daemon::Daemon::start(settings).await?;
+    let mut client = env.client().await?;
+    let status = |summary: &tokenmtr_control::QuotaSummary| {
+        summary
+            .profiles
+            .first()
+            .map(|p| serde_json::to_value(p.status).unwrap_or_default())
+    };
+
+    // Denied, then files only: still denied, never "signed out".
+    for _ in 0..2 {
+        let summary = client.refresh_quota().await?;
+        assert_eq!(status(&summary), Some("keychain_denied".into()));
+    }
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
+    let summary = client.connect_keychain().await?;
+    assert_eq!(status(&summary), Some("ok".into()));
+    daemon.shutdown().await?;
+    Ok(())
+}

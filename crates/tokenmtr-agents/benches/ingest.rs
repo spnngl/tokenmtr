@@ -153,6 +153,8 @@ fn ingestor(config_dir: &Utf8Path, store_path: &Utf8Path) -> Ingestor {
         import_claude_stats_cache: false,
         protected: Vec::new(),
         redact_paths: false,
+        superset_dir: None,
+        live_branch_within: jiff::SignedDuration::from_mins(10),
     };
     Ingestor::open(settings, store_path).expect("open ingestor")
 }

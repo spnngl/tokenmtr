@@ -2,7 +2,7 @@
 //! directly and work with the daemon down.
 
 use anyhow::Context;
-use clap::{Args, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 use jiff::SignedDuration;
 use tokenmtr_app::{AppContext, FxSummary, PricingSummary, QuotaReport};
 use tokenmtr_core::{AgentId, QuotaEta};
@@ -127,8 +127,33 @@ pub fn alerts(setup: &Setup, args: &AlertsArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `tokenmtr quota`: the latest quota windows and the detected plans.
-pub fn quota(setup: &Setup, args: &JsonArgs) -> anyhow::Result<()> {
+/// Arguments of `tokenmtr quota`.
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct QuotaArgs {
+    #[command(subcommand)]
+    action: Option<QuotaAction>,
+    #[command(flatten)]
+    show: JsonArgs,
+}
+
+/// What `tokenmtr quota` does besides showing the windows.
+#[derive(Debug, Subcommand)]
+enum QuotaAction {
+    /// Let the daemon read the Claude credentials in the Keychain: macOS asks once, choose
+    /// "Always Allow".
+    Connect(JsonArgs),
+}
+
+/// `tokenmtr quota`: the latest quota windows and the detected plans, or `connect`.
+pub fn quota(setup: &Setup, args: &QuotaArgs) -> anyhow::Result<()> {
+    match &args.action {
+        None => show_quota(setup, &args.show),
+        Some(QuotaAction::Connect(json)) => crate::data::quota_connect(setup, json.json),
+    }
+}
+
+fn show_quota(setup: &Setup, args: &JsonArgs) -> anyhow::Result<()> {
     let report = setup.context()?.quota(now())?;
     if args.json {
         return print_json(&report);

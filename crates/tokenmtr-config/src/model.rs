@@ -325,6 +325,23 @@ pub struct ImportConfig {
     pub claude_stats_cache: bool,
 }
 
+/// `[integrations]`: other apps' data, read-only, for hints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntegrationsConfig {
+    /// `[integrations.superset]`.
+    pub superset: SupersetConfig,
+}
+
+/// `[integrations.superset]`: Superset's database names the repository and branch of a
+/// worktree that no longer exists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupersetConfig {
+    /// Whether Superset's database is read.
+    pub enabled: bool,
+    /// Superset's data directory; `None` is `~/.superset`.
+    pub dir: Option<Utf8PathBuf>,
+}
+
 /// One `[[projects]]` rule: the first rule whose glob matches a cwd names its project.
 #[derive(Debug, Clone)]
 pub struct ProjectRule {
@@ -461,6 +478,8 @@ pub struct Config {
     pub backup: BackupConfig,
     /// `[import]`.
     pub import: ImportConfig,
+    /// `[integrations]`.
+    pub integrations: IntegrationsConfig,
     /// `[[projects]]`, in match order.
     pub projects: Vec<ProjectRule>,
     /// `[[budgets]]`.

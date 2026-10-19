@@ -3,6 +3,7 @@
  * types of `crates/tokenmtr-query` (snake_case, `*_micros` money in the result's `currency`).
  * Types are always `z.infer`red from them, never written twice.
  */
+export * from "./analytics";
 export * from "./app";
 export * from "./filter-spec";
 export * from "./health";

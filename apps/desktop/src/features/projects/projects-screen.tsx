@@ -1,10 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useFilters } from "../../app/use-filters";
 import { useDataAction } from "../../shared/actions";
 import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
+import { FormDialog, FormTextField } from "../../shared/form-dialog";
 import {
   type Currency,
   formatCount,
@@ -12,7 +13,12 @@ import {
   formatPercent,
   formatTokens,
 } from "../../shared/format";
-import { useBranches, useProjects, useUnresolvedCwds } from "../../shared/queries";
+import {
+  useBranches,
+  useProjectRuleFor,
+  useProjects,
+  useUnresolvedCwds,
+} from "../../shared/queries";
 import { RankedBars } from "../../shared/ranked-bars";
 import { CardRemote, NO_USAGE_COPY, RemoteView } from "../../shared/remote-view";
 import type { ProjectRow, UnresolvedCwd } from "../../shared/schemas";
@@ -115,11 +121,57 @@ export function ProjectDetailScreen({ project }: { readonly project: string }): 
   );
 }
 
+/**
+ * Names the project of one directory. The name is prefilled with the app's guess: the repository
+ * name from git, or from Superset for a deleted worktree, else the folder name.
+ */
+function AddRuleDialog(props: { readonly cwd: string; readonly onClose: () => void }): ReactNode {
+  const suggestion = useProjectRuleFor(props.cwd);
+  const [typed, setTyped] = useState<string | null>(null);
+  const addRule = useDataAction((ds, name: string) => ds.addProjectRule(props.cwd, name), {
+    failure: "Could not add the project rule",
+    success: (_, name) => `Sessions in this directory now belong to ${name}`,
+  });
+  const name = typed ?? suggestion.data?.name ?? "";
+  return (
+    <FormDialog
+      title="Add project rule"
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) {
+          props.onClose();
+        }
+      }}
+      submitLabel="Add rule"
+      isPending={addRule.isPending}
+      onSubmit={() => addRule.mutate(name.trim(), { onSuccess: props.onClose })}
+    >
+      <p className="text-sm break-all text-fg-muted">
+        <code>{props.cwd}</code>
+      </p>
+      {suggestion.isPending ? (
+        <p role="status" className="text-sm text-fg-muted">
+          Looking up the repository name…
+        </p>
+      ) : (
+        <FormTextField
+          label="Project name"
+          name="name"
+          value={name}
+          onChange={setTyped}
+          isRequired
+          autoFocus
+          pattern=".*\S.*"
+          description="Usage from this directory is grouped under this name, saved as a rule in the config file."
+        />
+      )}
+    </FormDialog>
+  );
+}
+
 function UnresolvedTable({ rows }: { readonly rows: readonly UnresolvedCwd[] }): ReactNode {
   const { timeZone } = useAppConfig();
-  const addRule = useDataAction((ds, cwd: string) => ds.addProjectRule(cwd), {
-    failure: "Could not add the project rule",
-  });
+  const [editing, setEditing] = useState<string | null>(null);
   const columns: Column<UnresolvedCwd>[] = [
     { header: "Working directory", cell: (row) => <code>{row.cwd}</code> },
     { header: "Events", numeric: true, cell: (row) => formatCount(row.events) },
@@ -135,11 +187,7 @@ function UnresolvedTable({ rows }: { readonly rows: readonly UnresolvedCwd[] }):
     {
       header: "Rule",
       cell: (row) => (
-        <Button
-          onPress={() => addRule.mutate(row.cwd)}
-          isPending={addRule.isPending && addRule.variables === row.cwd}
-          aria-label={`Add rule for ${row.cwd}`}
-        >
+        <Button onPress={() => setEditing(row.cwd)} aria-label={`Add rule for ${row.cwd}`}>
           Add rule
         </Button>
       ),
@@ -157,6 +205,7 @@ function UnresolvedTable({ rows }: { readonly rows: readonly UnresolvedCwd[] }):
         rowKey={(row) => row.cwd}
         columns={columns}
       />
+      {editing === null ? null : <AddRuleDialog cwd={editing} onClose={() => setEditing(null)} />}
     </Card>
   );
 }

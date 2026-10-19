@@ -27,6 +27,17 @@ pub trait SecretStore {
     /// # Errors
     /// [`SecretError`] if the store cannot be read or the secret is not text.
     fn get(&self, service: &str) -> Result<Option<SecretString>, SecretError>;
+
+    /// As [`get`](Self::get), but lets the OS show its consent prompt and waits for the user's
+    /// answer, so the user can grant this program access for good ("Always Allow"). Only for
+    /// an explicit user request: a background caller must never block on a prompt. A refused
+    /// prompt is [`SecretError::Denied`]. The default never prompts.
+    ///
+    /// # Errors
+    /// As [`get`](Self::get).
+    fn get_interactive(&self, service: &str) -> Result<Option<SecretString>, SecretError> {
+        self.get(service)
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -52,60 +63,78 @@ mod keychain {
     const ERR_SEC_USER_CANCELED: i32 = -128;
 
     /// Serializes lookups: disabling Keychain UI is process-wide, so two overlapping lookups
-    /// would re-enable it under each other.
+    /// would re-enable it under each other, or disable it under an interactive one.
     static NO_UI: Mutex<()> = Mutex::new(());
 
-    /// Reads generic-password items from the login keychain. Never writes, never prompts.
+    /// Reads generic-password items from the login keychain. Never writes; prompts only through
+    /// [`SecretStore::get_interactive`].
     ///
-    /// Access is granted per code signature. Lookups are non-interactive, so an item another app
-    /// created is readable only once the user adds `TokenMtr` to the item's access list (Keychain
-    /// Access → the item → Access Control); until then it is [`SecretError::Denied`].
+    /// Access is granted per code signature. [`SecretStore::get`] is non-interactive, so an item
+    /// another app created is readable only once the user granted this program access: "Always
+    /// Allow" at an interactive lookup's prompt, or Keychain Access → the item → Access Control.
+    /// Until then it is [`SecretError::Denied`]. The grant names the signature, so it survives a
+    /// rebuild only when the build is signed with the same identity.
     #[derive(Debug, Default, Clone, Copy)]
     pub struct KeychainSecrets;
 
     impl SecretStore for KeychainSecrets {
         fn get(&self, service: &str) -> Result<Option<SecretString>, SecretError> {
-            let found = {
-                let _serial = NO_UI
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let _no_ui = SecKeychain::disable_user_interaction()
-                    .map_err(|e| SecretError::Store(e.to_string()))?;
-                ItemSearchOptions::new()
-                    .class(ItemClass::generic_password())
-                    .service(service)
-                    .load_data(true)
-                    .limit(Limit::Max(1))
-                    .search()
-            };
-            let results = match found {
-                Ok(results) => results,
-                Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(None),
-                Err(e)
-                    if [
-                        ERR_SEC_INTERACTION_NOT_ALLOWED,
-                        ERR_SEC_AUTH_FAILED,
-                        ERR_SEC_USER_CANCELED,
-                    ]
-                    .contains(&e.code()) =>
-                {
-                    return Err(SecretError::Denied);
-                }
-                Err(e) => return Err(SecretError::Store(e.to_string())),
-            };
-            results
-                .into_iter()
-                .find_map(|result| match result {
-                    SearchResult::Data(bytes) => Some(Zeroizing::new(bytes)),
-                    _ => None,
-                })
-                .map(|bytes| {
-                    std::str::from_utf8(&bytes)
-                        .map(SecretString::from)
-                        .map_err(|_| SecretError::NotUtf8)
-                })
-                .transpose()
+            lookup(service, false)
         }
+
+        fn get_interactive(&self, service: &str) -> Result<Option<SecretString>, SecretError> {
+            lookup(service, true)
+        }
+    }
+
+    /// Reads `service`'s item; `interactive` lets macOS show its consent prompt.
+    fn lookup(service: &str, interactive: bool) -> Result<Option<SecretString>, SecretError> {
+        let found = {
+            let _serial = NO_UI
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _no_ui = if interactive {
+                None
+            } else {
+                Some(
+                    SecKeychain::disable_user_interaction()
+                        .map_err(|e| SecretError::Store(e.to_string()))?,
+                )
+            };
+            ItemSearchOptions::new()
+                .class(ItemClass::generic_password())
+                .service(service)
+                .load_data(true)
+                .limit(Limit::Max(1))
+                .search()
+        };
+        let results = match found {
+            Ok(results) => results,
+            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(None),
+            Err(e)
+                if [
+                    ERR_SEC_INTERACTION_NOT_ALLOWED,
+                    ERR_SEC_AUTH_FAILED,
+                    ERR_SEC_USER_CANCELED,
+                ]
+                .contains(&e.code()) =>
+            {
+                return Err(SecretError::Denied);
+            }
+            Err(e) => return Err(SecretError::Store(e.to_string())),
+        };
+        results
+            .into_iter()
+            .find_map(|result| match result {
+                SearchResult::Data(bytes) => Some(Zeroizing::new(bytes)),
+                _ => None,
+            })
+            .map(|bytes| {
+                std::str::from_utf8(&bytes)
+                    .map(SecretString::from)
+                    .map_err(|_| SecretError::NotUtf8)
+            })
+            .transpose()
     }
 
     #[cfg(test)]

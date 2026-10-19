@@ -19,6 +19,12 @@ First release candidate: macOS app (universal, Apple Silicon and Intel) plus the
 - Background daemon (`tokenmtr run`, `tokenmtr service install`) with a versioned control protocol, config hot reload and a single-instance lock.
 - Desktop app: menu-bar recap, full dashboard (overview, quota, billing, sessions, insights, models, projects, reports, export, settings), Cmd-K palette, onboarding and notifications.
 - `--json` output for scripts; `status --json` and `recap --json` are a stable contract checked against `docs/status.schema.json`.
+- Deleted Superset worktrees: a session whose working directory is gone (or is not a git repository) takes its project from Superset's database, read-only (`[integrations.superset]`), and keeps it after the worktree is deleted. pi events get a git branch: the directory's current branch for recent events, else the last branch Superset recorded, so Cost per branch covers pi.
+- `tokenmtr quota connect` and a **Connect Claude account** button (Quota screen, menu-bar recap): the daemon asks the Keychain once, the user chooses "Always Allow". A refused Keychain shows as quota status `keychain_denied` instead of `signed_out` or `failed`.
+- Billing: **Track it** opens a form (plan, fee, currency, period, start) that adds the subscription to the config file. Projects: **Add rule** asks for the project name, prefilled with the repository name.
+- pi's `settings.json` `sessionDir` is a default session root.
+- Analytics charts, each with a table view: a Sessions **Analysis** tab (cost histogram, cost against duration, cache-hit ratio, tool error rate, token mix, sessions per day, start heatmap, costliest sessions), per-session cost over time with error and compaction markers, token mix and tool calls, and a billing **Paid against API value** panel with its own range (today, 30 days, 90 days, 1 year, filter range), hourly, daily or monthly buckets, paid split, savings, ROI and a per-agent split.
+- The stale-data banner counts every finished scan, also one that found nothing new. Missing working directories and protected folders show as Info in Settings and no longer mark the totals incomplete. **Open config** creates a commented starter file when none exists.
 
 ### Breaking (for stores and exports built from pre-release commits)
 
@@ -27,4 +33,5 @@ First release candidate: macOS app (universal, Apple Silicon and Intel) plus the
 - Export schema 2: SQLite money columns are INTEGER micros (`cost_reported_usd_micros`, `cost_estimated_usd_micros`, `fee_micros`, `eur_per_usd_nanos`), redactable columns are nullable, `usage_events` gains `superseded` and `subscriptions` gains `removed_at_utc`. A SQLite sink refuses a file of schema 1. Delete the old sink outputs together with the store erase above: the erased store has empty sink cursors, so every sink re-exports from the start.
 - Store schema 5: `quota_snapshot` gains `spent_usd_micros` and `limit_usd_micros`; the migration runs on open.
 - Export schema 3: `quota_snapshots` gains `spent_usd` and `limit_usd` (SQLite: `spent_usd_micros`, `limit_usd_micros`) and `usage_events.kind` gains `extra_usage`. A SQLite sink refuses a file of schema 2: point it at a new `path` under a new `id` (cursors are kept per sink `id`), so it re-exports from the start. A CSV sink appending to an existing `quota_snapshots` file refuses its old header: move that file away. JSONL lines simply gain the two keys.
+- Store schema 6: `project_map.source` gains `inferred` and `quota_snapshot.status` gains `keychain_denied`; the migration runs on open. Control protocol 2: an app and a daemon of different versions ask for a restart.
 - `tokenmtr erase` deletes the config with `--delete-config` (`--config <path>` is the global flag that picks the file).

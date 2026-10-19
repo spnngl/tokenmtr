@@ -22,7 +22,7 @@ use tokenmtr_store::{
 use super::error::IngestError;
 use super::fingerprint::{FileStat, ParseReason, Plan, decide, last_line_hash};
 use super::pricing::Pricer;
-use super::projects::{ProjectCache, Reresolve};
+use super::projects::{BranchStamp, ProjectCache, Reresolve};
 use super::report::{AgentScan, AggregateScan, FileScan, ScanReport};
 use super::settings::IngestSettings;
 use crate::batch::{BatchParts, ParseBatch};
@@ -224,11 +224,7 @@ impl Ingestor {
         let now = (self.clock)();
         apply_priority(request.priority);
         self.pricer.refresh(store, now)?;
-        let redaction = self
-            .settings
-            .redact_paths
-            .then(|| store.redaction_key().clone());
-        let mut cache = ProjectCache::load(store, redaction)?;
+        let mut cache = self.project_cache(store)?;
         let scope = match request.mode {
             ScanMode::Full => Reresolve::All,
             ScanMode::Incremental if !self.fallbacks_retried => Reresolve::StaleAndFallbacks,
@@ -273,8 +269,12 @@ impl Ingestor {
         }
 
         let Run {
-            store, mut states, ..
+            store,
+            mut states,
+            cache,
+            ..
         } = run;
+        cache.close_drift(store, &agents, now)?;
         for (slot, source) in self.settings.sources.iter().enumerate() {
             let state = &mut states[slot];
             if !state.selected {
@@ -303,9 +303,12 @@ impl Ingestor {
                 let scan = self.import_aggregates(store, source, now)?;
                 state.scan.aggregates = Some(scan);
             }
+            let finished = (self.clock)();
             if state.scan.files_parsed > 0 {
-                store.record_ingest_run(&state.ingest_run((self.clock)()))?;
+                store.record_ingest_run(&state.ingest_run(finished))?;
             }
+            // Even a scan that found nothing new proves the data is current.
+            store.record_scan_finished(agent, finished)?;
         }
         Ok(ScanReport {
             agents: states
@@ -317,6 +320,17 @@ impl Ingestor {
             events_reassigned,
             elapsed: wall.elapsed(),
         })
+    }
+
+    /// This scan's project cache: the stored resolutions, Superset's hints when enabled, and the
+    /// branch stamping rule.
+    fn project_cache(&self, store: &Store) -> Result<ProjectCache, IngestError> {
+        let redaction = self
+            .settings
+            .redact_paths
+            .then(|| store.redaction_key().clone());
+        let branches = BranchStamp::new(self.settings.live_branch_within);
+        ProjectCache::load(store, redaction, self.settings.hints(), branches)
     }
 
     /// Re-estimates the stored events of `scope` with the active pricing snapshot and the
@@ -937,6 +951,11 @@ impl Run<'_> {
                 )?,
                 None => None,
             };
+            if parsed.git_branch.is_none()
+                && let Some(cwd) = &parsed.cwd
+            {
+                parsed.git_branch = self.cache.branch(self.resolver, cwd, parsed.at, self.now);
+            }
             let estimate = self.pricer.price(self.reader, &mut parsed)?;
             let mut event = parsed.into_usage_event(&self.machine, estimate);
             self.cache.label(&mut event, assignment);

@@ -175,6 +175,30 @@ pub fn add_project_rule(
     edit_config(path, |document| document.add_project_rule(rule, env))
 }
 
+/// Creates the config file at `path` holding only comments (so the defaults) when it does
+/// not exist, so there is always a file to open and edit. Returns whether it created one.
+///
+/// # Errors
+///
+/// [`AppError::Io`] when the file or its folder cannot be written.
+pub fn ensure_config_file(path: &Utf8Path) -> Result<bool, AppError> {
+    if path.exists() {
+        return Ok(false);
+    }
+    let starter = format!(
+        "# {name} configuration. Every key is optional: this file holds only what differs from\n\
+         # the defaults, and an empty file means the defaults. Check it with `{cli} config check`.\n\
+         # docs/config.md in the {name} repository lists every key with an example.\n",
+        name = tokenmtr_core::brand::DISPLAY_NAME,
+        cli = tokenmtr_core::brand::CLI_NAME,
+    );
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| AppError::io(parent, error))?;
+    }
+    replace_atomically(path, starter.as_bytes()).map_err(|error| AppError::io(path, error))?;
+    Ok(true)
+}
+
 fn edit_config(
     path: &Utf8Path,
     edit: impl FnOnce(&mut ConfigDocument) -> Result<Config, ConfigError>,
@@ -216,6 +240,22 @@ mod tests {
             .join("absent.toml");
         let loaded = load_config(&path, &|_: &str| None::<String>)?;
         assert_eq!(loaded.menubar.agents, config("")?.menubar.agents);
+        Ok(())
+    }
+
+    #[test]
+    fn a_starter_config_is_comments_only_and_never_overwrites() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let path = Utf8Path::from_path(dir.path())
+            .ok_or("temp dir is not UTF-8")?
+            .join("nested/config.toml");
+        assert!(ensure_config_file(&path)?);
+        let text = std::fs::read_to_string(&path)?;
+        assert!(text.lines().all(|line| line.starts_with('#')), "{text}");
+        load_config(&path, &|_: &str| None::<String>)?;
+        std::fs::write(&path, "[quota]\nenabled = false\n")?;
+        assert!(!ensure_config_file(&path)?);
+        assert!(std::fs::read_to_string(&path)?.contains("[quota]"));
         Ok(())
     }
 

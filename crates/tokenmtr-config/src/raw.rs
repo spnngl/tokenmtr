@@ -158,6 +158,7 @@ pub struct RawConfig {
     pub advisor: RawAdvisor,
     pub backup: RawBackup,
     pub import: RawImport,
+    pub integrations: RawIntegrations,
     pub projects: Vec<RawProject>,
     pub budgets: Vec<RawBudget>,
     pub pricing: RawPricing,
@@ -235,6 +236,19 @@ pub struct RawBackup {
 #[serde(deny_unknown_fields, default)]
 pub struct RawImport {
     pub claude_stats_cache: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RawIntegrations {
+    pub superset: RawSuperset,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RawSuperset {
+    pub enabled: Option<bool>,
+    pub dir: Option<String>,
 }
 
 /// One `[[projects]]` rule; also the argument of

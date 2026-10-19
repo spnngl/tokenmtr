@@ -184,6 +184,13 @@ struct RawOauth {
     rate_limit_tier: Option<String>,
 }
 
+/// Whether a Keychain lookup may show the OS consent prompt.
+#[derive(Debug, Clone, Copy)]
+enum Prompt {
+    Never,
+    Allowed,
+}
+
 /// A Claude OAuth access token plus the non-secret account fields stored beside it.
 ///
 /// `Debug` is safe to log: [`SecretString`] prints `[REDACTED]`.
@@ -248,9 +255,30 @@ impl ClaudeCredentials {
         location: &CredentialLocation,
         secrets: &dyn SecretStore,
     ) -> Result<Option<Self>, CredentialsError> {
+        Self::load_with(location, secrets, Prompt::Never)
+    }
+
+    /// As [`ClaudeCredentials::load`], but a Keychain source may show macOS's consent prompt
+    /// and waits for the user ([`SecretStore::get_interactive`]). Only for an explicit user
+    /// request.
+    ///
+    /// # Errors
+    /// As [`ClaudeCredentials::load`].
+    pub fn load_interactive(
+        location: &CredentialLocation,
+        secrets: &dyn SecretStore,
+    ) -> Result<Option<Self>, CredentialsError> {
+        Self::load_with(location, secrets, Prompt::Allowed)
+    }
+
+    fn load_with(
+        location: &CredentialLocation,
+        secrets: &dyn SecretStore,
+        prompt: Prompt,
+    ) -> Result<Option<Self>, CredentialsError> {
         let mut first_error = None;
         for source in location.sources() {
-            match Self::read_source(source, secrets) {
+            match Self::read_source(source, secrets, prompt) {
                 Ok(Some(credentials)) => return Ok(Some(credentials)),
                 Ok(None) => {}
                 Err(error) => {
@@ -265,11 +293,16 @@ impl ClaudeCredentials {
     fn read_source(
         source: &CredentialSource,
         secrets: &dyn SecretStore,
+        prompt: Prompt,
     ) -> Result<Option<Self>, CredentialsError> {
         match source {
-            CredentialSource::Keychain { service } => secrets
-                .get(service)?
-                .map_or(Ok(None), |text| Self::parse(text.expose_secret())),
+            CredentialSource::Keychain { service } => {
+                let secret = match prompt {
+                    Prompt::Never => secrets.get(service)?,
+                    Prompt::Allowed => secrets.get_interactive(service)?,
+                };
+                secret.map_or(Ok(None), |text| Self::parse(text.expose_secret()))
+            }
             CredentialSource::File { path } => match read_credentials_file(path)? {
                 Some(text) => Self::parse(text.expose_secret()),
                 None => Ok(None),

@@ -1473,3 +1473,341 @@ fn per_agent_lookups_seek_their_index_instead_of_scanning() {
         assert!(!plan.contains("SCAN ingest_run"), "{sql}\n{plan}");
     }
 }
+
+#[test]
+fn session_chart_lookups_seek_the_session_indexes() {
+    let seed = Seed::new();
+    seed.put(&[seed.ev("a", ts("2026-03-01T10:00:00Z"))]);
+    let reader = seed.reader();
+    for (sql, index) in [
+        (
+            session_analytics::TIMELINE_EVENTS.to_owned(),
+            "usage_event_session",
+        ),
+        (
+            session_analytics::TIMELINE_TOOLS.to_owned(),
+            "tool_call_session",
+        ),
+        (
+            session_analytics::TIMELINE_SIGNALS.to_owned(),
+            "sqlite_autoindex_session_signal",
+        ),
+        (session_analytics::tool_counts_sql(2), "tool_call_session"),
+    ] {
+        let plan = plan(&reader, &sql);
+        assert!(plan.contains(index), "{sql}\n{plan}");
+        assert!(!plan.contains("SCAN usage_event"), "{sql}\n{plan}");
+        assert!(!plan.contains("SCAN t"), "{sql}\n{plan}");
+        assert!(!plan.contains("SCAN tool_call"), "{sql}\n{plan}");
+    }
+}
+
+/// $31 a month from March 1, 2026: $1 per March day.
+fn march_subscription() -> Subscription {
+    Subscription::new(SubscriptionSpec {
+        id: SubscriptionId::try_from("claude-max".to_owned()).unwrap(),
+        provider: ProviderId::try_from("anthropic".to_owned()).unwrap(),
+        plan: Plan::Pro,
+        agents: vec![AgentId::CLAUDE],
+        profiles: None,
+        fee: Money::from_micros(Currency::Usd, 31_000_000),
+        period: BillingPeriod::Monthly,
+        start: date(2026, 3, 1),
+        end: None,
+    })
+    .unwrap()
+}
+
+#[test]
+fn billing_series_buckets_fees_and_extra_usage_across_the_paris_dst_day() {
+    let seed = Seed::new();
+    // March 29, 2026 is 23 hours long in Paris.
+    seed.put(&[
+        provider(
+            reported(
+                seed.ev("sub", local("Europe/Paris", "2026-03-29T10:00:00")),
+                2_000_000,
+            ),
+            "anthropic",
+        ),
+        provider(
+            reported(
+                seed.ev("api", local("Europe/Paris", "2026-03-29T15:00:00")),
+                500_000,
+            ),
+            "openai",
+        ),
+    ]);
+    poll(
+        &seed,
+        "default",
+        ts("2026-03-30T09:00:00Z"),
+        extra(5_000_000),
+    );
+    let reader = seed.reader();
+    let c = usd_ctx("Europe/Paris", "2026-04-02T12:00:00Z")
+        .with_subscriptions(vec![march_subscription()]);
+    let march = days(date(2026, 3, 1), date(2026, 4, 1));
+
+    let daily = billing_series(&reader, &c, &march, Granularity::Daily, true).unwrap();
+    assert_eq!(daily.points.len(), 31);
+    assert!(
+        daily
+            .points
+            .iter()
+            .all(|p| p.amounts.subscription_fee_micros == 1_000_000)
+    );
+    let fees: i64 = daily
+        .points
+        .iter()
+        .map(|p| p.amounts.subscription_fee_micros)
+        .sum();
+    assert_eq!(fees, 31_000_000, "the days sum to the monthly fee");
+    let dst = &daily.points[28];
+    assert_eq!(dst.local, date(2026, 3, 29).at(0, 0, 0, 0));
+    assert_eq!(dst.minutes, 23 * 60);
+    assert_eq!(
+        dst.amounts,
+        BillingAmounts {
+            api_value_micros: 2_500_000,
+            paid_micros: 1_500_000,
+            subscription_fee_micros: 1_000_000,
+            extra_usage_micros: 0,
+            pay_as_you_go_micros: 500_000,
+        }
+    );
+    assert_eq!(dst.savings_micros, 1_000_000);
+    assert!((dst.roi.unwrap() - 2.5 / 1.5).abs() < 1e-9);
+    assert_eq!(dst.agents["claude"], dst.amounts);
+    // Extra usage is paid, never API value.
+    let extra_day = &daily.points[29];
+    assert_eq!(extra_day.amounts.extra_usage_micros, 5_000_000);
+    assert_eq!(extra_day.amounts.api_value_micros, 0);
+    assert_eq!(extra_day.amounts.paid_micros, 6_000_000);
+    assert_eq!(extra_day.savings_micros, -6_000_000);
+    assert!((extra_day.roi.unwrap()).abs() < 1e-9);
+    // Cumulative sums never decrease and end at the totals.
+    assert!(daily.points.windows(2).all(|w| {
+        w[0].cumulative_paid_micros <= w[1].cumulative_paid_micros
+            && w[0].cumulative_api_value_micros <= w[1].cumulative_api_value_micros
+    }));
+    let last = daily.points.last().unwrap();
+    assert_eq!(
+        last.cumulative_paid_micros,
+        31_000_000 + 500_000 + 5_000_000
+    );
+    assert_eq!(last.cumulative_api_value_micros, 2_500_000);
+
+    let monthly = billing_series(&reader, &c, &march, Granularity::Monthly, false).unwrap();
+    assert_eq!(monthly.points.len(), 1);
+    assert_eq!(monthly.points[0].minutes, 31 * 24 * 60 - 60);
+    assert_eq!(monthly.points[0].amounts.paid_micros, 36_500_000);
+    assert!(monthly.points[0].agents.is_empty());
+
+    let day = days(date(2026, 3, 29), date(2026, 3, 30));
+    let hourly = billing_series(&reader, &c, &day, Granularity::Hourly, true).unwrap();
+    assert_eq!(hourly.points.len(), 23);
+    assert!(hourly.points.iter().all(|p| p.minutes == 60));
+    assert!(
+        hourly.points.iter().all(|p| p.local.hour() != 2),
+        "02:00 does not exist"
+    );
+    let fees: i64 = hourly
+        .points
+        .iter()
+        .map(|p| p.amounts.subscription_fee_micros)
+        .sum();
+    assert_eq!(fees, 1_000_000, "the hours sum to the daily fee");
+    assert!(
+        hourly
+            .points
+            .iter()
+            .all(|p| (43_478..=43_479).contains(&p.amounts.subscription_fee_micros))
+    );
+    let ten = hourly.points.iter().find(|p| p.local.hour() == 10).unwrap();
+    assert_eq!(ten.amounts.api_value_micros, 2_000_000);
+    assert_eq!(ten.amounts.pay_as_you_go_micros, 0);
+    let fifteen = hourly.points.iter().find(|p| p.local.hour() == 15).unwrap();
+    assert_eq!(fifteen.amounts.pay_as_you_go_micros, 500_000);
+    assert_eq!(
+        fifteen.agents["claude"].paid_micros,
+        fifteen.amounts.paid_micros
+    );
+    assert_eq!(
+        hourly.points.last().unwrap().cumulative_paid_micros,
+        1_500_000
+    );
+    assert_eq!(json(&hourly)["granularity"], "hourly");
+    assert_eq!(json(&hourly.points[0])["start"], "2026-03-28T23:00:00Z");
+    assert_eq!(json(&hourly.points[0])["local"], "2026-03-29T00:00:00");
+
+    // Nothing paid: no ROI.
+    let before = days(date(2026, 2, 1), date(2026, 2, 2));
+    let empty = billing_series(&reader, &c, &before, Granularity::Daily, false).unwrap();
+    assert_eq!(empty.points[0].roi, None);
+    assert_eq!(empty.points[0].savings_micros, 0);
+}
+
+#[test]
+fn session_analytics_rows_histogram_and_activity() {
+    let seed = Seed::new();
+    let session = |e: UsageEvent, id: &str| UsageEvent {
+        session: SessionId::try_from(id.to_owned()).unwrap(),
+        ..e
+    };
+    let mut cached = provider(
+        reported(
+            seed.ev("a1", local("Europe/Paris", "2026-03-02T09:15:00")),
+            5_000,
+        ),
+        "anthropic",
+    );
+    cached.tokens = TokenCounts {
+        input_uncached: 100,
+        cache_read: 600,
+        cache_write_5m: 200,
+        cache_write_1h: 100,
+        output: 50,
+        reasoning: 0,
+    };
+    let a2 = provider(
+        reported(
+            seed.ev("a2", local("Europe/Paris", "2026-03-02T09:45:00")),
+            5_000,
+        ),
+        "anthropic",
+    );
+    seed.put(&[
+        session(cached, "a"),
+        session(a2, "a"),
+        session(
+            reported(
+                seed.ev("b1", local("Europe/Paris", "2026-03-03T23:30:00")),
+                10_000,
+            ),
+            "b",
+        ),
+        session(
+            reported(
+                seed.ev("c1", local("Europe/Paris", "2026-03-03T08:00:00")),
+                150_000_000,
+            ),
+            "c",
+        ),
+    ]);
+    let call = |id: &str, name: &str, err: Option<bool>| ProfiledToolCall {
+        profile: ProfileId::default_profile(),
+        call: ToolCall {
+            agent: AgentId::CLAUDE,
+            tool_use_id: id.to_owned(),
+            event: None,
+            session: SessionId::try_from("a".to_owned()).unwrap(),
+            at: local("Europe/Paris", "2026-03-02T09:20:00"),
+            tool_name: name.to_owned(),
+            mcp_server: None,
+            is_error: err,
+        },
+    };
+    seed.store()
+        .upsert_tool_calls(&[
+            call("t1", "Read", Some(false)),
+            call("t2", "Read", Some(true)),
+            call("t3", "Bash", None),
+        ])
+        .unwrap();
+    seed.store()
+        .record_signals(&[SessionSignal {
+            agent: AgentId::CLAUDE,
+            session: SessionId::try_from("a".to_owned()).unwrap(),
+            kind: SignalKind::Compaction,
+            at: local("Europe/Paris", "2026-03-02T09:30:00"),
+        }])
+        .unwrap();
+    let reader = seed.reader();
+    let ctx = usd_ctx("Europe/Paris", "2026-03-10T12:00:00Z")
+        .with_subscriptions(vec![march_subscription()]);
+    let range = days(date(2026, 3, 1), date(2026, 3, 8));
+
+    let charts = session_analytics(&reader, &ctx, &range).unwrap();
+    assert_eq!(charts.total, 3);
+    let ids: Vec<&str> = charts.rows.iter().map(|r| r.session.as_str()).collect();
+    assert_eq!(ids, ["c", "a", "b"], "most expensive first, ties by id");
+    let row_a = &charts.rows[1];
+    assert_eq!(row_a.duration_secs, 30 * 60);
+    assert_eq!(row_a.api_value_micros, 10_000);
+    assert_eq!(
+        row_a.paid_micros, 0,
+        "covered by the subscription, no fee split"
+    );
+    assert!((row_a.cache_hit_percent.unwrap() - 60.0).abs() < 1e-9);
+    assert_eq!(row_a.tokens.cache_write_1h, 100);
+    assert_eq!((row_a.tool_calls, row_a.tool_errors), (3, 1));
+    let row_b = &charts.rows[2];
+    assert_eq!(row_b.cache_hit_percent, None, "no input at all");
+    assert_eq!(row_b.paid_micros, 10_000, "no provider: pay-as-you-go");
+    assert_eq!((row_b.tool_calls, row_b.tool_errors), (0, 0));
+
+    // Edges: [0, 0.01) holds nothing here, 0.01 exactly opens the next bucket, $150 the last.
+    assert_eq!(charts.histogram.len(), COST_EDGES_MICROS.len());
+    let count = |min: i64| {
+        charts
+            .histogram
+            .iter()
+            .find(|b| b.min_micros == min)
+            .unwrap()
+    };
+    assert_eq!(count(10_000).sessions, 2);
+    assert_eq!(count(10_000).max_micros, Some(20_000));
+    assert_eq!(count(100_000_000).sessions, 1);
+    assert_eq!(count(100_000_000).max_micros, None);
+    assert_eq!(charts.histogram.iter().map(|b| b.sessions).sum::<u64>(), 3);
+
+    assert_eq!(charts.days.len(), 7);
+    assert_eq!(
+        (charts.days[1].day, charts.days[1].sessions),
+        (date(2026, 3, 2), 1)
+    );
+    assert_eq!(charts.days[2].sessions, 2);
+    assert_eq!(charts.starts.len(), 168);
+    // Tuesday March 3: 08:00 and 23:30 local.
+    let at =
+        |weekday: u8, hour: u8| charts.starts[usize::from(weekday - 1) * 24 + usize::from(hour)];
+    assert_eq!(
+        (at(2, 8).sessions, at(2, 23).sessions, at(1, 9).sessions),
+        (1, 1, 1)
+    );
+
+    let timeline = session_timeline(
+        &reader,
+        &ctx,
+        AgentId::CLAUDE,
+        &SessionId::try_from("a".to_owned()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(timeline.events.len(), 2);
+    assert!(!timeline.events_truncated);
+    assert_eq!(timeline.events[0].tokens.cache_read, 600);
+    assert_eq!(timeline.events[1].cumulative_api_value_micros, 10_000);
+    assert_eq!(timeline.events[1].cumulative_paid_micros, 0);
+    assert_eq!(timeline.signals.len(), 1);
+    assert_eq!(timeline.signals[0].kind, SignalKind::Compaction);
+    assert_eq!(
+        (
+            timeline.tools[0].tool_name.as_str(),
+            timeline.tools[0].calls,
+            timeline.tools[0].failed
+        ),
+        ("Read", 2, 1)
+    );
+    assert_eq!((timeline.tools[1].calls, timeline.tools[1].failed), (1, 0));
+
+    let other = session_timeline(
+        &reader,
+        &ctx,
+        AgentId::CLAUDE,
+        &SessionId::try_from("b".to_owned()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(other.events[0].cumulative_paid_micros, 10_000);
+    assert!(other.tools.is_empty());
+}

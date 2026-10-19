@@ -96,7 +96,7 @@ async fn other_protocol_gets_incompatible_and_no_data() -> TestResult {
     let mut writer = LineWriter::new(write);
     // Unknown extra fields must not matter: the probe only reads `type` and `protocol`.
     writer
-        .write_line(r#"{"type":"hello","protocol":2,"client":{"anything":1},"future":true}"#)
+        .write_line(r#"{"type":"hello","protocol":99,"client":{"anything":1},"future":true}"#)
         .await?;
     let line = reader.read_line().await?.ok_or("no answer")?;
     let response: Response = serde_json::from_str(&line)?;
@@ -243,6 +243,7 @@ fn every_message_round_trips() -> TestResult {
         Request::BackupNow,
         Request::Reprice { all: true },
         Request::RefreshQuota,
+        Request::ConnectKeychain,
         Request::Reload,
         Request::Issues,
         Request::Subscribe,

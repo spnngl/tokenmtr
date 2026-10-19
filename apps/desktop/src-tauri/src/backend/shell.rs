@@ -176,12 +176,31 @@ pub fn app_state(
         Link::Offline => Ok(AppState::DaemonOffline {}),
         Link::Connected { .. } => {
             let app = app()?;
-            let runs = tokenmtr_query::ingest_status(app.reader())?;
+            let reader = app.reader();
+            // Informational issues (a deleted working directory, a protected folder) leave the
+            // totals complete, so they fail no collector.
+            let mut failed: Vec<AgentId> = reader
+                .open_parse_issues()?
+                .into_iter()
+                .filter(|issue| !issue.kind.is_informational())
+                .map(|issue| issue.agent)
+                .collect();
+            failed.sort_unstable();
+            failed.dedup();
+            // Every finished scan is recorded, even one that parsed nothing; ingest runs only
+            // cover stores that predate that record.
+            let last_scan_at = match reader.last_scan_finished_at()? {
+                Some(at) => Some(at),
+                None => tokenmtr_query::ingest_status(reader)?
+                    .iter()
+                    .map(|run| run.last_run_at)
+                    .max(),
+            };
             Ok(AppState::Ready {
-                last_scan_at: runs.iter().map(|run| run.last_run_at).max(),
+                last_scan_at,
                 scan_interval_secs: u64::try_from(app.config().daemon.scan_interval.as_secs())
                     .unwrap_or(0),
-                failed_collectors: runs.iter().filter(|run| run.open_issues > 0).count() as u64,
+                failed_collectors: u64::try_from(failed.len()).unwrap_or(u64::MAX),
             })
         }
     }
@@ -641,6 +660,63 @@ mod tests {
         );
         let state = app_state(load, inputs(true, connected))?;
         assert!(matches!(state, AppState::Ready { .. }), "{state:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn ready_state_counts_failures_only_and_the_latest_scan()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::num::NonZeroU64;
+        use tokenmtr_store::{IssueKind, ParseIssue, Store};
+
+        let fixture = seeded(CONFIG)?;
+        let backend = fixture.backend.clone();
+        let ready = || -> Result<AppState, CommandError> {
+            app_state(
+                || backend.context(),
+                inputs(
+                    true,
+                    Link::Connected {
+                        daemon_version: "1.0.0".to_owned(),
+                    },
+                ),
+            )
+        };
+        let mut store = Store::open(&fixture.backend.paths().data_dir().join("usage.db"))?;
+        let issue = |kind, subject: &str| ParseIssue {
+            agent: AgentId::PI,
+            kind,
+            subject: subject.to_owned(),
+            count: NonZeroU64::MIN,
+            sample: None,
+            at: fixture.now,
+        };
+        // A deleted working directory is information: the totals stay complete.
+        store.record_parse_issue(&issue(IssueKind::MissingCwd, "/gone"))?;
+        // A scan that parsed nothing still counts as a scan.
+        store.record_scan_finished(AgentId::PI, fixture.now)?;
+        let state = ready()?;
+        let AppState::Ready {
+            last_scan_at,
+            failed_collectors,
+            ..
+        } = state
+        else {
+            return Err(format!("{state:?}").into());
+        };
+        assert_eq!((last_scan_at, failed_collectors), (Some(fixture.now), 0));
+        store.record_parse_issue(&issue(IssueKind::FormatDrift, "usage"))?;
+        let state = ready()?;
+        assert!(
+            matches!(
+                state,
+                AppState::Ready {
+                    failed_collectors: 1,
+                    ..
+                }
+            ),
+            "{state:?}"
+        );
         Ok(())
     }
 

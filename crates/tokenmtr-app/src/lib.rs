@@ -29,6 +29,6 @@ pub use guard::{STOP_GRACE, daemon_running, lock_daemon, restore_backup, with_da
 pub use report::{RenderedReport, ReportFormat, ReportRange, ReportRequest, generate_report};
 pub use retention::{RETENTION_DAYS, set_claude_retention};
 pub use settings::{
-    add_project_rule, add_subscription, backup_dir, budget_specs, display_zone, load_config,
-    query_context, recap_config, sink_specs, store_path,
+    add_project_rule, add_subscription, backup_dir, budget_specs, display_zone, ensure_config_file,
+    load_config, query_context, recap_config, sink_specs, store_path,
 };

@@ -36,7 +36,7 @@ const quotaWindowSchema = z.object({
 });
 export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
 
-const QUOTA_STATUSES = ["ok", "signed_out", "token_expired", "failed"] as const;
+const QUOTA_STATUSES = ["ok", "signed_out", "token_expired", "failed", "keychain_denied"] as const;
 const quotaStatusSchema = z.enum(QUOTA_STATUSES);
 export type QuotaStatus = z.infer<typeof quotaStatusSchema>;
 

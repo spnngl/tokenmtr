@@ -4,6 +4,7 @@ import type { Filters } from "../filters";
 import type { Currency } from "../format";
 import type { AppState, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
+import { billingSeriesOf, sessionAnalyticsOf, sessionTimelineOf } from "./analytics";
 import { advisorOf, quotaHistoryOf, quotaLatestOf } from "./quota";
 import { recapOf } from "./recap";
 import { generateMockReport } from "./report";
@@ -21,7 +22,7 @@ import {
   toolsOf,
   totalsOf,
 } from "./reports";
-import { FACTS, NOW_MS } from "./seed";
+import { FACTS, NOW_MS, SESSIONS } from "./seed";
 import { sessionDetailOf, sessionOriginOf, sessionsOf } from "./sessions";
 import {
   ALERTS,
@@ -251,6 +252,17 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       read(() =>
         billingOf(empty ? [] : factsFor(filters), answered(filters.currency), extrasFor(filters)),
       ),
+    billingSeries: (filters, granularity, splitByAgent) =>
+      read(() =>
+        billingSeriesOf(
+          empty ? [] : factsFor(filters),
+          extrasFor(filters),
+          rangeOf(filters.range),
+          answered(filters.currency),
+          granularity,
+          splitByAgent,
+        ),
+      ),
 
     sessions: (filters, page, pageSize) => {
       const answeredFilters = { ...filters, currency: answered(filters.currency) };
@@ -263,6 +275,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     sessionDetail: (agent, session, currency) =>
       read(() => sessionDetailOf(agent, session, answered(currency))),
     sessionOrigin: (agent, session) => read(() => sessionOriginOf(agent, session)),
+    sessionAnalytics: (filters) =>
+      read(() => sessionAnalyticsOf(empty ? [] : SESSIONS, filters, answered(filters.currency))),
+    sessionTimeline: (agent, session, currency) =>
+      read(() => sessionTimelineOf(agent, session, answered(currency))),
 
     quotaLatest: (filters) =>
       read(() =>
@@ -297,7 +313,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     },
     restartDaemon: () => act("restartDaemon"),
     revealPath: (target) => act("revealPath", target),
-    addProjectRule: (cwd) => act("addProjectRule", cwd),
+    projectRuleFor: (cwd) => read(() => ({ match: cwd, name: cwd.split("/").pop() ?? "project" })),
+    addProjectRule: (cwd, name) => act("addProjectRule", cwd, name),
+    addSubscription: (spec) => act("addSubscription", spec),
+    connectKeychain: () => act("connectKeychain"),
     keepTenYears: (agent, profile) => {
       tenYears.add(`${agent}:${profile}`);
       return act("keepTenYears", agent, profile);

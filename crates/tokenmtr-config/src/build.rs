@@ -20,9 +20,10 @@ use crate::error::{ConfigPath, Rejection, Violation};
 use crate::model::{
     AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry, BudgetScope,
     CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset, DisplayConfig,
-    FileFormat, FileSink, FxConfig, ImportConfig, LoggingConfig, MachineConfig, MenubarConfig,
-    MenubarTitle, Percent, PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation,
-    ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig, TimeZoneSetting,
+    FileFormat, FileSink, FxConfig, ImportConfig, IntegrationsConfig, LoggingConfig, MachineConfig,
+    MenubarConfig, MenubarTitle, Percent, PricingConfig, PrivacyConfig, ProfileConfig,
+    ProfileLocation, ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig,
+    SupersetConfig, TimeZoneSetting,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
@@ -87,6 +88,16 @@ impl Config {
             backup: build_backup(raw, env)?,
             import: ImportConfig {
                 claude_stats_cache: raw.import.claude_stats_cache.unwrap_or(true),
+            },
+            integrations: IntegrationsConfig {
+                superset: SupersetConfig {
+                    enabled: raw.integrations.superset.enabled.unwrap_or(true),
+                    dir: optional_path(
+                        env,
+                        raw.integrations.superset.dir.as_deref(),
+                        &root.key("integrations").key("superset").key("dir"),
+                    )?,
+                },
             },
             projects: build_projects(&raw.projects, env)?,
             budgets: build_budgets(&raw.budgets, display.currency, &agents, &enabled)?,

@@ -3,7 +3,7 @@ import { useDataSource } from "./app-context";
 import type { DataSource } from "./data-source";
 import type { Filters } from "./filters";
 import type { Currency } from "./format";
-import type { FilterOptions, GroupBy, Period } from "./schemas";
+import type { FilterOptions, Granularity, GroupBy, Period } from "./schemas";
 
 /** One React Query hook per `DataSource` read; keys carry every input so filters refetch. */
 function useRead<T>(
@@ -68,6 +68,22 @@ export const useSessionDetail = (agent: string, session: string, currency: Curre
   );
 export const useSessionOrigin = (agent: string, session: string) =>
   useRead(["session-origin", agent, session], (ds) => ds.sessionOrigin(agent, session));
+export const useSessionAnalytics = (filters: Filters) =>
+  useRead(["session-analytics", filters], (ds) => ds.sessionAnalytics(filters), KEEP);
+export const useSessionTimeline = (agent: string, session: string, currency: Currency) =>
+  useRead(["session-timeline", agent, session, currency], (ds) =>
+    ds.sessionTimeline(agent, session, currency),
+  );
+export const useBillingSeries = (
+  filters: Filters,
+  granularity: Granularity,
+  splitByAgent: boolean,
+) =>
+  useRead(
+    ["billing-series", filters, granularity, splitByAgent],
+    (ds) => ds.billingSeries(filters, granularity, splitByAgent),
+    KEEP,
+  );
 
 export const useQuotaLatest = (filters: Filters) =>
   useRead(["quota-latest", filters], (ds) => ds.quotaLatest(filters), KEEP);
@@ -83,3 +99,7 @@ export const useRecap = (period: Period, currency: Currency) =>
 export const useSystemHealth = () => useRead(["system-health"], (ds) => ds.systemHealth());
 export const useParseIssues = () => useRead(["parse-issues"], (ds) => ds.parseIssues());
 export const useAlerts = () => useRead(["alerts"], (ds) => ds.alerts());
+
+/** The project rule the app suggests for an unresolved directory (name from git or Superset). */
+export const useProjectRuleFor = (cwd: string) =>
+  useRead(["project-rule-for", cwd], (ds) => ds.projectRuleFor(cwd));

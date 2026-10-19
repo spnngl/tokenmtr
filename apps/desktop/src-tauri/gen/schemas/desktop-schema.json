@@ -393,6 +393,12 @@
           "markdownDescription": "Enables the billing command without any pre-configured scope."
         },
         {
+          "description": "Enables the billing_series command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-billing-series",
+          "markdownDescription": "Enables the billing_series command without any pre-configured scope."
+        },
+        {
           "description": "Enables the branches command without any pre-configured scope.",
           "type": "string",
           "const": "allow-branches",
@@ -409,6 +415,12 @@
           "type": "string",
           "const": "allow-complete-onboarding",
           "markdownDescription": "Enables the complete_onboarding command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the connect_keychain command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-keychain",
+          "markdownDescription": "Enables the connect_keychain command without any pre-configured scope."
         },
         {
           "description": "Enables the erase_all_data command without any pre-configured scope.",
@@ -489,6 +501,12 @@
           "markdownDescription": "Enables the parse_issues command without any pre-configured scope."
         },
         {
+          "description": "Enables the project_rule_for command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-project-rule-for",
+          "markdownDescription": "Enables the project_rule_for command without any pre-configured scope."
+        },
+        {
           "description": "Enables the projects command without any pre-configured scope.",
           "type": "string",
           "const": "allow-projects",
@@ -549,6 +567,12 @@
           "markdownDescription": "Enables the series command without any pre-configured scope."
         },
         {
+          "description": "Enables the session_analytics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-session-analytics",
+          "markdownDescription": "Enables the session_analytics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the session_detail command without any pre-configured scope.",
           "type": "string",
           "const": "allow-session-detail",
@@ -559,6 +583,12 @@
           "type": "string",
           "const": "allow-session-origin",
           "markdownDescription": "Enables the session_origin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the session_timeline command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-session-timeline",
+          "markdownDescription": "Enables the session_timeline command without any pre-configured scope."
         },
         {
           "description": "Enables the sessions command without any pre-configured scope.",
@@ -651,6 +681,12 @@
           "markdownDescription": "Denies the billing command without any pre-configured scope."
         },
         {
+          "description": "Denies the billing_series command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-billing-series",
+          "markdownDescription": "Denies the billing_series command without any pre-configured scope."
+        },
+        {
           "description": "Denies the branches command without any pre-configured scope.",
           "type": "string",
           "const": "deny-branches",
@@ -667,6 +703,12 @@
           "type": "string",
           "const": "deny-complete-onboarding",
           "markdownDescription": "Denies the complete_onboarding command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_keychain command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-keychain",
+          "markdownDescription": "Denies the connect_keychain command without any pre-configured scope."
         },
         {
           "description": "Denies the erase_all_data command without any pre-configured scope.",
@@ -747,6 +789,12 @@
           "markdownDescription": "Denies the parse_issues command without any pre-configured scope."
         },
         {
+          "description": "Denies the project_rule_for command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-project-rule-for",
+          "markdownDescription": "Denies the project_rule_for command without any pre-configured scope."
+        },
+        {
           "description": "Denies the projects command without any pre-configured scope.",
           "type": "string",
           "const": "deny-projects",
@@ -807,6 +855,12 @@
           "markdownDescription": "Denies the series command without any pre-configured scope."
         },
         {
+          "description": "Denies the session_analytics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-session-analytics",
+          "markdownDescription": "Denies the session_analytics command without any pre-configured scope."
+        },
+        {
           "description": "Denies the session_detail command without any pre-configured scope.",
           "type": "string",
           "const": "deny-session-detail",
@@ -817,6 +871,12 @@
           "type": "string",
           "const": "deny-session-origin",
           "markdownDescription": "Denies the session_origin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the session_timeline command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-session-timeline",
+          "markdownDescription": "Denies the session_timeline command without any pre-configured scope."
         },
         {
           "description": "Denies the sessions command without any pre-configured scope.",

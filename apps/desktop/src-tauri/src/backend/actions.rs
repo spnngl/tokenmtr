@@ -100,11 +100,13 @@ pub fn install_daemon(backend: &Backend) -> Result<(), CommandError> {
     Ok(install_service(&service, &sidecar)?)
 }
 
-/// The path `target` stands for, if it exists.
+/// The path `target` stands for, if it exists. A missing config file is created first, holding
+/// only comments.
 ///
 /// # Errors
 ///
-/// The session has no transcript on disk, the path does not exist, or the store cannot be read.
+/// The session has no transcript on disk, the path does not exist, the config file cannot be
+/// created, or the store cannot be read.
 pub fn reveal_path(backend: &Backend, target: &RevealTarget) -> Result<Utf8PathBuf, CommandError> {
     let transcript = |agent: AgentId, session: &SessionId| {
         super::shell::session_origin(&backend.context()?, agent, session)?
@@ -113,7 +115,10 @@ pub fn reveal_path(backend: &Backend, target: &RevealTarget) -> Result<Utf8PathB
             .ok_or_else(|| CommandError::invalid(format!("session {session} has no transcript")))
     };
     let path = match target {
-        RevealTarget::ConfigFile => backend.config_path().to_owned(),
+        RevealTarget::ConfigFile => {
+            tokenmtr_app::ensure_config_file(backend.config_path())?;
+            backend.config_path().to_owned()
+        }
         RevealTarget::ExportsDir => backend.paths().exports_dir().clone(),
         RevealTarget::Transcript { agent, session } => transcript(*agent, session)?,
         RevealTarget::TranscriptFolder { agent, session } => {
@@ -127,22 +132,40 @@ pub fn reveal_path(backend: &Backend, target: &RevealTarget) -> Result<Utf8PathB
     Ok(path)
 }
 
-/// The `[[projects]]` rule that names the working directory `cwd` after its last component.
+/// The `[[projects]]` rule the app suggests for the working directory `cwd`: named after its
+/// repository when git or Superset knows it, else after its last component.
 ///
 /// # Errors
 ///
-/// `cwd` is not an absolute path.
-pub fn project_rule_for(cwd: &str) -> Result<RawProject, CommandError> {
+/// `cwd` is not an absolute path, or the config cannot be read.
+pub fn project_rule_for(
+    backend: &Backend,
+    cwd: &str,
+    now: Timestamp,
+) -> Result<RawProject, CommandError> {
+    let name = backend
+        .context()?
+        .suggested_project_name(absolute(cwd)?, now)
+        .unwrap_or_else(|| "project".to_owned());
+    rule(cwd, &name)
+}
+
+fn absolute(cwd: &str) -> Result<&Utf8Path, CommandError> {
     let path = Utf8Path::new(cwd);
     if !path.is_absolute() {
         return Err(CommandError::invalid(format!(
             "{cwd} is not an absolute path"
         )));
     }
-    let name = path.file_name().unwrap_or("project").to_owned();
+    Ok(path)
+}
+
+/// The rule naming exactly the directory `cwd` `name`.
+fn rule(cwd: &str, name: &str) -> Result<RawProject, CommandError> {
+    absolute(cwd)?;
     Ok(RawProject {
         pattern: escape_glob(cwd),
-        name: ProjectKey::try_from(name).map_err(CommandError::invalid)?,
+        name: ProjectKey::try_from(name.trim()).map_err(CommandError::invalid)?,
         client: None,
     })
 }
@@ -159,15 +182,32 @@ fn escape_glob(text: &str) -> String {
     out
 }
 
-/// Labels the sessions started in `cwd` with a project of that directory's name.
+/// Labels the sessions started in `cwd` with the project `name`.
 ///
 /// # Errors
 ///
-/// An invalid directory, or a config that would become invalid (the file stays untouched).
-pub fn add_project_rule(backend: &Backend, cwd: &str) -> Result<(), CommandError> {
-    let rule = project_rule_for(cwd)?;
+/// An invalid directory, a blank name, or a config that would become invalid (the file stays
+/// untouched).
+pub fn add_project_rule(backend: &Backend, cwd: &str, name: &str) -> Result<(), CommandError> {
+    let rule = rule(cwd, name)?;
     backend.context()?.add_project_rule(&rule)?;
     Ok(())
+}
+
+/// Asks the daemon to read the Claude credentials once with the Keychain's consent prompt
+/// allowed, so the user can grant it access for good. Needs the daemon: the grant goes to the
+/// binary that asks.
+///
+/// # Errors
+///
+/// No daemon answers, or the request failed.
+pub async fn connect_keychain(backend: &Backend) -> Result<(), CommandError> {
+    connect(backend)
+        .await?
+        .connect_keychain()
+        .await
+        .map(drop)
+        .map_err(Into::into)
 }
 
 /// Records a subscription in the config.
@@ -263,11 +303,23 @@ mod tests {
     use crate::backend::fixture::{CONFIG, seeded};
 
     #[test]
-    fn project_rule_escapes_the_glob_and_names_the_directory() -> Result<(), CommandError> {
-        let rule = project_rule_for("/work/odd[1]/acme*")?;
+    fn project_rule_escapes_the_glob_and_names_the_directory()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = seeded(CONFIG)?;
+        let rule = project_rule_for(&fixture.backend, "/work/odd[1]/acme*", fixture.now)?;
         assert_eq!(rule.pattern, r"/work/odd\[1\]/acme\*");
         assert_eq!(rule.name.as_str(), "acme*");
-        assert!(project_rule_for("relative/dir").is_err());
+        assert!(project_rule_for(&fixture.backend, "relative/dir", fixture.now).is_err());
+        assert!(add_project_rule(&fixture.backend, "/work/x", "  ").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn reveal_creates_a_missing_config_file() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = seeded(CONFIG)?;
+        std::fs::remove_file(fixture.backend.config_path()).ok();
+        let path = reveal_path(&fixture.backend, &RevealTarget::ConfigFile)?;
+        assert!(std::fs::read_to_string(path)?.starts_with('#'));
         Ok(())
     }
 
@@ -293,10 +345,11 @@ mod tests {
     #[test]
     fn add_project_rule_writes_the_config() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = seeded(CONFIG)?;
-        add_project_rule(&fixture.backend, "/work/globex")?;
+        add_project_rule(&fixture.backend, "/work/globex", "Globex site")?;
         let text = std::fs::read_to_string(fixture.backend.config_path())?;
         assert!(text.contains("[[projects]]"), "{text}");
         assert!(text.contains("/work/globex"), "{text}");
+        assert!(text.contains("Globex site"), "{text}");
         assert_eq!(fixture.backend.context()?.config().projects.len(), 1);
         Ok(())
     }

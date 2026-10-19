@@ -11,11 +11,12 @@ import type {
 import { convert, inRange, matchesProfile, rangeOf, wireUsage } from "./aggregate";
 import { createRng, hashString, NOW_MS, SESSIONS, type SessionSeed } from "./seed";
 
-function iso(ms: number): string {
+export function iso(ms: number): string {
   return new Date(ms).toISOString().replace(".000Z", "Z");
 }
 
-function matches(session: SessionSeed, filters: Filters): boolean {
+/** Whether `session` ends in the range and passes every other filter. */
+export function matches(session: SessionSeed, filters: Filters): boolean {
   const range = rangeOf(filters.range);
   const lastAtMs = session.startedAtMs + session.durationSecs * 1000;
   return (
@@ -59,7 +60,7 @@ export function sessionsOf(filters: Filters, page: number, pageSize: number): Se
   };
 }
 
-function find(agent: string, session: string): SessionSeed | undefined {
+export function find(agent: string, session: string): SessionSeed | undefined {
   return SESSIONS.find((candidate) => candidate.agent === agent && candidate.session === session);
 }
 

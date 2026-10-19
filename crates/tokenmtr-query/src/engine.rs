@@ -145,7 +145,7 @@ pub(crate) struct Fetched {
     pub idle: Vec<Idle>,
 }
 
-fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
+pub(crate) fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
     Timestamp::from_microsecond(us).map_err(|_| QueryError::decode("timestamp", us))
 }
 
@@ -395,14 +395,31 @@ fn mode_of(subs: &[Subscription], cell: &Cell, local: Date) -> Mode {
     if cell.extra {
         return Mode::Extra;
     }
-    subs.iter()
-        .position(|s| {
-            s.agents().contains(&cell.agent)
-                && s.profiles().is_none_or(|p| p.contains(&cell.profile))
-                && cell.provider.as_ref() == Some(s.provider())
-                && s.is_active_on(local)
-        })
-        .map_or(Mode::Api, Mode::Subscription)
+    covering(
+        subs,
+        cell.agent,
+        &cell.profile,
+        cell.provider.as_ref(),
+        local,
+    )
+    .map_or(Mode::Api, Mode::Subscription)
+}
+
+/// Index of the first subscription covering a usage event of `agent`/`profile`/`provider` on
+/// local day `local`.
+pub(crate) fn covering(
+    subs: &[Subscription],
+    agent: AgentId,
+    profile: &ProfileId,
+    provider: Option<&ProviderId>,
+    local: Date,
+) -> Option<usize> {
+    subs.iter().position(|s| {
+        s.agents().contains(&agent)
+            && s.profiles().is_none_or(|p| p.contains(profile))
+            && provider == Some(s.provider())
+            && s.is_active_on(local)
+    })
 }
 
 /// USD micros in `currency`, converted with the rate strictly before `date`.
@@ -459,7 +476,7 @@ fn fee_in(
 
 /// Splits `fee` over `values` in proportion, exactly: the parts sum to `fee` when
 /// `values` sums to `total`.
-fn split(fee: i64, values: &[i64], total: i64) -> Vec<i64> {
+pub(crate) fn split(fee: i64, values: &[i64], total: i64) -> Vec<i64> {
     let (fee, total) = (i128::from(fee), i128::from(total));
     let mut cumulative = 0_i128;
     let mut given = 0_i128;

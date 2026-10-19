@@ -2,10 +2,13 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use tokenmtr_config::{Config, Env, ProfileLocation, ProjectRule, TimeZoneSetting};
 use tokenmtr_core::{AgentId, Override};
 use tokenmtr_platform::Paths;
 
+use crate::project::ProjectResolver;
+use crate::project::superset::Hints;
 use crate::source::Profile;
 use crate::{AgentKind, ClaudeSource, PiSource, claude, pi};
 
@@ -34,12 +37,34 @@ pub struct IngestSettings {
     pub protected: Vec<Utf8PathBuf>,
     /// `privacy.redact_paths`: store keyed hashes instead of cwds and git branches.
     pub redact_paths: bool,
+    /// Superset's data directory, read for hints, when `[integrations.superset]` is enabled.
+    pub superset_dir: Option<Utf8PathBuf>,
+    /// The age up to which an event without a logged branch takes its cwd's current HEAD:
+    /// two scan intervals ([`super::projects::BranchStamp`]).
+    pub live_branch_within: SignedDuration,
 }
 
 impl IngestSettings {
+    /// The name a project rule for `cwd` suggests: what resolution would name it without
+    /// rules, so its repository's (from git, or Superset's record of a deleted worktree), else
+    /// its folder's. `None` for a blank cwd.
+    #[must_use]
+    pub fn suggested_project_name(&self, cwd: &Utf8Path, now: Timestamp) -> Option<String> {
+        ProjectResolver::new(Vec::new(), self.protected.clone())
+            .resolve(cwd, now, &mut self.hints())
+            .map(|found| found.resolution.name)
+    }
+
+    /// Superset's hints when the integration is on, read on first use.
+    pub(crate) fn hints(&self) -> Hints {
+        self.superset_dir
+            .clone()
+            .map_or_else(Hints::off, Hints::superset)
+    }
+
     /// Builds the settings for `config`. `env` is read for `CLAUDE_CONFIG_DIR`,
-    /// `PI_CODING_AGENT_SESSION_DIR` and `PI_CODING_AGENT_DIR`, which only the `default`
-    /// profile honours.
+    /// `PI_CODING_AGENT_SESSION_DIR` and `PI_CODING_AGENT_DIR`, and pi's `settings.json` for
+    /// `sessionDir`, which only the `default` profile honours.
     #[must_use]
     pub fn from_config(config: &Config, paths: &Paths, env: &dyn Env) -> Self {
         let home = paths.home();
@@ -47,6 +72,8 @@ impl IngestSettings {
         let claude_dir = dir(CLAUDE_CONFIG_DIR);
         let pi_sessions = dir(PI_SESSION_DIR);
         let pi_dir = dir(PI_AGENT_DIR);
+        let pi_configured =
+            pi::configured_session_dir(home, &pi::default_agent_dir(home, pi_dir.as_deref()));
         let sources = config
             .enabled_agents()
             .filter_map(|agent| {
@@ -63,7 +90,13 @@ impl IngestSettings {
                     }))))
                 } else if agent == AgentId::PI {
                     Some(AgentKind::Pi(PiSource::new(profiles(&|p| {
-                        pi_profile(p, home, pi_sessions.as_deref(), pi_dir.as_deref())
+                        pi_profile(
+                            p,
+                            home,
+                            pi_sessions.as_deref(),
+                            pi_dir.as_deref(),
+                            pi_configured.as_deref(),
+                        )
                     }))))
                 } else {
                     None
@@ -81,6 +114,19 @@ impl IngestSettings {
             import_claude_stats_cache: config.import.claude_stats_cache,
             protected: paths.protected(),
             redact_paths: config.privacy.redact_paths,
+            superset_dir: config.integrations.superset.enabled.then(|| {
+                config
+                    .integrations
+                    .superset
+                    .dir
+                    .clone()
+                    .unwrap_or_else(|| home.join(".superset"))
+            }),
+            live_branch_within: config
+                .daemon
+                .scan_interval
+                .checked_mul(2)
+                .unwrap_or(config.daemon.scan_interval),
         }
     }
 }
@@ -106,10 +152,11 @@ fn pi_profile(
     home: &Utf8Path,
     session_dir: Option<&Utf8Path>,
     agent_dir: Option<&Utf8Path>,
+    configured: Option<&Utf8Path>,
 ) -> Profile {
     match &config.location {
         ProfileLocation::Default => {
-            let mut profile = pi::default_profile(home, session_dir, agent_dir);
+            let mut profile = pi::default_profile(home, session_dir, agent_dir, configured);
             profile.id = config.id.clone();
             profile
         }

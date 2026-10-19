@@ -24,6 +24,9 @@ pub enum IssueKind {
     MissingCwd,
     /// A line that failed to parse.
     ParseError,
+    /// Another app's data read for hints (Superset's database) has an unknown shape; the hints
+    /// are off. Totals are unaffected.
+    IntegrationDrift,
 }
 
 impl IssueKind {
@@ -36,6 +39,17 @@ impl IssueKind {
             Self::ProtectedFolder => "protected_folder",
             Self::MissingCwd => "missing_cwd",
             Self::ParseError => "parse_error",
+            Self::IntegrationDrift => "integration_drift",
+        }
+    }
+
+    /// Whether the issue only lowers attribution (a project or branch name), never totals:
+    /// no event was lost, so the collector has not failed.
+    #[must_use]
+    pub const fn is_informational(self) -> bool {
+        match self {
+            Self::ProtectedFolder | Self::MissingCwd | Self::IntegrationDrift => true,
+            Self::FormatDrift | Self::UnknownVersion | Self::ParseError => false,
         }
     }
 }

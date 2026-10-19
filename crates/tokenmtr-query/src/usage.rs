@@ -102,13 +102,21 @@ impl Usage {
     /// Cached share of all input tokens, in percent (0 when there was no input).
     #[must_use]
     pub fn cached_input_percent(&self) -> f64 {
-        let input =
-            self.input_uncached + self.cache_read + self.cache_write_5m + self.cache_write_1h;
-        if input == 0 {
-            0.0
-        } else {
-            100.0 * ratio(self.cache_read, input)
-        }
+        self.cache_hit_percent().unwrap_or(0.0)
+    }
+
+    /// Cache-hit ratio in percent: `cache_read / (input_uncached + cache_read + cache writes)`;
+    /// absent when there was no input.
+    #[must_use]
+    pub fn cache_hit_percent(&self) -> Option<f64> {
+        let input = self.input_tokens();
+        (input > 0).then(|| 100.0 * ratio(self.cache_read, input))
+    }
+
+    /// Every input token: uncached, cache reads and cache writes.
+    #[must_use]
+    pub const fn input_tokens(&self) -> u64 {
+        self.input_uncached + self.cache_read + self.cache_write_5m + self.cache_write_1h
     }
 }
 

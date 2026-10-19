@@ -30,9 +30,14 @@ export function chartColor(index: number): string {
   return `var(--chart-${(index % CHART_COLORS) + 1})`;
 }
 
-const AXIS = { stroke: "var(--border)", tick: { fill: "var(--fg-muted)", fontSize: 11 } } as const;
+/** Axis styling shared by every chart. */
+export const AXIS = {
+  stroke: "var(--border)",
+  tick: { fill: "var(--fg-muted)", fontSize: 11 },
+} as const;
 
-function compactMoney(micros: number, currency: Currency): string {
+/** Short money for axis ticks, e.g. "$1.2K". */
+export function compactMoney(micros: number, currency: Currency): string {
   return new Intl.NumberFormat(LOCALE, {
     style: "currency",
     currency,

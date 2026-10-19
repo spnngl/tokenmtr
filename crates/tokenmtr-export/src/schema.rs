@@ -225,7 +225,11 @@ static USAGE_EVENTS: [Column; 29] = [
         RedactColumn::Cwd,
     ),
     redactable(
-        opt("git_branch", ColumnType::Text, "Git branch at the event."),
+        opt(
+            "git_branch",
+            ColumnType::Text,
+            "Git branch at the event. Claude logs it; pi does not, so a pi event takes its directory's current branch when it is at most two scan intervals old, else the last branch Superset recorded for that worktree.",
+        ),
         RedactColumn::GitBranch,
     ),
     col(
@@ -440,7 +444,7 @@ static QUOTA_SNAPSHOTS: [Column; 14] = [
     col(
         "status",
         ColumnType::Text,
-        "`ok`, `signed_out`, `token_expired` or `failed`.",
+        "`ok`, `signed_out`, `token_expired`, `keychain_denied` or `failed`.",
     ),
     opt(
         "spent_usd",

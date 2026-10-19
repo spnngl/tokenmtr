@@ -48,7 +48,7 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | `reprice` | Re-estimate unpriced events with the active pricing snapshot (`--all`: every event). |
 | `doctor` | Check the config, the store, the daemon and the agents' files. |
 | `service` | Install, remove or inspect the background service. |
-| `quota` | Show the latest quota windows and the detected plans. |
+| `quota` | Show the latest quota windows and the detected plans; `quota connect` lets the daemon read the Claude credentials in the Keychain. |
 | `fx` | Show the latest FX rate. |
 | `pricing` | Show the active pricing snapshot and the models it cannot price. |
 | `config` | Validate or edit the config file. |
