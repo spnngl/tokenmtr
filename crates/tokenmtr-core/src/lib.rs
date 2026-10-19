@@ -24,7 +24,7 @@ pub use advisor::{Advice, CurrentPlan, PlanFit, QuotaSizing, Recommendation, Ver
 pub use alert::{Alert, AlertConfig, AlertInputs, AlertKind, evaluate_alerts};
 pub use billing::{
     BillingMode, BillingPeriod, Plan, PlanCatalog, Subscription, SubscriptionSpec, billing_mode,
-    prorated_fee,
+    covering, prorated_fee,
 };
 pub use budget::{Budget, BudgetMeasure, BudgetPeriod, BudgetStatus, budget_status};
 pub use dataset::Dataset;

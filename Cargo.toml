@@ -19,6 +19,7 @@ tokenmtr-store = { path = "crates/tokenmtr-store" }
 tokenmtr-query = { path = "crates/tokenmtr-query" }
 tokenmtr-agents = { path = "crates/tokenmtr-agents" }
 tokenmtr-export = { path = "crates/tokenmtr-export" }
+tokenmtr-metrics = { path = "crates/tokenmtr-metrics" }
 tokenmtr-report = { path = "crates/tokenmtr-report" }
 tokenmtr-remote = { path = "crates/tokenmtr-remote" }
 tokenmtr-control = { path = "crates/tokenmtr-control" }

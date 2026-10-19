@@ -296,6 +296,25 @@ pub fn billing_mode(
         })
 }
 
+/// Index of the first subscription covering traffic of `agent`/`profile`/`provider` on local
+/// day `local` (a calendar date in the display time zone). The one billing rule: the query
+/// engine and the metrics snapshot both call it, so they cannot disagree.
+#[must_use]
+pub fn covering(
+    subscriptions: &[Subscription],
+    agent: AgentId,
+    profile: &ProfileId,
+    provider: Option<&ProviderId>,
+    local: Date,
+) -> Option<usize> {
+    subscriptions.iter().position(|s| {
+        s.agents().contains(&agent)
+            && s.profiles().is_none_or(|p| p.contains(profile))
+            && provider == Some(s.provider())
+            && s.is_active_on(local)
+    })
+}
+
 /// The billing period containing `day`, anchored on `start`: `[begin, next)`.
 ///
 /// Periods are `start + k` months (or years), so a start on the 31st clamps to each month's last

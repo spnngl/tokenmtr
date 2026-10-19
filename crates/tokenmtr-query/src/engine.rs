@@ -10,6 +10,7 @@ use std::str::FromStr;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use rusqlite::types::Value;
+pub(crate) use tokenmtr_core::covering;
 use tokenmtr_core::fx::utc_date;
 use tokenmtr_core::{
     AgentId, Currency, EurPerUsd, ProfileId, ProviderId, Subscription, TokenCounts, UsdMicros,
@@ -419,23 +420,6 @@ fn mode_of(subs: &[Subscription], cell: &Cell, local: Date) -> Mode {
         local,
     )
     .map_or(Mode::Api, Mode::Subscription)
-}
-
-/// Index of the first subscription covering a usage event of `agent`/`profile`/`provider` on
-/// local day `local`.
-pub(crate) fn covering(
-    subs: &[Subscription],
-    agent: AgentId,
-    profile: &ProfileId,
-    provider: Option<&ProviderId>,
-    local: Date,
-) -> Option<usize> {
-    subs.iter().position(|s| {
-        s.agents().contains(&agent)
-            && s.profiles().is_none_or(|p| p.contains(profile))
-            && provider == Some(s.provider())
-            && s.is_active_on(local)
-    })
 }
 
 /// USD micros in `currency`, converted with the rate strictly before `date`.
