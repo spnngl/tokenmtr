@@ -23,7 +23,7 @@
 - **Overview, Quota, Sessions, Projects, Settings** follow the full-app brief. Overview leads with quota meters, then KPI tiles, the daily cost chart, top models and projects, and the hour-by-weekday heatmap. Every chart has a "View as table" alternative; Recharts animation is off.
 - **Session drilldown** (`/sessions/$agent/$session`) leads with the resume command and its Copy button. Reveal transcript and Open folder appear only while the transcript file exists.
 - **Command palette** (Cmd/Ctrl+K, React Aria Autocomplete): one input, three groups (Go to, Filter, Action). Choosing runs the command and closes the palette.
-- **Onboarding, daemon offline, incompatible daemon** (control protocol mismatch: "Update required") replace the screens through `AppGate`; stale and partial are banners above the screen.
+- **Onboarding, daemon offline, incompatible daemon** (control protocol or store schema mismatch: "Update required") replace the screens through `AppGate`; stale and partial are banners above the screen.
 - **Data**: screens read through `DataSource` (`src/shared/data-source.ts`). The seeded mock in `src/shared/mock` serves tests, screenshots and `vite dev` (`?mock=<scenario>`).
 
 ## Tokens and checks

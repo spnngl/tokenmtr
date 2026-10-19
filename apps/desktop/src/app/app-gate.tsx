@@ -71,6 +71,8 @@ export function AppGate({ children }: { readonly children: ReactNode }): ReactNo
               kind: "incompatible",
               appVersion: state.app_version,
               daemonVersion: state.daemon_version,
+              appSchema: state.app_schema,
+              daemonSchema: state.daemon_schema,
               onRestartDaemon: () => restartDaemon.mutate(),
               isPending: restartDaemon.isPending,
             }}

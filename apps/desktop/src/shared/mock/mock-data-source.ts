@@ -145,7 +145,13 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       case "offline":
         return { kind: "daemon_offline" };
       case "incompatible":
-        return { kind: "incompatible", app_version: "0.2.0", daemon_version: "0.1.0" };
+        return {
+          kind: "incompatible",
+          app_version: "0.2.0",
+          daemon_version: "0.1.0",
+          app_schema: 5,
+          daemon_schema: 4,
+        };
       case "onboarding":
         if (!onboarded) {
           return {

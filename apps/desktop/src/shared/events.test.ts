@@ -167,7 +167,7 @@ describe("shell events", () => {
   it("parses the payloads the shell serialises", () => {
     expect(daemonStateSchema.parse({ state: "offline" })).toEqual({ state: "offline" });
     expect(
-      daemonStateSchema.parse({ state: "incompatible", daemon_version: "9.0.0" }),
+      daemonStateSchema.parse({ state: "incompatible", daemon_version: "9.0.0", daemon_schema: 9 }),
     ).toHaveProperty("daemon_version", "9.0.0");
   });
 });

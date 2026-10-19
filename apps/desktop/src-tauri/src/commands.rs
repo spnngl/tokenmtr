@@ -94,7 +94,7 @@ pub async fn filter_options(shell: State<'_, Shell>) -> Reply<FilterOptions> {
 #[tauri::command]
 pub async fn settings(app: AppHandle<Wry>, shell: State<'_, Shell>) -> Reply<Settings> {
     let daemon_version = match probe(shell.backend.transport()).await {
-        Link::Connected { daemon_version } | Link::Incompatible { daemon_version } => {
+        Link::Connected { daemon_version } | Link::Incompatible { daemon_version, .. } => {
             daemon_version
         }
         Link::Offline => String::new(),

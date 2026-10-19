@@ -1362,6 +1362,8 @@ fn app_state_incompatible() -> Value {
     json(AppState::Incompatible {
         app_version: "0.4.0".to_owned(),
         daemon_version: "0.3.2".to_owned(),
+        app_schema: 5,
+        daemon_schema: 4,
     })
 }
 

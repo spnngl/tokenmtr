@@ -113,6 +113,10 @@ pub enum AppState {
         app_version: String,
         /// The daemon's.
         daemon_version: String,
+        /// The store schema this app reads.
+        app_schema: u32,
+        /// The store schema the daemon migrates to.
+        daemon_schema: u32,
     },
 }
 
@@ -160,9 +164,14 @@ pub fn app_state(
         });
     }
     match inputs.link {
-        Link::Incompatible { daemon_version } => Ok(AppState::Incompatible {
+        Link::Incompatible {
+            daemon_version,
+            daemon_schema,
+        } => Ok(AppState::Incompatible {
             app_version: env!("CARGO_PKG_VERSION").to_owned(),
             daemon_version,
+            app_schema: tokenmtr_store::SCHEMA_VERSION,
+            daemon_schema,
         }),
         Link::Offline => Ok(AppState::DaemonOffline {}),
         Link::Connected { .. } => {
@@ -622,6 +631,7 @@ mod tests {
                 true,
                 Link::Incompatible {
                     daemon_version: "9.0.0".to_owned(),
+                    daemon_schema: 99,
                 },
             ),
         )?;

@@ -120,7 +120,7 @@ async fn serve_once(
     };
     let connected = Link::from_welcome(client.daemon());
     if matches!(connected, Link::Incompatible { .. }) {
-        // A newer store schema: this app cannot read what the daemon announces.
+        // Another store schema: this app cannot read what the daemon announces.
         tracker.report(connected, sink);
         return false;
     }
@@ -207,6 +207,7 @@ mod tests {
         tracker.report(
             Link::Incompatible {
                 daemon_version: "9".to_owned(),
+                daemon_schema: 1,
             },
             &log,
         );

@@ -71,6 +71,8 @@ export const appStateSchema = z.discriminatedUnion("kind", [
     kind: z.literal("incompatible"),
     app_version: z.string(),
     daemon_version: z.string(),
+    app_schema: z.number().int().nonnegative(),
+    daemon_schema: z.number().int().nonnegative(),
   }),
 ]);
 export type AppState = z.infer<typeof appStateSchema>;

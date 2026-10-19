@@ -75,6 +75,8 @@ describe("StateView", () => {
       kind: "incompatible",
       appVersion: "0.2.0",
       daemonVersion: "0.1.0",
+      appSchema: 5,
+      daemonSchema: 4,
       onRestartDaemon,
       isPending: false,
     });
@@ -84,6 +86,21 @@ describe("StateView", () => {
     expect(screen.queryByText("Usage content")).toBeNull();
     await userEvent.setup().click(screen.getByRole("button", { name: "Restart daemon" }));
     expect(onRestartDaemon).toHaveBeenCalledOnce();
+  });
+
+  it("incompatible names both schemas when the versions match", () => {
+    renderState({
+      kind: "incompatible",
+      appVersion: "0.1.0",
+      daemonVersion: "0.1.0",
+      appSchema: 5,
+      daemonSchema: 2,
+      onRestartDaemon: () => undefined,
+      isPending: false,
+    });
+    const text = screen.getByRole("alert").textContent ?? "";
+    expect(text).toContain("store schema 5");
+    expect(text).toContain("schema 2");
   });
 
   it("partial keeps the content and links to parse issues", () => {
@@ -114,6 +131,8 @@ describe("StateView", () => {
       kind: "incompatible",
       appVersion: "0.2.0",
       daemonVersion: "0.1.0",
+      appSchema: 5,
+      daemonSchema: 4,
       onRestartDaemon: () => undefined,
       isPending: false,
     },

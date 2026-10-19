@@ -161,6 +161,8 @@ pub enum Link {
     Incompatible {
         /// The daemon's package version.
         daemon_version: String,
+        /// The store schema the daemon migrates to.
+        daemon_schema: u32,
     },
 }
 
@@ -169,32 +171,43 @@ impl Link {
     #[must_use]
     pub fn from_error(error: &ClientError) -> Self {
         match error {
-            ClientError::Incompatible { daemon_version, .. } => Self::Incompatible {
+            ClientError::Incompatible {
+                daemon_version,
+                store_schema,
+                ..
+            } => Self::Incompatible {
                 daemon_version: daemon_version.clone(),
+                daemon_schema: *store_schema,
             },
             _ => Self::Offline,
         }
     }
 
-    /// The link a `Welcome` means: a daemon on a newer store schema than this app reads is
-    /// incompatible even though the protocol matches.
+    /// The link a `Welcome` means: a daemon on another store schema is incompatible even though
+    /// the protocol matches, because the app's reader opens only its own schema (a newer one is
+    /// unknown, an older one is not migrated yet).
     #[must_use]
     pub fn from_welcome(daemon: &DaemonInfo) -> Self {
         let daemon_version = daemon.daemon_version.clone();
-        if daemon.store_schema > tokenmtr_store::SCHEMA_VERSION {
-            Self::Incompatible { daemon_version }
-        } else {
+        if daemon.store_schema == tokenmtr_store::SCHEMA_VERSION {
             Self::Connected { daemon_version }
+        } else {
+            Self::Incompatible {
+                daemon_version,
+                daemon_schema: daemon.store_schema,
+            }
         }
     }
 }
 
 /// Whether a daemon that answered with `daemon_version` and `store_schema` should be replaced
-/// by the bundled one: it is another version, and this app can still read its store (a newer
-/// schema means the app is the old side, and its daemon could not open the store).
+/// by the bundled one: it runs an older store schema (a build from before this one, even with
+/// the same version), or another version on this schema. Never when its schema is newer: then
+/// the app is the old side, and its daemon could not open the store.
 #[must_use]
 pub fn needs_restart(daemon_version: &str, store_schema: u32) -> bool {
-    daemon_version != APP_VERSION && store_schema <= tokenmtr_store::SCHEMA_VERSION
+    let schema = tokenmtr_store::SCHEMA_VERSION;
+    store_schema < schema || (store_schema == schema && daemon_version != APP_VERSION)
 }
 
 /// Connects once and reports the link; the connection is dropped.
@@ -380,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn a_newer_store_schema_is_incompatible_and_never_restarted() {
+    fn another_store_schema_is_incompatible_and_only_an_older_one_restarted() {
         let schema = tokenmtr_store::SCHEMA_VERSION;
         let welcome = |store_schema| DaemonInfo {
             daemon_version: APP_VERSION.to_owned(),
@@ -390,12 +403,23 @@ mod tests {
             Link::from_welcome(&welcome(schema)),
             Link::Connected { .. }
         ));
-        assert!(matches!(
+        assert_eq!(
             Link::from_welcome(&welcome(schema + 1)),
-            Link::Incompatible { .. }
-        ));
+            Link::Incompatible {
+                daemon_version: APP_VERSION.to_owned(),
+                daemon_schema: schema + 1,
+            }
+        );
+        assert_eq!(
+            Link::from_welcome(&welcome(schema - 1)),
+            Link::Incompatible {
+                daemon_version: APP_VERSION.to_owned(),
+                daemon_schema: schema - 1,
+            }
+        );
         assert!(!needs_restart(APP_VERSION, schema));
         assert!(needs_restart("0.0.0-old", schema));
+        assert!(needs_restart(APP_VERSION, schema - 1));
         assert!(!needs_restart("0.0.0-old", schema + 1));
     }
 
@@ -412,7 +436,8 @@ mod tests {
         assert_eq!(
             Link::from_error(&incompatible),
             Link::Incompatible {
-                daemon_version: "9.9.9".to_owned()
+                daemon_version: "9.9.9".to_owned(),
+                daemon_schema: 4,
             }
         );
     }

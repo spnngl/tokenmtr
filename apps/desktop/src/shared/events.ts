@@ -10,7 +10,11 @@ export type Listen = (event: string, handler: (payload: unknown) => void) => Pro
 export const daemonStateSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("connected"), daemon_version: z.string() }),
   z.object({ state: z.literal("offline") }),
-  z.object({ state: z.literal("incompatible"), daemon_version: z.string() }),
+  z.object({
+    state: z.literal("incompatible"),
+    daemon_version: z.string(),
+    daemon_schema: z.number().int().nonnegative(),
+  }),
 ]);
 export type DaemonState = z.infer<typeof daemonStateSchema>;
 

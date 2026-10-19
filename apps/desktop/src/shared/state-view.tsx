@@ -35,6 +35,8 @@ export type ViewState =
       readonly kind: "incompatible";
       readonly appVersion: string;
       readonly daemonVersion: string;
+      readonly appSchema: number;
+      readonly daemonSchema: number;
       readonly onRestartDaemon: () => void;
       readonly isPending: boolean;
     }
@@ -103,6 +105,18 @@ function Banner(props: {
   );
 }
 
+/**
+ * Why app and daemon disagree. Two builds of the same version can still differ in store schema
+ * (a development daemon started by hand), so the schemas are named when the versions match.
+ */
+function incompatibleBody(state: Extract<ViewState, { kind: "incompatible" }>): string {
+  const mismatch =
+    state.appVersion === state.daemonVersion
+      ? `The app reads store schema ${state.appSchema} but the daemon writes schema ${state.daemonSchema}.`
+      : `The app is ${state.appVersion} but the daemon is ${state.daemonVersion}.`;
+  return `${mismatch} Restart the daemon so both run the same build. A daemon started with tokenmtr run must be stopped by hand first.`;
+}
+
 /** Renders one view state around the page content. */
 export function StateView({ state, size = "page", children }: StateViewProps): ReactNode {
   switch (state.kind) {
@@ -167,7 +181,7 @@ export function StateView({ state, size = "page", children }: StateViewProps): R
           role="alert"
           icon={<Download className="size-6 text-warning" aria-hidden />}
           title="Update required"
-          body={`The app is ${state.appVersion} but the daemon is ${state.daemonVersion}. Restart the daemon after updating so both run the same version.`}
+          body={incompatibleBody(state)}
           action={
             <Button variant="primary" onPress={state.onRestartDaemon} isPending={state.isPending}>
               Restart daemon

@@ -55,7 +55,11 @@ pub enum StoreError {
         supported: u32,
     },
     /// A reader met a database that no writer has migrated yet.
-    #[error("database schema {found} is older than {expected}; start the daemon to migrate it")]
+    #[error(
+        "database schema {found} is older than {expected}; a daemon of this build migrates it when \
+         it starts: stop any older daemon still running, then start this build's \
+         (`tokenmtr service install` or `tokenmtr run`)"
+    )]
     OlderSchema {
         /// `PRAGMA user_version` of the file.
         found: u32,
