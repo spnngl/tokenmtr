@@ -71,11 +71,14 @@ const ARC: Record<MeterLevel, string> = {
 /** A circle of circumference 100, so a dash length is a percentage. */
 const RADIUS = 100 / (2 * Math.PI);
 
-/** Profiles side by side from 320 px each; donuts side by side inside a profile. */
+/**
+ * Profiles side by side from 320 px each; donuts side by side inside a profile, narrow enough
+ * that a profile's four windows (three plus extra usage) share one row in the 360 px recap.
+ */
 const GROUPS: CSSProperties = {
   gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 20rem), 1fr))",
 };
-const DONUTS: CSSProperties = { gridTemplateColumns: "repeat(auto-fill, minmax(6rem, 1fr))" };
+const DONUTS: CSSProperties = { gridTemplateColumns: "repeat(auto-fill, minmax(4.5rem, 1fr))" };
 
 /**
  * One window as a donut: used percent in the centre, label and reset (or spend) below. A meter
@@ -103,7 +106,7 @@ function WindowDonut(props: {
       valueLabel={valueLabel}
       className="flex flex-col items-center gap-1 text-center"
     >
-      <div className="relative size-20">
+      <div className="relative size-16">
         <svg viewBox="0 0 36 36" className="size-full -rotate-90" aria-hidden>
           <circle
             cx="18"
@@ -165,7 +168,7 @@ export function QuotaMeters(props: {
               {meter.account === null ? "" : ` (${meter.account})`}
             </h3>
             {meter.status === "ok" ? (
-              <div className="grid gap-3" style={DONUTS}>
+              <div className="grid gap-2" style={DONUTS}>
                 {meter.windows.map((window) => (
                   <WindowDonut
                     key={window.window}

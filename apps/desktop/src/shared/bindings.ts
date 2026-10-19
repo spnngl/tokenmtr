@@ -52,6 +52,7 @@ export const COMMANDS = [
   "export_now",
   "backup_now",
   "open_dashboard",
+  "fit_recap",
   "install_daemon",
   "restart_daemon",
   "reveal_path",

@@ -441,6 +441,12 @@
           "markdownDescription": "Enables the filter_options command without any pre-configured scope."
         },
         {
+          "description": "Enables the fit_recap command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fit-recap",
+          "markdownDescription": "Enables the fit_recap command without any pre-configured scope."
+        },
+        {
           "description": "Enables the fx_rates command without any pre-configured scope.",
           "type": "string",
           "const": "allow-fx-rates",
@@ -751,6 +757,12 @@
           "type": "string",
           "const": "deny-filter-options",
           "markdownDescription": "Denies the filter_options command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fit_recap command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fit-recap",
+          "markdownDescription": "Denies the fit_recap command without any pre-configured scope."
         },
         {
           "description": "Denies the fx_rates command without any pre-configured scope.",

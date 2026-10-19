@@ -142,6 +142,7 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     exportNow: () => act("export_now"),
     backupNow: () => act("backup_now"),
     openDashboard: (target: DashboardTarget) => act("open_dashboard", { ...target }),
+    fitRecap: (height) => act("fit_recap", { height }),
     installDaemon: () => act("install_daemon"),
     restartDaemon: () => act("restart_daemon"),
     revealPath: (target) => act("reveal_path", { target }),

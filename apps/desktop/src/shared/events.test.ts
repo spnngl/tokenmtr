@@ -218,6 +218,7 @@ describe("command bindings", () => {
       tauri.exportNow(),
       tauri.backupNow(),
       tauri.openDashboard({ route: "/", agent: null }),
+      tauri.fitRecap(600),
       tauri.installDaemon(),
       tauri.restartDaemon(),
       tauri.revealPath({ kind: "exports_dir" }),

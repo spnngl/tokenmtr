@@ -135,6 +135,31 @@
   }
 }
 
+/* Recharts tooltips and hover cursor follow the theme. The tooltip box carries inline white and
+   grey styles, so only !important beats it; one rule here covers every chart. */
+/* biome-ignore-start lint/complexity/noImportantStyles: beats Recharts' inline tooltip styles. */
+.recharts-default-tooltip {
+  background-color: var(--surface-raised) !important;
+  border-color: var(--border) !important;
+  border-radius: var(--radius-md);
+  color: var(--fg);
+  font-size: 0.875rem;
+}
+
+/* Above the legend, which Recharts draws after the tooltip. */
+.recharts-tooltip-wrapper {
+  z-index: 10 !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: Recharts tooltip override */
+
+.recharts-rectangle.recharts-tooltip-cursor {
+  fill: var(--surface-muted);
+}
+
+.recharts-curve.recharts-tooltip-cursor {
+  stroke: var(--border);
+}
+
 /* No motion when the user asks for less. */
 /* biome-ignore-start lint/complexity/noImportantStyles: must beat every component animation and transition. */
 @media (prefers-reduced-motion: reduce) {

@@ -39,8 +39,8 @@ import { HeatmapGrid, summarizeWeekdays, type WeekdaySummary } from "./heatmap";
 const TOP_COUNT = 5;
 
 const COST_GROUPS: readonly { value: Extract<GroupBy, "agent" | "model">; label: string }[] = [
-  { value: "agent", label: "By agent" },
   { value: "model", label: "By model" },
+  { value: "agent", label: "By agent" },
 ];
 
 const WEEKDAY_COLUMNS = (currency: Currency): Column<WeekdaySummary>[] => [
@@ -122,7 +122,7 @@ function Kpis({ totals }: { readonly totals: Totals }): ReactNode {
 
 function CostCard(): ReactNode {
   const { filters } = useFilters();
-  const [groupBy, setGroupBy] = useState<"agent" | "model">("agent");
+  const [groupBy, setGroupBy] = useState<"agent" | "model">("model");
   return (
     <CardRemote title="Daily cost" remote={toRemote(useSeries(filters, groupBy))}>
       {(series) => <CostFrame series={series} groupBy={groupBy} onGroupByChange={setGroupBy} />}

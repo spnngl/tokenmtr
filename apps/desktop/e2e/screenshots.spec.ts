@@ -152,7 +152,8 @@ for (const theme of THEMES) {
     }
 
     test.describe("recap 360px", () => {
-      test.use({ viewport: { width: 360, height: 640 } });
+      // Tall enough for the whole recap, as the popover sizes itself to its content.
+      test.use({ viewport: { width: 360, height: 1000 } });
 
       const TABS = [
         { name: "All", file: "All" },
@@ -168,10 +169,10 @@ for (const theme of THEMES) {
         });
       }
 
-      test("footer shows the full health text without clipping", async ({ page }) => {
+      test("header shows the full health text without clipping", async ({ page }) => {
         await page.goto("/tray.html?mock=populated");
         await settle(page);
-        const status = page.getByRole("contentinfo").getByRole("status");
+        const status = page.getByRole("banner").getByRole("status");
         await expect(status).toHaveText("1 sink failing");
         const clipped = await status.evaluate((element) =>
           [element, ...element.querySelectorAll("*")].some(

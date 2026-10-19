@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{
-    ActivationPolicy, AppHandle, Emitter as _, Manager as _, PhysicalPosition, PhysicalSize,
-    WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
+    ActivationPolicy, AppHandle, Emitter as _, LogicalSize, Manager as _, PhysicalPosition,
+    PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_positioner::{Position, WindowExt as _};
 use tokenmtr_core::brand::DISPLAY_NAME;
@@ -22,7 +22,14 @@ pub const MAIN: &str = "main";
 pub const RECAP_SHOWN: &str = "recap-shown";
 
 const RECAP_WIDTH: f64 = 360.0;
+/// Height before the webview first reports its content, in logical pixels.
 const RECAP_HEIGHT: f64 = 520.0;
+/// The popover never shrinks below this, so loading and empty states keep a usable size.
+const RECAP_MIN_HEIGHT: f64 = 240.0;
+/// Height of the macOS menu bar, in logical pixels.
+const MENU_BAR: f64 = 28.0;
+/// Gap kept between the popover and the screen edges, in logical pixels.
+const MARGIN: f64 = 8.0;
 /// How long after a blur-hide a tray click still counts as the click that caused the blur.
 const BLUR_GRACE: Duration = Duration::from_millis(250);
 
@@ -80,8 +87,6 @@ pub struct Area {
 /// tray click): the top-right corner of `monitor`, below the menu bar, kept inside the screen.
 #[must_use]
 pub fn corner_position(monitor: Area, window: (f64, f64), scale: f64) -> (f64, f64) {
-    const MENU_BAR: f64 = 28.0;
-    const MARGIN: f64 = 8.0;
     let (width, height) = window;
     let x = (monitor.x + monitor.width - width - MARGIN * scale).max(monitor.x);
     let y = (monitor.y + MENU_BAR * scale).min(monitor.y + (monitor.height - height).max(0.0));
@@ -147,6 +152,46 @@ fn place_recap(window: &WebviewWindow<Wry>) {
     if let Err(error) = window.set_position(PhysicalPosition::new(left, top)) {
         tracing::warn!(%error, "could not place the recap");
     }
+}
+
+/// The popover height showing `content` logical pixels whole: at least [`RECAP_MIN_HEIGHT`], at
+/// most `available` (the screen's usable height less the margins), where the recap scrolls.
+/// A non-finite `content` keeps the default height.
+#[must_use]
+pub fn recap_height(content: f64, available: f64) -> f64 {
+    if !content.is_finite() {
+        return RECAP_HEIGHT;
+    }
+    let available = if available.is_finite() {
+        available.max(RECAP_MIN_HEIGHT)
+    } else {
+        RECAP_HEIGHT
+    };
+    content.clamp(RECAP_MIN_HEIGHT, available)
+}
+
+/// Resizes the popover to its content (`content` logical pixels tall), within the screen.
+///
+/// # Errors
+///
+/// The window cannot be resized.
+pub fn fit_recap(app: &AppHandle<Wry>, content: f64) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window(RECAP) else {
+        return Ok(());
+    };
+    let available = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .map_or(RECAP_HEIGHT, |monitor| {
+            let work = monitor.work_area().size.height;
+            f64::from(work) / monitor.scale_factor() - 2.0 * MARGIN
+        });
+    window.set_size(LogicalSize::new(
+        RECAP_WIDTH,
+        recap_height(content, available),
+    ))
 }
 
 /// Shows, hides or ignores per `gate`.
@@ -253,6 +298,15 @@ mod tests {
             gate.toggle(false, start + Duration::from_secs(2)),
             Toggle::Show
         );
+    }
+
+    #[test]
+    fn recap_fits_its_content_within_the_screen() {
+        assert!((recap_height(700.0, 1000.0) - 700.0).abs() < f64::EPSILON);
+        assert!((recap_height(1400.0, 1000.0) - 1000.0).abs() < f64::EPSILON);
+        assert!((recap_height(100.0, 1000.0) - RECAP_MIN_HEIGHT).abs() < f64::EPSILON);
+        assert!((recap_height(f64::NAN, 1000.0) - RECAP_HEIGHT).abs() < f64::EPSILON);
+        assert!((recap_height(700.0, 100.0) - RECAP_MIN_HEIGHT).abs() < f64::EPSILON);
     }
 
     #[test]

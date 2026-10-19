@@ -326,6 +326,8 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     exportNow: () => act("exportNow"),
     backupNow: () => act("backupNow"),
     openDashboard: (target) => act("openDashboard", target),
+    // The browser has no popover window to resize.
+    fitRecap: () => Promise.resolve(),
     installDaemon: () => {
       daemonInstalled = true;
       return act("installDaemon");

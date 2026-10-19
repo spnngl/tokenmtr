@@ -45,6 +45,12 @@ describe("Recap", () => {
     expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "Claude Code", "pi", "aider"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
 
+    // The header actions come first, then the agent tabs.
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open dashboard" }));
+    await user.tab();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
     await user.tab();
     expect(document.activeElement).toBe(tabs[0]);
     await user.keyboard("{ArrowRight}");
@@ -77,7 +83,7 @@ describe("Recap", () => {
     expect(within(plain).getAllByRole("meter").length).toBeGreaterThan(0);
   });
 
-  it("shows projected spend and the footer health with its reason", () => {
+  it("shows projected spend and the header health with its reason", () => {
     renderRecap();
     const money = screen.getByRole("region", { name: "Money" });
     expect(within(money).getByText("Projected spend")).toBeTruthy();
@@ -195,7 +201,7 @@ describe("RecapApp", () => {
     expect(await screen.findByText("No agents found")).toBeTruthy();
   });
 
-  it("scans from the footer", async () => {
+  it("scans from the header", async () => {
     const onAction = vi.fn();
     renderApp("populated", onAction);
     await userEvent.setup().click(await screen.findByRole("button", { name: "Scan now" }));

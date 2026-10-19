@@ -341,6 +341,12 @@ pub fn open_dashboard(app: AppHandle<Wry>, route: Route, agent: Option<AgentId>)
         .map_err(CommandError::internal)
 }
 
+/// Resizes the recap popover to its content height, in logical pixels.
+#[tauri::command]
+pub fn fit_recap(app: AppHandle<Wry>, height: f64) -> Reply<()> {
+    windows::fit_recap(&app, height).map_err(CommandError::internal)
+}
+
 /// Installs the background service.
 #[tauri::command]
 pub async fn install_daemon(shell: State<'_, Shell>) -> Reply<()> {
@@ -597,6 +603,7 @@ command_table!(
     export_now,
     backup_now,
     open_dashboard,
+    fit_recap,
     install_daemon,
     restart_daemon,
     reveal_path,

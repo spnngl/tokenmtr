@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { useDataAction, useScanNow } from "../shared/actions";
-import { useAppConfig } from "../shared/app-context";
+import { useAppConfig, useDataSource } from "../shared/app-context";
 import type { DashboardTarget } from "../shared/data-source";
 import { errorText } from "../shared/errors";
 import { useRecap, useSettings } from "../shared/queries";
@@ -8,7 +8,7 @@ import type { Period } from "../shared/schemas";
 import { StateView } from "../shared/state-view";
 import { Recap } from "./recap";
 
-/** Loads the recap for the chosen period and wires the footer actions to the data source. */
+/** Loads the recap for the chosen period and wires the header actions to the data source. */
 export function RecapApp(): ReactNode {
   const { timeZone, defaultCurrency, now } = useAppConfig();
   const [period, setPeriod] = useState<Period>("today");
@@ -18,6 +18,7 @@ export function RecapApp(): ReactNode {
     () => new Map((agents ?? []).map((agent) => [agent.agent, agent.label])),
     [agents],
   );
+  const ds = useDataSource();
   const scan = useScanNow();
   const open = useDataAction((ds, target: DashboardTarget) => ds.openDashboard(target), {
     failure: "Could not open the dashboard",
@@ -49,6 +50,8 @@ export function RecapApp(): ReactNode {
       onScanNow={() => scan.mutate()}
       isScanning={scan.isPending}
       agentLabels={agentLabels}
+      // A failed resize leaves the popover at its size, where the recap scrolls: nothing to show.
+      onContentHeight={(height) => void ds.fitRecap(height).catch(() => undefined)}
     />
   );
 }

@@ -142,18 +142,19 @@ describe("Overview", () => {
     expect(await screen.findByText(/100% at 15:40 at this pace/)).toBeTruthy();
     expect(screen.getByText("Cached input")).toBeTruthy();
     expect(screen.getByText("Cache savings")).toBeTruthy();
-    await user.click(await screen.findByRole("button", { name: /claude-opus-4/ }));
+    const top = await screen.findByRole("region", { name: "Top models" });
+    await user.click(await within(top).findByRole("button", { name: /claude-opus-4/ }));
     await waitFor(() => expect(searchOf(router).get("model")).toBe("claude-opus-4"));
   });
 
-  it("regroups the daily cost by model", async () => {
+  it("groups the daily cost by model, then regroups it by agent", async () => {
     const user = userEvent.setup();
     await renderApp("/");
-    const group = await screen.findByRole("radiogroup", { name: "Group cost" });
-    await user.click(within(group).getByRole("radio", { name: "By model" }));
-    await waitFor(() =>
-      expect(screen.getByRole("columnheader", { name: /claude-opus-4/ })).toBeTruthy(),
-    );
+    expect(await screen.findByRole("columnheader", { name: /claude-opus-4/ })).toBeTruthy();
+    const group = screen.getByRole("radiogroup", { name: "Group cost" });
+    await user.click(within(group).getByRole("radio", { name: "By agent" }));
+    await waitFor(() => expect(screen.getByRole("columnheader", { name: /claude/ })).toBeTruthy());
+    expect(screen.queryByRole("columnheader", { name: /claude-opus-4/ })).toBeNull();
   });
 
   it("applies the URL filters to the data", async () => {

@@ -3,3 +3,9 @@
 // readable. `getContext` returns `null` as jsdom's own stub does, minus the log.
 window.scrollTo = () => undefined;
 HTMLCanvasElement.prototype.getContext = () => null;
+// jsdom has no ResizeObserver; with no layout there is nothing to observe.
+globalThis.ResizeObserver ??= class {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+};

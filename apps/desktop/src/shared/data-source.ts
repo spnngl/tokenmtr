@@ -147,6 +147,8 @@ export interface DataSource {
   exportNow(): Promise<void>;
   backupNow(): Promise<void>;
   openDashboard(target: DashboardTarget): Promise<void>;
+  /** Resizes the recap popover to show `height` CSS pixels of content (within the screen). */
+  fitRecap(height: number): Promise<void>;
   installDaemon(): Promise<void>;
   restartDaemon(): Promise<void>;
   /** Shows `target` in the OS file manager. */
