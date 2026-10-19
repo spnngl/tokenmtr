@@ -78,13 +78,14 @@
 //! | [`quota_latest`], [`quota_history`], [`advisor`] | [`QuotaMeter`], [`QuotaHistory`], [`AdvisorReport`] |
 //! | [`budgets`] | [`BudgetView`]: spent, limit, percent, projected |
 //! | [`recap`], [`status`] | [`Recap`], [`Status`] |
-//! | [`sink_health`], [`daemon_health`], [`ingest_status`], [`parse_issues`], [`alerts`], [`backup_runs`], [`fx_rates`] | health views |
+//! | [`sink_health`], [`metrics_health`], [`daemon_health`], [`ingest_status`], [`parse_issues`], [`alerts`], [`backup_runs`], [`fx_rates`] | health views |
 //!
 //! [`Recap`] and [`Status`] carry `status_schema` = [`STATUS_SCHEMA`] (`1`),
 //! `generated_at`, and `system` (`level` of `ok`/`warning`/`error`, `daemon`,
-//! `sinks`). Bump the schema on any breaking change. Sink health is tagged by
+//! `sinks`, `metrics`). Bump the schema on any breaking change. Sink health is tagged by
 //! `state`: `healthy`, `lagging`, `failing` (with `since`, `last_error`) or
-//! `disabled`.
+//! `disabled`. Metrics output health is tagged likewise, by `healthy` or `failing`, and carries
+//! `output`, `kind` (`exporter` or `remote_write`), `last_success_at` and `recent_runs`.
 
 mod billing;
 mod billing_series;
@@ -94,6 +95,7 @@ mod engine;
 mod error;
 mod filters;
 mod health;
+mod metrics_health;
 mod model_project;
 mod project_remotes;
 mod quota;
@@ -121,6 +123,10 @@ pub use health::{
     AlertView, BackupView, DaemonHealth, DaemonState, FxRateView, IngestStatus, ParseIssueView,
     SinkHealth, SinkRunView, SinkSpec, SinkState, alerts, backup_runs, daemon_health, fx_rates,
     ingest_status, parse_issues, sink_health,
+};
+pub use metrics_health::{
+    METRICS_HEALTH_RUNS, METRICS_RECENT_RUNS, MetricsHealth, MetricsKind, MetricsRunView,
+    MetricsSpec, MetricsState, metrics_health, metrics_state,
 };
 pub use model_project::{ModelSlice, ProjectModelsRow, project_models};
 pub use project_remotes::{ProjectRemote, project_remotes};

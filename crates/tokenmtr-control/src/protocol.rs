@@ -12,7 +12,7 @@ use tokenmtr_core::{AgentId, Alert, SinkId};
 
 /// The protocol version this build speaks. Bumped on any change an older peer would misread; a
 /// daemon answers a [`Request::Hello`] with another version with [`Response::Incompatible`].
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// A dataset whose rows changed.
 pub use tokenmtr_core::Dataset;

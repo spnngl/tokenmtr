@@ -11,8 +11,8 @@ use tokenmtr_core::{ProfileId, SubscriptionSpec};
 use tokenmtr_platform::Paths;
 use tokenmtr_platform::fs::replace_atomically;
 use tokenmtr_query::{
-    BudgetScope, BudgetSpec, ClientName, FxPolicy, QueryContext, QueryError, RecapConfig, SinkSpec,
-    WeekStart, load_fx_rates, load_subscriptions,
+    BudgetScope, BudgetSpec, ClientName, FxPolicy, MetricsKind, MetricsSpec, QueryContext,
+    QueryError, RecapConfig, SinkSpec, WeekStart, load_fx_rates, load_subscriptions,
 };
 use tokenmtr_store::StoreReader;
 
@@ -110,12 +110,27 @@ pub fn sink_specs(config: &Config) -> Vec<SinkSpec> {
         .collect()
 }
 
+/// The configured metrics outputs, exporters first, as the health queries see them.
+#[must_use]
+pub fn metrics_specs(config: &Config) -> Vec<MetricsSpec> {
+    let exporters = config.metrics.exporters.iter().map(|e| MetricsSpec {
+        id: e.id.clone(),
+        kind: MetricsKind::Exporter,
+    });
+    let remote_write = config.metrics.remote_write.iter().map(|w| MetricsSpec {
+        id: w.id.clone(),
+        kind: MetricsKind::RemoteWrite,
+    });
+    exporters.chain(remote_write).collect()
+}
+
 /// Everything the recap and status queries take from the config.
 #[must_use]
 pub fn recap_config(config: &Config) -> RecapConfig {
     RecapConfig {
         budgets: budget_specs(config),
         sinks: sink_specs(config),
+        metrics: metrics_specs(config),
         live_window: config.menubar.live_window,
         daemon_stale_after: config.alerts.daemon_stale_after,
     }

@@ -43,6 +43,32 @@ const sinkHealthSchema = z.discriminatedUnion("state", [
 ]);
 export type SinkHealth = z.infer<typeof sinkHealthSchema>;
 
+const metricsRunSchema = z.object({
+  started_at: timestampSchema,
+  finished_at: timestampSchema,
+  series: countSchema,
+  error: z.string().nullable(),
+});
+
+/** `MetricsState` is flattened into `MetricsHealth`, tagged by `state`. */
+const metricsShape = {
+  output: z.string(),
+  kind: z.enum(["exporter", "remote_write"]),
+  last_success_at: timestampSchema.nullable(),
+  recent_runs: z.array(metricsRunSchema),
+} as const;
+
+const metricsHealthSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("healthy"), ...metricsShape }),
+  z.object({
+    state: z.literal("failing"),
+    since: timestampSchema,
+    last_error: z.string(),
+    ...metricsShape,
+  }),
+]);
+export type MetricsHealth = z.infer<typeof metricsHealthSchema>;
+
 export const daemonHealthSchema = z.object({
   state: z.enum(["running", "stale", "never_started"]),
   last_heartbeat: timestampSchema.nullable(),
@@ -53,11 +79,12 @@ const HEALTH_LEVELS = ["ok", "warning", "error"] as const;
 const healthLevelSchema = z.enum(HEALTH_LEVELS);
 export type HealthLevel = z.infer<typeof healthLevelSchema>;
 
-/** Worst of daemon and sinks: the menu-bar status dot. */
+/** Worst of daemon, sinks and metrics outputs: the menu-bar status dot. */
 export const systemHealthSchema = z.object({
   level: healthLevelSchema,
   daemon: daemonHealthSchema,
   sinks: z.array(sinkHealthSchema),
+  metrics: z.array(metricsHealthSchema),
 });
 export type SystemHealth = z.infer<typeof systemHealthSchema>;
 
@@ -120,6 +147,12 @@ export const alertSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("sink_failing"),
     sink: z.string(),
+    since: timestampSchema,
+    ...alertShape,
+  }),
+  z.object({
+    kind: z.literal("metrics_failing"),
+    output: z.string(),
     since: timestampSchema,
     ...alertShape,
   }),

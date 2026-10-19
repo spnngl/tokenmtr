@@ -464,6 +464,7 @@ fn recap_config() -> RecapConfig {
     RecapConfig {
         budgets: Vec::new(),
         sinks: Vec::new(),
+        metrics: Vec::new(),
         live_window: SignedDuration::from_mins(5),
         daemon_stale_after: SignedDuration::from_secs(i64::MAX / 4),
     }

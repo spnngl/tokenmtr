@@ -40,6 +40,13 @@ pub enum AlertKind {
         /// When it started failing.
         since: Timestamp,
     },
+    /// A metrics output (exporter or remote write) has been failing for longer than allowed.
+    MetricsFailing {
+        /// The output.
+        output: SinkId,
+        /// When it started failing.
+        since: Timestamp,
+    },
     /// An agent's log format drifted from what the parser knows.
     FormatDrift {
         /// The agent.
@@ -119,10 +126,10 @@ pub struct BudgetState {
     pub period_start: Date,
 }
 
-/// A sink's failure state.
+/// The failure state of a sink or of a metrics output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SinkState {
-    /// The sink.
+    /// The sink or output.
     pub id: SinkId,
     /// Since when it has been failing; `None` when healthy.
     pub failing_since: Option<Timestamp>,
@@ -148,6 +155,8 @@ pub struct AlertInputs {
     pub budgets: Vec<BudgetState>,
     /// Sinks.
     pub sinks: Vec<SinkState>,
+    /// Metrics outputs.
+    pub metrics: Vec<SinkState>,
     /// Open drift issues.
     pub drift: Vec<DriftState>,
     /// When the last backup failed, if it did.
@@ -165,6 +174,7 @@ impl AlertInputs {
             quota: Vec::new(),
             budgets: Vec::new(),
             sinks: Vec::new(),
+            metrics: Vec::new(),
             drift: Vec::new(),
             backup_failed_at: None,
             already_fired: HashSet::new(),
@@ -213,6 +223,22 @@ fn is_new_instance(resets_at: Option<Timestamp>, previous: Timestamp) -> bool {
     resets_at.is_none_or(|t| t.duration_since(previous).abs() > RESET_TOLERANCE)
 }
 
+/// The sinks or outputs that have been failing for longer than `sink_failing_after`, with the
+/// start of their streak.
+fn failing_past_grace<'a>(
+    states: &'a [SinkState],
+    now: Timestamp,
+    config: &'a AlertConfig,
+) -> impl Iterator<Item = (&'a SinkId, Timestamp)> {
+    states.iter().filter_map(move |state| {
+        let since = state.failing_since?;
+        since
+            .checked_add(config.sink_failing_after)
+            .is_ok_and(|due| due <= now)
+            .then_some((&state.id, since))
+    })
+}
+
 /// The alerts that should fire now, skipping dedup keys in `already_fired`.
 ///
 /// Each quota threshold fires once per agent, profile and window instance and again after the
@@ -220,7 +246,7 @@ fn is_new_instance(resets_at: Option<Timestamp>, previous: Timestamp) -> bool {
 /// window, by the local month); budgets likewise per period; a sink alert once
 /// per failure streak; drift once per issue; backup failure once per failure time. When one
 /// evaluation crosses several thresholds, each fires. Output order is deterministic: quota,
-/// budgets, sinks, drift, backup.
+/// budgets, sinks, metrics outputs, drift, backup.
 #[must_use]
 pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert> {
     let now = inputs.now;
@@ -296,20 +322,24 @@ pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert>
         }
     }
 
-    for s in &inputs.sinks {
-        if let Some(since) = s.failing_since
-            && since
-                .checked_add(config.sink_failing_after)
-                .is_ok_and(|due| due <= now)
-        {
-            fire(
-                AlertKind::SinkFailing {
-                    sink: s.id.clone(),
-                    since,
-                },
-                format!("sink_failing|{}|{since}", s.id),
-            );
-        }
+    for (id, since) in failing_past_grace(&inputs.sinks, now, config) {
+        fire(
+            AlertKind::SinkFailing {
+                sink: id.clone(),
+                since,
+            },
+            format!("sink_failing|{id}|{since}"),
+        );
+    }
+
+    for (id, since) in failing_past_grace(&inputs.metrics, now, config) {
+        fire(
+            AlertKind::MetricsFailing {
+                output: id.clone(),
+                since,
+            },
+            format!("metrics_failing|{id}|{since}"),
+        );
     }
 
     for d in &inputs.drift {
@@ -593,6 +623,33 @@ mod tests {
         let a = run("2026-03-01T12:30:00Z")?;
         assert_eq!(a.len(), 1);
         assert!(matches!(&a[0].kind, AlertKind::SinkFailing { since: s, .. } if *s == since));
+        Ok(())
+    }
+
+    #[test]
+    fn metrics_outputs_alert_after_the_sink_grace_period_under_their_own_kind() -> TestResult {
+        let since: Timestamp = "2026-03-01T12:00:00Z".parse()?;
+        let state = || -> Result<SinkState, Box<dyn std::error::Error>> {
+            Ok(SinkState {
+                id: SinkId::try_from("grafana")?,
+                failing_since: Some(since),
+            })
+        };
+        let run = |now: &str| -> Result<Vec<Alert>, Box<dyn std::error::Error>> {
+            Ok(evaluate_alerts(
+                &AlertInputs {
+                    now: now.parse()?,
+                    metrics: vec![state()?],
+                    ..AlertInputs::new(Timestamp::UNIX_EPOCH)
+                },
+                &AlertConfig::default(),
+            ))
+        };
+        assert_eq!(run("2026-03-01T12:29:59Z")?, Vec::new());
+        let a = run("2026-03-01T12:30:00Z")?;
+        assert_eq!(a.len(), 1);
+        assert!(matches!(&a[0].kind, AlertKind::MetricsFailing { since: s, .. } if *s == since));
+        assert!(a[0].dedup_key.starts_with("metrics_failing|grafana|"));
         Ok(())
     }
 

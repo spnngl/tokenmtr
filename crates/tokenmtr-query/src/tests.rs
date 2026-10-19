@@ -22,8 +22,8 @@ use tokenmtr_core::{
     SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, UsdMicros, Utilization, WindowId,
 };
 use tokenmtr_store::{
-    Dataset, FxSource, IngestRun, ProfiledToolCall, QuotaOutcome, QuotaPoll, SessionSignal,
-    SinkRun, Store, StoreRead, StoreReader,
+    Dataset, FxSource, IngestRun, MetricsRun, ProfiledToolCall, QuotaOutcome, QuotaPoll,
+    SessionSignal, SinkRun, Store, StoreRead, StoreReader,
 };
 
 use crate::*;
@@ -1263,6 +1263,7 @@ fn recap_config(sinks: Vec<SinkSpec>, budgets: Vec<BudgetSpec>) -> RecapConfig {
     RecapConfig {
         budgets,
         sinks,
+        metrics: Vec::new(),
         live_window: SignedDuration::from_mins(5),
         daemon_stale_after: SignedDuration::from_secs(60),
     }
@@ -1394,6 +1395,61 @@ fn month_budget_projects_from_the_recent_daily_burn() {
     assert_eq!(
         (b.period_start, b.period_end),
         (date(2026, 2, 1), date(2026, 3, 1))
+    );
+}
+
+#[test]
+fn metrics_health_is_failing_from_the_start_of_the_trailing_streak() {
+    let seed = Seed::new();
+    let spec = |name: &str, kind: MetricsKind| MetricsSpec {
+        id: SinkId::try_from(name.to_owned()).unwrap(),
+        kind,
+    };
+    let run = |output: &str, at: &str, error: Option<&str>| MetricsRun {
+        output: SinkId::try_from(output.to_owned()).unwrap(),
+        started: ts(at),
+        finished: ts(at),
+        series: 7,
+        error: error.map(str::to_owned),
+    };
+    for r in [
+        run("push", "2026-02-02T08:00:00Z", None),
+        run("push", "2026-02-02T09:00:00Z", Some("http status 503")),
+        run("push", "2026-02-02T10:00:00Z", Some("http status 429")),
+        run("scrape", "2026-02-02T08:00:00Z", Some("address in use")),
+        run("scrape", "2026-02-02T09:00:00Z", None),
+    ] {
+        seed.store().record_metrics_run(&r).unwrap();
+    }
+    let specs = [
+        spec("push", MetricsKind::RemoteWrite),
+        spec("scrape", MetricsKind::Exporter),
+        spec("never", MetricsKind::Exporter),
+    ];
+    let health = metrics_health(&seed.reader(), &specs).unwrap();
+    assert_eq!(
+        health[0].state,
+        MetricsState::Failing {
+            since: ts("2026-02-02T09:00:00Z"),
+            last_error: "http status 429".to_owned()
+        }
+    );
+    assert_eq!(health[0].last_success_at, Some(ts("2026-02-02T08:00:00Z")));
+    assert_eq!(health[0].recent_runs.len(), 3);
+    assert_eq!(health[1].state, MetricsState::Healthy);
+    assert_eq!(health[2].state, MetricsState::Healthy);
+    assert!(health[2].recent_runs.is_empty());
+    assert_eq!(
+        json(&health[0]),
+        serde_json::json!({
+            "output": "push",
+            "kind": "remote_write",
+            "state": "failing",
+            "since": "2026-02-02T09:00:00Z",
+            "last_error": "http status 429",
+            "last_success_at": "2026-02-02T08:00:00Z",
+            "recent_runs": json(&health[0])["recent_runs"],
+        })
     );
 }
 

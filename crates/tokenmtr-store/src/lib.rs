@@ -52,7 +52,7 @@
 //! - one module per dataset (`events`, `tool_calls`, `subscriptions`, `quota`, `fx`) with its SQL,
 //!   writer and reader.
 //! - one module per bookkeeping table (`checkpoint`, `signal`, `project`, `alert`, `sink`, `runs`,
-//!   `issue`, `pricing`, `account`, `meta`).
+//!   `issue`, `pricing`, `account`, `metrics_run`, `meta`).
 //! - `ingest`: [`Store::commit_ingest`], the atomic write of one ingest flush.
 //! - `backup`: online backup and [`restore`].
 //! - `temp`: [`TempStore`], a writer plus readers on a temporary file, for tests.
@@ -70,6 +70,7 @@ mod fx;
 mod ingest;
 mod issue;
 mod meta;
+mod metrics_run;
 mod migrations;
 mod pricing;
 mod project;
@@ -94,6 +95,7 @@ pub use error::{CodecError, StoreError};
 pub use fx::{FxRateRow, FxSource};
 pub use ingest::{IngestWrite, IngestWriteReport, IssueUpdate, ToolResultFlag};
 pub use issue::{IssueKind, OpenParseIssue, ParseIssue};
+pub use metrics_run::MetricsRun;
 pub use migrations::SCHEMA_VERSION;
 pub use pricing::{
     RepriceCursor, RepriceEvent, RepricePage, RepriceScope, Repriced, StoredPricingSnapshot,

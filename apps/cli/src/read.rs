@@ -7,8 +7,8 @@ use jiff::SignedDuration;
 use tokenmtr_app::{AppContext, FxSummary, PricingSummary, QuotaReport};
 use tokenmtr_core::{AgentId, QuotaEta};
 use tokenmtr_query::{
-    AgentRecap, AlertView, DaemonState, HealthLevel, Period, QuotaMeter, Selection, SinkState,
-    SystemHealth,
+    AgentRecap, AlertView, DaemonState, HealthLevel, MetricsState, Period, QuotaMeter, Selection,
+    SinkState, SystemHealth,
 };
 
 use crate::format::{money, percent, print_json, seconds, timestamp};
@@ -211,6 +211,15 @@ fn render_system(system: &SystemHealth) {
             SinkState::Disabled => "disabled".to_owned(),
         };
         println!("sink {}: {state}", sink.sink);
+    }
+    for output in &system.metrics {
+        let state = match &output.state {
+            MetricsState::Healthy => "healthy".to_owned(),
+            MetricsState::Failing { since, last_error } => {
+                format!("failing since {}: {last_error}", timestamp(*since))
+            }
+        };
+        println!("metrics {}: {state}", output.output);
     }
 }
 

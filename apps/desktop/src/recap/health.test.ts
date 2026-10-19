@@ -14,7 +14,12 @@ const FAILING_SINK: SinkHealth = {
 
 describe("summarizeHealth", () => {
   it("is healthy when the daemon runs and no sink complains", () => {
-    const system: SystemHealth = { level: "ok", daemon: RUNNING, sinks: [HEALTHY_SINK] };
+    const system: SystemHealth = {
+      level: "ok",
+      daemon: RUNNING,
+      sinks: [HEALTHY_SINK],
+      metrics: [],
+    };
     expect(summarizeHealth(system)).toEqual({ level: "ok", label: "Healthy" });
   });
 
@@ -23,6 +28,7 @@ describe("summarizeHealth", () => {
       level: "error",
       daemon: { state: "stale", last_heartbeat: null, age_secs: 900 },
       sinks: [FAILING_SINK],
+      metrics: [],
     };
     expect(summarizeHealth(system).label).toBe("Daemon offline");
   });
@@ -32,8 +38,32 @@ describe("summarizeHealth", () => {
       level: "error",
       daemon: RUNNING,
       sinks: [FAILING_SINK, { ...FAILING_SINK, sink: "sheet" }],
+      metrics: [],
     };
     expect(summarizeHealth(system).label).toBe("2 sinks failing");
+  });
+
+  it("names failing metrics outputs after sinks", () => {
+    const system: SystemHealth = {
+      level: "warning",
+      daemon: RUNNING,
+      sinks: [HEALTHY_SINK],
+      metrics: [
+        {
+          state: "failing",
+          since: "2026-06-15T09:00:00Z",
+          last_error: "http status 429",
+          output: "grafana",
+          kind: "remote_write",
+          last_success_at: null,
+          recent_runs: [],
+        },
+      ],
+    };
+    expect(summarizeHealth(system)).toEqual({
+      level: "warning",
+      label: "1 metrics output failing",
+    });
   });
 
   it("reports lag as a warning", () => {
@@ -41,6 +71,7 @@ describe("summarizeHealth", () => {
       level: "warning",
       daemon: RUNNING,
       sinks: [{ ...BASE, state: "lagging" }],
+      metrics: [],
     };
     expect(summarizeHealth(system)).toEqual({ level: "warning", label: "1 sink lagging" });
   });

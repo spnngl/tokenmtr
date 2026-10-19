@@ -20,6 +20,13 @@
     "percent": 80
   },
   {
+    "fired_at": "2026-05-02T08:30:00Z",
+    "dedup_key": "metrics_failing:grafana",
+    "kind": "metrics_failing",
+    "output": "grafana",
+    "since": "2026-05-02T08:00:00Z"
+  },
+  {
     "fired_at": "2026-05-02T08:00:00Z",
     "dedup_key": "sink_failing:warehouse",
     "kind": "sink_failing",

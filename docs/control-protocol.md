@@ -11,7 +11,7 @@ How clients (CLI, menu-bar app) talk to the daemon. Types live in `crates/tokenm
 
 ## Handshake
 
-1. The client sends `{"type":"hello","protocol":2,"client":{"name":"…","version":"…","schema":null}}` first. Any other first message, or none within the handshake timeout, ends the connection (`error` / `bad_request` for a wrong first message).
+1. The client sends `{"type":"hello","protocol":3,"client":{"name":"…","version":"…","schema":null}}` first. Any other first message, or none within the handshake timeout, ends the connection (`error` / `bad_request` for a wrong first message).
 2. Same `protocol`: the daemon answers `welcome` (`protocol`, `daemon_version`, `store_schema`).
 3. Different `protocol`: the daemon answers `incompatible` (`daemon_protocol`, `daemon_version`, `store_schema`, `reason`), sends nothing else and closes. A client that reads the store directly compares `store_schema` with its own and refuses to open a newer store.
 
@@ -61,5 +61,5 @@ Clients re-read the store after `store_changed`; the event carries no row data.
 ## Versioning
 
 - `PROTOCOL_VERSION` is bumped for any change an older peer would misread: removing or renaming a message or field, changing a meaning, adding a required field.
-- Adding an optional field is compatible. A new event, an unsolicited response type or a new value of a closed enum (a quota status, an issue kind) is not: older clients fail to parse it, so it bumps the version. v2 added `keychain_denied` and `integration_drift`. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
+- Adding an optional field is compatible. A new event, an unsolicited response type or a new value of a closed enum (a quota status, an issue kind) is not: older clients fail to parse it, so it bumps the version. v2 added `keychain_denied` and `integration_drift`; v3 added the `metrics_failing` alert kind. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
 - There is no negotiation: a mismatch ends the connection. Ship the daemon and its clients together: they come from one app bundle, and the app shows "Update required" on `incompatible`.
