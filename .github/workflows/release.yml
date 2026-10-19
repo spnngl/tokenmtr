@@ -106,7 +106,8 @@ jobs:
           dmg="$bundle/dmg/TokenMtr_${TAG#v}_universal.dmg"
           test -f "$dmg"
           codesign --verify --deep --strict --verbose=2 "$app"
-          codesign -dv "$app" 2>&1 | grep -Fx "Authority=TokenMtr Local Signing"
+          # Authority lines need verbosity 2.
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -Fx "Authority=TokenMtr Local Signing"
           archs=$(lipo -archs "$app/Contents/MacOS/tokenmtr")
           [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || { echo "::error::tokenmtr archs: $archs"; exit 1; }
           "$app/Contents/MacOS/tokenmtr" --version | grep -Fx "tokenmtr ${TAG#v}"
