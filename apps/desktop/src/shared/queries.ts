@@ -3,7 +3,7 @@ import { useDataSource } from "./app-context";
 import type { DataSource } from "./data-source";
 import type { Filters } from "./filters";
 import type { Currency } from "./format";
-import type { FilterOptions, Granularity, GroupBy, Period, ProjectGrouping } from "./schemas";
+import type { FilterOptions, Granularity, GroupBy, Os, Period, ProjectGrouping } from "./schemas";
 
 /** One React Query hook per `DataSource` read; keys carry every input so filters refetch. */
 function useRead<T>(
@@ -32,6 +32,14 @@ const KEEP = { keepPrevious: true } as const;
 
 export const useAppState = () =>
   useRead(["app-state"], (ds) => ds.appState(), { refetchMs: 30_000 });
+/**
+ * The OS the app runs on, for the copy that has no data signal. Screens render only once the app
+ * state is `ready`, which carries it; macOS stands in while it loads.
+ */
+export function useOs(): Os {
+  const { data } = useAppState();
+  return data?.kind === "ready" ? data.os : "macos";
+}
 export const useFilterOptions = () => useRead(["filter-options"], (ds) => ds.filterOptions());
 export const useSettings = () => useRead(["settings"], (ds) => ds.settings());
 

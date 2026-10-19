@@ -127,11 +127,17 @@ fn quota_shows_the_window_and_the_percent() -> TestResult {
 #[test]
 fn quota_connect_needs_the_daemon() -> TestResult {
     let home = seeded()?;
+    let expected = if cfg!(target_os = "macos") {
+        "the daemon is not running"
+    } else {
+        // No Keychain elsewhere: the command stops before it looks for the daemon.
+        "only macOS keeps the Claude credentials in a Keychain"
+    };
     home.tokenmtr()
         .args(["quota", "connect"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("the daemon is not running"));
+        .stderr(predicate::str::contains(expected));
     Ok(())
 }
 

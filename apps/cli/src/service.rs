@@ -1,4 +1,5 @@
-//! `tokenmtr service`: the launchd background service.
+//! `tokenmtr service`: the background service (a launchd agent on macOS, a systemd user unit on
+//! Linux).
 
 use anyhow::{Context, bail};
 use camino::Utf8PathBuf;

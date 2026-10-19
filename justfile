@@ -39,7 +39,7 @@ bindings:
 goldens:
     UPDATE_GOLDENS=1 cargo test -p tokenmtr-desktop --lib goldens
 
-# Render the app icons from assets/brand/app-icon.svg and the menu-bar template icon from tray-icon.py.
+# Render the app icons from assets/brand/app-icon.svg and the tray icons from tray-icon.py.
 icons:
     #!/usr/bin/env bash
     set -euo pipefail

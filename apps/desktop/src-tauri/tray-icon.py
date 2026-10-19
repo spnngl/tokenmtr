@@ -1,10 +1,12 @@
-"""Generate the macOS menu-bar template icon: the TokenMtr mark, black on transparent.
+"""Generate the tray icons: the TokenMtr mark, black on transparent for macOS, white for Linux.
 
 The geometry is assets/brand/tokenmtr-logo.svg (100-unit viewBox): two arcs open at the top
 right, a hub ring and a needle, all 6 units wide.
 
 macOS tints a template image by its alpha channel only, so every pixel is black and the shape
 lives in the alpha. Writes `tray-icon.png` (22x22) and `tray-icon@2x.png` (44x44) into DIR.
+Linux has no template rendering and its panels are mostly dark, so it gets `tray-icon-light.png`
+(44x44), the same mark in white.
 
 Run: python3 tray-icon.py icons
 """
@@ -58,12 +60,12 @@ def alpha(px: int, py: int, size: int) -> int:
     return round(255 * hits / SAMPLES**2)
 
 
-def png(size: int) -> bytes:
+def png(size: int, shade: int = 0) -> bytes:
     rows = bytearray()
     for y in range(size):
         rows.append(0)
         for x in range(size):
-            rows.extend((0, 0, 0, alpha(x, y, size)))
+            rows.extend((shade, shade, shade, alpha(x, y, size)))
 
     def chunk(tag: bytes, data: bytes) -> bytes:
         body = tag + data
@@ -80,6 +82,7 @@ def png(size: int) -> bytes:
 def main(directory: str) -> None:
     for size, name in ((22, "tray-icon.png"), (44, "tray-icon@2x.png")):
         Path(directory, name).write_bytes(png(size))
+    Path(directory, "tray-icon-light.png").write_bytes(png(44, 255))
 
 
 if __name__ == "__main__":

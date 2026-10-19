@@ -21,9 +21,7 @@ use tokenmtr_app::AppContext;
 use tokenmtr_config::{GitName, MenubarRing, RawProject};
 use tokenmtr_core::{AgentId, Currency, ProfileId, ProjectKey, SessionId, SubscriptionSpec};
 use tokenmtr_platform::service::is_transient;
-use tokenmtr_platform::{
-    LaunchdService, ServiceError, ServiceManager as _, ServiceStatus, SystemRunner,
-};
+use tokenmtr_platform::{ServiceError, ServiceStatus};
 use tokenmtr_query::{Granularity, GroupBy, Period, ProjectGrouping};
 
 use crate::backend::shell::{
@@ -69,7 +67,7 @@ pub async fn app_state(app: AppHandle<Wry>, shell: State<'_, Shell>) -> Reply<Ap
     blocking(move || {
         let daemon_installed = !onboarding_complete
             && !matches!(
-                LaunchdService::new(backend.paths(), SystemRunner).status(),
+                backend.service().status(),
                 Ok(ServiceStatus::NotInstalled) | Err(_)
             );
         shell::app_state(

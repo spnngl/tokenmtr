@@ -108,7 +108,8 @@ pub fn run(config: Option<&Utf8Path>) -> anyhow::Result<()> {
 }
 
 /// Serves until a signal or a `shutdown` request, then stops; both exit 0, so launchd
-/// (`KeepAlive.SuccessfulExit = false`) does not restart a daemon that was asked to stop.
+/// (`KeepAlive.SuccessfulExit = false`) and systemd (`Restart=on-failure`) do not restart a daemon
+/// that was asked to stop.
 /// Another daemon already serving also exits 0: there is nothing to restart.
 async fn serve(settings: Settings) -> anyhow::Result<()> {
     // Installed before the slow start (migrations), so SIGTERM never kills mid-write.

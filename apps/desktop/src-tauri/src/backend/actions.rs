@@ -10,7 +10,6 @@ use tokenmtr_app::{EraseScope, ReportRequest};
 use tokenmtr_config::{GitName, MenubarRing, RawProject};
 use tokenmtr_control::Client;
 use tokenmtr_core::{AgentId, ProfileId, ProjectKey, SessionId, SubscriptionSpec};
-use tokenmtr_platform::{LaunchdService, SystemRunner};
 
 use super::Backend;
 use crate::daemon::{Sidecar, client_info, install_service};
@@ -93,11 +92,10 @@ pub async fn reload_daemon(backend: &Backend) {
 ///
 /// # Errors
 ///
-/// The sidecar is missing, or launchd refused.
+/// The sidecar is missing, or the service manager refused.
 pub fn install_daemon(backend: &Backend) -> Result<(), CommandError> {
     let sidecar = Sidecar::locate()?;
-    let service = LaunchdService::new(backend.paths(), SystemRunner);
-    Ok(install_service(&service, &sidecar)?)
+    Ok(install_service(backend.service(), &sidecar)?)
 }
 
 /// The path `target` stands for, if it exists. A missing config file is created first, holding
@@ -278,7 +276,7 @@ pub fn keep_ten_years(
 ///
 /// # Errors
 ///
-/// A file or launchd operation failed, or a daemon still holds the lock.
+/// A file or service operation failed, or a daemon still holds the lock.
 pub async fn erase_all_data(backend: &Backend) -> Result<(), CommandError> {
     if let Ok(mut client) = connect(backend).await
         && let Err(error) = client.shutdown().await
@@ -287,13 +285,12 @@ pub async fn erase_all_data(backend: &Backend) -> Result<(), CommandError> {
     }
     let backend = backend.clone();
     super::blocking(move || {
-        let service = LaunchdService::new(backend.paths(), SystemRunner);
         backend.erase(
             EraseScope {
                 config: false,
                 service: true,
             },
-            &service,
+            backend.service(),
         )?;
         Ok(())
     })

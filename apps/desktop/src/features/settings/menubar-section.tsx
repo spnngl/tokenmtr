@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Switch } from "react-aria-components";
 import { useDataAction } from "../../shared/actions";
-import { MENUBAR_RINGS, type MenubarRing, type Settings } from "../../shared/schemas";
+import { useOs } from "../../shared/queries";
+import { MENUBAR_RINGS, type MenubarRing, type Os, type Settings } from "../../shared/schemas";
 import { Card } from "../../shared/ui";
 
 const RING_TEXT: Record<MenubarRing, string> = {
@@ -37,11 +38,18 @@ interface RingChoice {
   readonly hidden: readonly string[];
 }
 
+/** What each OS calls the strip that holds the icon. */
+const AREA: Record<Os, { readonly title: string; readonly lower: string }> = {
+  macos: { title: "Menu bar", lower: "menu bar" },
+  linux: { title: "Tray", lower: "tray" },
+};
+
 /** Which quota windows the menu bar draws as rings, and for which profiles (`[menubar]`). */
 export function MenubarSection({ settings }: { readonly settings: Settings }): ReactNode {
+  const os = useOs();
   const save = useDataAction(
     (ds, choice: RingChoice) => ds.setMenubarRings(choice.rings, choice.hidden),
-    { failure: "Could not change the menu-bar rings" },
+    { failure: `Could not change the ${AREA[os].lower} rings` },
   );
   // Shows the requested choice while it is applied; a failure toasts and falls back.
   const current: RingChoice = save.isPending
@@ -65,10 +73,11 @@ export function MenubarSection({ settings }: { readonly settings: Settings }): R
     ),
   ];
   return (
-    <Card title="Menu bar">
+    <Card title={AREA[os].title}>
       <p className="text-sm text-fg-muted">
         One ring per quota window and profile shows how much is used: amber from 70%, red from 90%,
-        dashed when the quota cannot be read. With no ring, the menu bar shows the plain icon.
+        dashed when the quota cannot be read. With no ring, the {AREA[os].lower} shows the plain
+        icon.
       </p>
       <fieldset className="flex flex-col">
         <legend className="text-sm font-medium">Rings</legend>

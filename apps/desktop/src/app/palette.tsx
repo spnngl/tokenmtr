@@ -15,7 +15,7 @@ import {
 } from "react-aria-components";
 import { useBackupNow, useExportNow, useScanNow } from "../shared/actions";
 import { Button } from "../shared/button";
-import { EMPTY_FILTER_OPTIONS, useFilterOptions } from "../shared/queries";
+import { EMPTY_FILTER_OPTIONS, useFilterOptions, useOs } from "../shared/queries";
 import { useTheme } from "../shared/theme";
 import {
   buildPaletteItems,
@@ -132,6 +132,7 @@ export function CommandPalette(): ReactNode {
   const { data } = useFilterOptions();
   const navigate = useNavigate();
   const { setTheme } = useTheme();
+  const os = useOs();
   // Outcomes land in the app's toast region: the palette is closed by the time they arrive.
   const scan = useScanNow();
   const exportNow = useExportNow();
@@ -148,7 +149,7 @@ export function CommandPalette(): ReactNode {
         <Search className="size-4" aria-hidden />
         <span>Search</span>
         <kbd className="hidden rounded-sm border border-border px-1 text-xs text-fg-muted md:inline">
-          ⌘K
+          {os === "macos" ? "⌘K" : "Ctrl+K"}
         </kbd>
       </Button>
       <Palette

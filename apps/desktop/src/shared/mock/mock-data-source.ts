@@ -2,7 +2,7 @@ import type { DataSource, NotificationPermissionState } from "../data-source";
 import { DataSourceError } from "../errors";
 import type { Filters } from "../filters";
 import type { Currency } from "../format";
-import type { AppState, Settings, UnresolvedCwd } from "../schemas";
+import type { AppState, Os, Settings, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
 import { billingSeriesOf, sessionAnalyticsOf, sessionTimelineOf } from "./analytics";
 import { advisorOf, quotaHistoryOf, quotaLatestOf } from "./quota";
@@ -74,6 +74,8 @@ export interface MockOptions {
    * `currency_fallback` set.
    */
   readonly noFxRates?: boolean;
+  /** The OS the mock reports; defaults to macOS. */
+  readonly os?: Os;
 }
 
 const SCAN_INTERVAL_SECS = 60;
@@ -100,6 +102,7 @@ function isoAgo(ms: number): string {
 export function createMockDataSource(options: MockOptions = {}): DataSource {
   const scenario = options.scenario ?? "populated";
   const latencyMs = options.latencyMs ?? 0;
+  const os = options.os ?? "macos";
   const empty = scenario === "empty";
   const extraUsage = !empty && scenario !== "no-extra-usage";
   /** Claude extra-usage rows under `filters`, when the scenario has any. */
@@ -174,6 +177,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           last_scan_at: isoAgo(30_000),
           scan_interval_secs: SCAN_INTERVAL_SECS,
           failed_collectors: 0,
+          os,
         };
       case "stale":
         return {
@@ -181,6 +185,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           last_scan_at: isoAgo(SCAN_INTERVAL_SECS * 5 * 1000),
           scan_interval_secs: SCAN_INTERVAL_SECS,
           failed_collectors: 0,
+          os,
         };
       case "partial":
         return {
@@ -188,6 +193,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           last_scan_at: isoAgo(30_000),
           scan_interval_secs: SCAN_INTERVAL_SECS,
           failed_collectors: 1,
+          os,
         };
       case "populated":
       case "no-extra-usage":
@@ -199,6 +205,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           last_scan_at: isoAgo(30_000),
           scan_interval_secs: SCAN_INTERVAL_SECS,
           failed_collectors: 0,
+          os,
         };
       default:
         scenario satisfies never;

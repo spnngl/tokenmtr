@@ -10,7 +10,7 @@ import { useAppConfig } from "../../shared/app-context";
 import { Button } from "../../shared/button";
 import { formatDateTime } from "../../shared/format";
 import { MoveToApplicationsHint } from "../../shared/move-to-applications";
-import { useSettings } from "../../shared/queries";
+import { useOs, useSettings } from "../../shared/queries";
 import { RemoteView } from "../../shared/remote-view";
 import type { Settings } from "../../shared/schemas";
 import { ThemeSwitcher } from "../../shared/theme-switcher";
@@ -171,6 +171,7 @@ function PreferencesCard({ settings }: { readonly settings: Settings }): ReactNo
 /** Settings: everything configurable or diagnosable, one card per concern. */
 export function SettingsScreen(): ReactNode {
   const settings = toRemote(useSettings());
+  const os = useOs();
   return (
     <>
       <PageHeader
@@ -187,7 +188,9 @@ export function SettingsScreen(): ReactNode {
             <PreferencesCard settings={settings} />
             <MenubarSection settings={settings} />
             <GitSection settings={settings} />
-            <ProtectedFoldersSection folders={settings.protected_folders} />
+            {os === "macos" ? (
+              <ProtectedFoldersSection folders={settings.protected_folders} />
+            ) : null}
             <BackupsSection backups={settings.backups} />
             <ParseIssuesSection />
             <RecentAlertsSection />
