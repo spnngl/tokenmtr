@@ -75,4 +75,106 @@ A counter series that is new to Prometheus loses its first value to `increase()`
 - **Scrape** with the plain text format (`0.0.4`) cannot. Ask for OpenMetrics (Prometheus does by
   default when it supports it) and start Prometheus with
   `--enable-feature=created-timestamp-zero-ingestion`: the exporter then sends `_created`
-  samples that Prometheus turns into the zero sample.
+  samples that Prometheus turns into the zero sample. The flag is experimental and its name has
+  changed between Prometheus releases; check the feature list of your version.
+
+## Freshness and limits
+
+- The exporter serves the last snapshot. A write to the store refreshes it within
+  `[metrics].refresh_interval` (default `30s`); an idle daemon refreshes nothing, except at the
+  moment a session leaves the session window. `tokenmtr_snapshot_timestamp_seconds` says when the
+  snapshot was computed.
+- Counters are totals over the whole store, so these changes move or lower a series, which
+  Prometheus reads as a counter reset: late ingest of old logs (a first run, a backfill), a project
+  that is re-resolved to another remote, a change to `[[subscriptions]]` or `display.timezone`
+  (`billing` changes), a change to an output's exclusions or redaction, and an account change.
+- Metrics stop when the daemon stops. A scrape target goes down (`up == 0`); remote-write series
+  go stale after five minutes. Alert on a silent machine with
+  `absent_over_time(tokenmtr_build_info{machine="my-mac"}[10m])`.
+
+## Exclusions
+
+Each output has its own exclusions, so a local dashboard can show everything while a hosted one
+shows less.
+
+- `exclude_projects` is a list of globs matched against the project key, the project name and the
+  normalised git remote. `"github.com/acme/*"` drops every repository of `acme`.
+- `exclude_paths` is a list of globs matched against the working directory; `~` expands.
+- `*` stops at `/`; use `**` to cross directories.
+- An event with no working directory (for `exclude_paths`) or no project (for `exclude_projects`)
+  is never excluded. A tool call follows its event, or the earliest event of its session that has
+  a working directory or a project.
+- Excluded events are left out of every family of that output, so a newly excluded series
+  disappears, which Prometheus treats as stale. Quota gauges belong to a profile, not a project,
+  and stay.
+- `exclude_paths` cannot be combined with `[privacy] redact_paths = true`: the stored paths are
+  hashes, so a path glob could never match. Use `exclude_projects`.
+
+## Redaction
+
+`redact = { label = "hash" | "drop" }` rewrites a label of that output: `hash` is the keyed hash
+that sinks use (stable on this machine, different on another one, not reversible without the
+key), `drop` leaves the label empty and merges the series it makes equal. Labels that can be
+redacted: `project`, `client`, `git_branch`, `account`, `session_id`. Before pushing to a hosted
+service, hash or drop `account` and `session_id` and read the label values once:
+`curl localhost:9464/metrics` shows exactly what leaves the machine.
+
+## Secrets
+
+An `auth` table takes its secret from one of three keys; exactly one is allowed:
+
+| Key | Source |
+| --- | --- |
+| `password` / `token` | The config file itself. Protect the file. |
+| `password_env` / `token_env` | An environment variable, read when the output starts. |
+| `password_file` / `token_file` | A file, read when the output starts. One trailing newline is removed. A file readable by group or others is refused: `chmod 600` it. |
+
+The daemon starts from launchd, which does not pass your shell's environment. Prefer `*_file`.
+To use `*_env`, run `launchctl setenv NAME value` and restart the daemon; the setting does not
+survive a reboot. A secret that cannot be read fails that output (`failing` in health, a
+`metrics_failing` alert after the grace period) and leaves the other outputs running. A secret is
+never printed or logged. An exporter that listens beyond loopback without `auth` logs a warning.
+
+## Scraping
+
+```yaml
+scrape_configs:
+  - job_name: tokenmtr
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["127.0.0.1:9464"]
+    # authorization:                 # when the exporter has auth = { kind = "bearer", ... }
+    #   credentials_file: /etc/prometheus/tokenmtr.token
+```
+
+The exporter answers `GET /metrics` only (404 elsewhere), negotiates OpenMetrics from `Accept`,
+and gzips when the client accepts it. It speaks plain HTTP: put a reverse proxy in front of it to
+add TLS. The exporter keeps trying to bind its port (1 s, doubling to 5 min) if another process
+holds it.
+
+## Remote write
+
+```toml
+[[metrics.remote_write]]
+id = "grafana"
+url = "https://prometheus-prod-01-eu-west-0.grafana.net/api/prom/push"
+auth = { kind = "basic", username = "123456", password_file = "~/.config/tokenmtr/grafana.secret" }
+redact = { session_id = "hash", account = "drop" }
+```
+
+For Grafana Cloud the username is the numeric instance ID and the password an access policy token
+with the `metrics:write` scope. The URL is `https`, or plain HTTP on this machine for a local
+receiver; credentials in the URL are refused. TokenMtr follows no redirect and sends only to the
+URL you wrote.
+
+Each push is a Prometheus Remote Write 1.0 request (snappy-compressed protobuf, at most 2000
+series per request) stamped with the current time and the labels of `external_labels` (default
+`machine`). A `5xx`, `408` or `429` answer and a network error are retried with back-off; any
+other `4xx` drops that request, which is recorded as the output's last error.
+
+## Health
+
+Every bind and every push is recorded. `tokenmtr status` prints `metrics <id>: <state>` and
+`tokenmtr status --json` carries the history under `system.metrics`; the app's status dot turns
+to warning while an output fails. After `[alerts].sink_failing_after` (default `30m`) of
+continuous failure the daemon raises one `metrics_failing` alert for that output.
