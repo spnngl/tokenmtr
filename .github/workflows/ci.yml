@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: ci
 
 on:
@@ -14,7 +15,7 @@ env:
 
 jobs:
   check:
-    runs-on: macos-latest # Apple Silicon (arm64)
+    runs-on: macos-14 # Apple Silicon (arm64)
     permissions:
       contents: read
     steps:
