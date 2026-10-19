@@ -568,15 +568,20 @@ impl Store {
         self.in_transaction(|conn, now| subscriptions::mirror(conn, now, subscriptions))
     }
 
-    /// Stores quota polls, one row per reported window.
+    /// Stores quota polls, one row per reported window, and returns the snapshot counts. In the
+    /// same transaction, each extra-usage observation not stored before adds its spend increase
+    /// since the previous observation of its profile to the usage event of its day, local to
+    /// `zone` (first observation: the whole spend, approximate; a lower spend: a new month).
     ///
     /// # Errors
     /// `SQLite` failures (the transaction is rolled back).
     pub fn upsert_quota_snapshots(
         &mut self,
         polls: &[QuotaPoll],
+        zone: &jiff::tz::TimeZone,
     ) -> Result<UpsertStats, StoreError> {
-        self.in_transaction(|conn, now| quota::upsert(conn, now, polls))
+        let machine = self.machine_id();
+        self.in_transaction(|conn, now| quota::upsert(conn, now, &machine, zone, polls))
     }
 
     /// Stores FX rates by date.

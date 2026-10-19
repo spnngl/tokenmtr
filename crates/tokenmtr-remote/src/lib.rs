@@ -24,6 +24,5 @@ pub use error::{NetworkKind, RemoteError};
 pub use http::{ALLOWED_HOSTS, Endpoints, Validators, build_client, user_agent};
 pub use litellm::{LitellmRefresh, RefreshOutcome, parse_catalog};
 pub use quota::{
-    ClaudeQuota, ExtraUsage, ParsedQuota, QuotaOutcome, QuotaParseError, QuotaPoll,
-    parse_quota_response,
+    ClaudeQuota, ParsedQuota, QuotaOutcome, QuotaParseError, QuotaPoll, parse_quota_response,
 };

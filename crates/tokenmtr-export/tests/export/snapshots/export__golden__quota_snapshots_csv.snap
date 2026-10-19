@@ -2,5 +2,6 @@
 source: crates/tokenmtr-export/tests/export/golden.rs
 expression: text
 ---
-snapshot_id,revision,machine_id,agent,profile,account,window_id,window_label,used_percent,resets_at_utc,fetched_at_utc,status
-ccef2227b3333f6c83ce3cebe2c972b4,7,00000000-0000-0000-0000-000000000001,claude,default,me@example.com,five_hour,5-hour,42.5,2026-05-01T15:00:00Z,2026-05-01T10:00:00Z,ok
+snapshot_id,revision,machine_id,agent,profile,account,window_id,window_label,used_percent,resets_at_utc,fetched_at_utc,status,spent_usd,limit_usd
+ccef2227b3333f6c83ce3cebe2c972b4,7,00000000-0000-0000-0000-000000000001,claude,default,me@example.com,five_hour,5-hour,42.5,2026-05-01T15:00:00Z,2026-05-01T10:00:00Z,ok,,
+4d8174ec0c1061f400c31c1758da6b80,7,00000000-0000-0000-0000-000000000001,claude,default,me@example.com,extra_usage,Extra usage,24.69,,2026-05-01T10:00:00Z,ok,12.345000,50.000000

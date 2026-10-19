@@ -16,10 +16,10 @@ use tokenmtr_core::event::ToolCall;
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
     AgentId, Alert, AlertKind, BillingPeriod, Budget, BudgetId, BudgetMeasure, BudgetPeriod,
-    Currency, DedupKey, Estimate, EurPerUsd, EventCost, EventId, EventKind, FxRate, MachineId,
-    ModelId, Money, Plan, PlanCatalog, PricingCatalog, PricingVersion, ProfileId, ProjectKey,
-    ProviderId, QuotaEta, QuotaWindow, SessionId, SignalKind, SinkId, Subscription, SubscriptionId,
-    SubscriptionSpec, TokenCounts, UsageEvent, UsdMicros, Utilization, WindowId,
+    Currency, DedupKey, Estimate, EurPerUsd, EventCost, EventId, EventKind, ExtraUsage, FxRate,
+    MachineId, ModelId, Money, Plan, PlanCatalog, PricingCatalog, PricingVersion, ProfileId,
+    ProjectKey, ProviderId, QuotaEta, QuotaWindow, SessionId, SignalKind, SinkId, Subscription,
+    SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, UsdMicros, Utilization, WindowId,
 };
 use tokenmtr_store::{
     Dataset, FxSource, IngestRun, ProfiledToolCall, QuotaOutcome, QuotaPoll, SessionSignal,
@@ -627,6 +627,115 @@ fn fees_do_not_accrue_for_future_days() {
     assert_eq!(t.usage.paid_micros, 10_000_000);
 }
 
+/// A Claude poll reporting `spent` of a $50 extra-usage cap at 24 %.
+fn extra(spent: i64) -> QuotaOutcome {
+    QuotaOutcome::Windows {
+        windows: Vec::new(),
+        extra_usage: Some(ExtraUsage {
+            utilization: Utilization::new(24.0).unwrap(),
+            spent: UsdMicros::new(spent),
+            limit: UsdMicros::new(50_000_000),
+        }),
+    }
+}
+
+#[test]
+fn extra_usage_is_paid_without_api_value_tokens_or_breakdown_rows() {
+    let seed = seed_mixed_billing();
+    // First observation on April 10: $5 lands on that day's extra-usage row (local noon).
+    poll(
+        &seed,
+        "default",
+        ts("2026-04-10T09:00:00Z"),
+        extra(5_000_000),
+    );
+    let reader = seed.reader();
+    let c =
+        usd_ctx("UTC", "2026-04-10T18:00:00Z").with_subscriptions(vec![anthropic_subscription()]);
+    let f = days(date(2026, 4, 1), date(2026, 4, 11));
+
+    // Paid on a subscription-covered profile, never API value, tokens or events.
+    let t = overview(&reader, &c, &f).unwrap();
+    assert_eq!(t.usage.api_value_micros, 6_000_000);
+    assert_eq!(t.usage.api_value_usd_micros, 6_000_000);
+    assert_eq!(t.usage.paid_micros, 12_000_000 + 5_000_000);
+    assert_eq!(t.usage.extra_usage_micros, 5_000_000);
+    assert_eq!((t.usage.events, t.usage.total_tokens), (3, 3));
+    assert_eq!(t.usage.subscription_fee_micros, 10_000_000);
+    assert_eq!(t.sessions, 1);
+    assert!(t.usage.approximate, "first observation is approximate");
+
+    let report = billing(&reader, &c, &f).unwrap();
+    assert_eq!(report.total.paid_micros, 17_000_000);
+    assert_eq!(report.total.extra_usage_micros, 5_000_000);
+    assert_eq!(report.api.paid_micros, 2_000_000);
+    assert_eq!(report.api.extra_usage_micros, 0);
+    assert_eq!(report.months[0].usage.extra_usage_micros, 5_000_000);
+
+    // It is pay-as-you-go: the `api` billing filter keeps it, a subscription filter does not.
+    let api_only = overview(&reader, &c, &f.clone().billing(BillingFilter::Api)).unwrap();
+    assert_eq!(api_only.usage.paid_micros, 7_000_000);
+    let sub_only = overview(
+        &reader,
+        &c,
+        &f.clone().billing(BillingFilter::Subscription(None)),
+    )
+    .unwrap();
+    assert_eq!(sub_only.usage.extra_usage_micros, 0);
+
+    // Usage breakdowns leave it out.
+    let by_model = models(&reader, &c, &f).unwrap().rows;
+    assert_eq!(by_model.len(), 3);
+    assert!(by_model.iter().all(|m| m.usage.extra_usage_micros == 0));
+    assert!(
+        projects(&reader, &c, &f)
+            .unwrap()
+            .rows
+            .iter()
+            .all(|p| p.usage.extra_usage_micros == 0)
+    );
+    let page = sessions(&reader, &c, &f, 0, 50).unwrap();
+    assert_eq!(page.total, 1);
+    assert_eq!(
+        heatmap(&reader, &c, &f)
+            .unwrap()
+            .cells
+            .iter()
+            .map(|h| h.events)
+            .sum::<u64>(),
+        3
+    );
+
+    // Series: in the bucket totals and the agent split, in no model group.
+    let s = series(&reader, &c, &f, Bucket::Day, GroupBy::Model).unwrap();
+    assert_eq!(s.points[9].usage.paid_micros, 3_000_000 + 5_000_000);
+    assert!(!s.points[9].groups.contains_key("extra_usage"));
+    assert_eq!(s.points.last().unwrap().cumulative_paid_micros, 17_000_000);
+    let s = series(&reader, &c, &f, Bucket::Day, GroupBy::Agent).unwrap();
+    assert_eq!(
+        s.points[9].groups["claude"].paid_micros,
+        3_000_000 + 5_000_000
+    );
+    assert_eq!(s.points[9].groups["claude"].api_value_micros, 6_000_000);
+
+    // The meter carries the money of the spend window; no reset, so no ETA.
+    let meters = quota_latest(&reader, &c, &f).unwrap();
+    let window = &meters[0].windows[0];
+    assert_eq!(window.window.as_str(), "extra_usage");
+    assert_eq!(window.resets_at, None);
+    assert_eq!(window.eta, QuotaEta::NotEnoughData);
+    assert_eq!(
+        window.spend,
+        Some(QuotaSpend {
+            currency: Currency::Usd,
+            spent_micros: 5_000_000,
+            limit_micros: 50_000_000,
+            approximate: false,
+        })
+    );
+    assert_eq!(json(window)["spend"]["limit_micros"], 50_000_000);
+}
+
 #[test]
 fn filters_compose_and_values_are_bound_not_spliced() {
     let seed = Seed::new();
@@ -935,24 +1044,30 @@ fn a_budget_without_any_fx_rate_is_listed_as_unmeasured() {
 
 fn poll(seed: &Seed, profile: &str, at: Timestamp, outcome: QuotaOutcome) {
     seed.store()
-        .upsert_quota_snapshots(&[QuotaPoll {
-            agent: AgentId::CLAUDE,
-            profile: ProfileId::try_from(profile.to_owned()).unwrap(),
-            account: Some("me@example.com".to_owned()),
-            fetched_at: at,
-            outcome,
-        }])
+        .upsert_quota_snapshots(
+            &[QuotaPoll {
+                agent: AgentId::CLAUDE,
+                profile: ProfileId::try_from(profile.to_owned()).unwrap(),
+                account: Some("me@example.com".to_owned()),
+                fetched_at: at,
+                outcome,
+            }],
+            &jiff::tz::TimeZone::UTC,
+        )
         .unwrap();
 }
 
 fn window(percent: f64, resets_at: Timestamp) -> QuotaOutcome {
-    QuotaOutcome::Windows(vec![QuotaWindow {
-        id: WindowId::five_hour(),
-        state: QuotaWindowState {
-            utilization: Utilization::new(percent).unwrap(),
-            resets_at: Some(resets_at),
-        },
-    }])
+    QuotaOutcome::Windows {
+        windows: vec![QuotaWindow {
+            id: WindowId::five_hour(),
+            state: QuotaWindowState {
+                utilization: Utilization::new(percent).unwrap(),
+                resets_at: Some(resets_at),
+            },
+        }],
+        extra_usage: None,
+    }
 }
 
 #[test]

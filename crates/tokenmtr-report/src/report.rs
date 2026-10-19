@@ -51,7 +51,7 @@ pub struct Totals {
     /// What the events would cost at API rates.
     pub api_value: Amount,
     /// What was actually paid: pay-as-you-go cost, plus subscription fees (all of them for
-    /// [`Scope::All`], else the in-scope share).
+    /// [`Scope::All`], else the in-scope share), plus Claude extra usage for [`Scope::All`].
     pub paid: Amount,
     /// Tokens over all models.
     pub tokens: u64,
@@ -121,6 +121,8 @@ pub struct Report {
     pub days: Vec<DayRow>,
     /// Fees of subscriptions nobody used; counted in [`Totals::paid`] for [`Scope::All`] only.
     pub unused_paid: Amount,
+    /// Claude extra usage, counted in [`Totals::paid`]; zero unless [`Scope::All`].
+    pub extra_usage: Amount,
 }
 
 /// Splits `paid` over `weights` in proportion, in whole millionths, so the parts add up to `paid`.
@@ -308,8 +310,13 @@ impl Report {
         days.sort_by_key(|d| d.date);
 
         let in_scope_paid = sum(projects.iter().map(|p| p.paid))?;
+        let extra_usage = if input.scope == Scope::All {
+            input.extra_usage
+        } else {
+            Amount::ZERO
+        };
         let paid = if input.scope == Scope::All {
-            sum([in_scope_paid, unused])?
+            sum([in_scope_paid, unused, extra_usage])?
         } else {
             in_scope_paid
         };
@@ -337,6 +344,7 @@ impl Report {
             models,
             days,
             unused_paid: unused,
+            extra_usage,
         })
     }
 }

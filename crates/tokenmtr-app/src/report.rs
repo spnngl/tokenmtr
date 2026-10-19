@@ -248,6 +248,7 @@ fn report_input(
         models: model_inputs(reader, &ctx, &scoped)?,
         days: day_inputs(reader, &ctx, &scoped)?,
         subscriptions,
+        extra_usage: amount(overall.total.extra_usage_micros),
     })
 }
 

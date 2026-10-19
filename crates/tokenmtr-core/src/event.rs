@@ -169,6 +169,25 @@ pub enum EventKind {
     Auxiliary,
     /// A synthetic per-day, per-model row imported from a stats cache.
     DailyAggregate,
+    /// A synthetic per-day row of Claude extra-usage spend (see [`crate::extra_usage`]): money
+    /// without tokens, model, project or session.
+    ExtraUsage,
+}
+
+impl EventKind {
+    /// True for events of real calls (sessions, live rate, last activity): not the synthetic
+    /// daily aggregates or extra-usage rows.
+    #[must_use]
+    pub const fn is_traffic(self) -> bool {
+        match self {
+            Self::Message
+            | Self::ToolResult
+            | Self::Compaction
+            | Self::BranchSummary
+            | Self::Auxiliary => true,
+            Self::DailyAggregate | Self::ExtraUsage => false,
+        }
+    }
 }
 
 /// What an agent can do; the UI renders widgets from these flags, never from agent names.
@@ -273,7 +292,7 @@ pub struct UsageEvent {
     pub client: Option<String>,
     /// Source file the event came from.
     pub source_file: Option<SourceFileId>,
-    /// True for `DailyAggregate` events.
+    /// True for `DailyAggregate` events and an `ExtraUsage` day holding a first observation.
     pub approximate: bool,
     /// Serving provider, if known.
     pub provider: Option<ProviderId>,

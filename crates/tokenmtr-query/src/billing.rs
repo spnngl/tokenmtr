@@ -56,9 +56,10 @@ pub struct BillingMonth {
 pub struct BillingReport {
     /// Currency of the money fields.
     pub currency: Currency,
-    /// Everything: `paid_micros` = pay-as-you-go cost + prorated fees.
+    /// Everything: `paid_micros` = pay-as-you-go cost + prorated fees + extra usage; the extra
+    /// usage line is `extra_usage_micros`.
     pub total: Usage,
-    /// Pay-as-you-go usage, outside any subscription.
+    /// Pay-as-you-go usage, outside any subscription (extra usage not included).
     pub api: Usage,
     /// Per declared subscription (all of them, also when idle).
     pub subscriptions: Vec<SubscriptionLine>,
@@ -96,6 +97,8 @@ pub fn billing(
                     usage.add(row);
                 }
             }
+            // Its own line: `total.extra_usage_micros`.
+            Mode::Extra => {}
         }
     }
     for idle in &fetched.idle {

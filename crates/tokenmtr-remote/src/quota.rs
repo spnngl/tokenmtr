@@ -8,7 +8,7 @@ use reqwest::{Client, StatusCode, Url};
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokenmtr_core::quota::QuotaWindowState;
-use tokenmtr_core::{QuotaSnapshot, QuotaWindow, Utilization, WindowId};
+use tokenmtr_core::{ExtraUsage, QuotaSnapshot, QuotaWindow, Utilization, WindowId};
 
 use crate::account::{AccountInfo, parse_profile_response};
 use crate::credentials::ClaudeCredentials;
@@ -62,20 +62,42 @@ impl QuotaPoll {
     }
 }
 
-/// The `extra_usage` object (pay-as-you-go credits on top of a plan), as Claude reports it.
-/// Amounts are raw numbers: their unit is not documented (believed to be minor currency units,
-/// unverified), so using them as the paid cost of a subscription must verify it first.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ExtraUsage {
+/// The `extra_usage` object (pay-as-you-go spend on top of a plan), as Claude reports it.
+/// Amounts are US cents, possibly fractional (Superset reads them the same way).
+#[derive(Debug, Deserialize)]
+struct RawExtraUsage {
     /// Whether extra usage is switched on for the account.
     #[serde(default)]
-    pub is_enabled: bool,
-    /// The monthly spending cap, when set.
-    pub monthly_limit: Option<f64>,
-    /// Credits consumed this month.
-    pub used_credits: Option<f64>,
-    /// Percent of the monthly cap used.
-    pub utilization: Option<Utilization>,
+    is_enabled: bool,
+    /// The monthly spending cap; required when enabled.
+    monthly_limit: Option<f64>,
+    /// Spent this month; `null` means nothing yet.
+    used_credits: Option<f64>,
+    /// Percent of the monthly cap used; computed when absent.
+    utilization: Option<Utilization>,
+}
+
+/// The month's extra usage of an enabled account; `None` when it is disabled, or malformed
+/// (no cap, a negative or non-finite amount), which is logged.
+fn extra_usage(raw: Option<serde_json::Value>) -> Option<ExtraUsage> {
+    let raw: RawExtraUsage = part("extra_usage", raw)?;
+    if !raw.is_enabled {
+        return None;
+    }
+    let Some(limit) = raw.monthly_limit else {
+        tracing::warn!(
+            part = "extra_usage",
+            "skipping extra usage without a monthly limit"
+        );
+        return None;
+    };
+    match ExtraUsage::from_cents(raw.used_credits.unwrap_or(0.0), limit, raw.utilization) {
+        Ok(extra) => Some(extra),
+        Err(error) => {
+            tracing::warn!(part = "extra_usage", %error, "skipping a malformed part of the quota response");
+            None
+        }
+    }
 }
 
 /// A successfully parsed usage response.
@@ -83,7 +105,7 @@ pub struct ExtraUsage {
 pub struct ParsedQuota {
     /// The windows the response reported (missing and `null` windows are absent).
     pub snapshot: QuotaSnapshot,
-    /// The `extra_usage` object, when present and non-null.
+    /// The month's extra usage, when the account has it enabled and the object is valid.
     pub extra_usage: Option<ExtraUsage>,
 }
 
@@ -125,7 +147,7 @@ fn part<T: serde::de::DeserializeOwned>(name: &str, raw: Option<serde_json::Valu
 
 /// Parses an `/api/oauth/usage` body into windows stamped `fetched_at`. A window that is
 /// absent, `null`, has a `null` utilization, or is malformed (wrong types, a negative or
-/// non-finite utilization, an unparsable `resets_at`) is skipped; so is a malformed
+/// non-finite utilization, an unparsable `resets_at`) is skipped; so is a disabled or malformed
 /// `extra_usage`.
 ///
 /// # Errors
@@ -159,7 +181,7 @@ pub fn parse_quota_response(
             fetched_at,
             windows,
         },
-        extra_usage: part("extra_usage", response.extra_usage),
+        extra_usage: extra_usage(response.extra_usage),
     })
 }
 

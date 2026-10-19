@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { formatClock, formatRelativeReset } from "./format";
-import type { QuotaEta, QuotaMeter, QuotaStatus, QuotaWindow } from "./schemas";
+import type { QuotaEta, QuotaMeter, QuotaSpend, QuotaStatus, QuotaWindow } from "./schemas";
+import { Amount } from "./ui";
 import { UsageMeter } from "./usage-meter";
 
 const WINDOW_LABELS: Readonly<Record<string, string>> = {
   five_hour: "5-hour window",
   seven_day: "7-day window",
+  extra_usage: "Extra usage",
 };
 
 /** `five_hour` -> "5-hour window"; unknown windows are title-cased rather than hidden. */
@@ -38,6 +40,27 @@ export function etaText(eta: QuotaEta, timeZone: string): string | null {
   }
 }
 
+/** Claude extra usage: "$12.35 of $50.00 this month" (approximate after an old FX rate). */
+function SpendDetail(props: { readonly spend: QuotaSpend }): ReactNode {
+  const { spend } = props;
+  return (
+    <>
+      <Amount
+        micros={spend.spent_micros}
+        currency={spend.currency}
+        approximate={spend.approximate}
+      />
+      {" of "}
+      <Amount
+        micros={spend.limit_micros}
+        currency={spend.currency}
+        approximate={spend.approximate}
+      />
+      {" this month"}
+    </>
+  );
+}
+
 function WindowMeter(props: {
   readonly window: QuotaWindow;
   readonly timeZone: string;
@@ -47,11 +70,13 @@ function WindowMeter(props: {
   const reset =
     window.resets_at === null ? null : formatRelativeReset(Date.parse(window.resets_at), props.now);
   const eta = etaText(window.eta, props.timeZone);
+  const timing = [reset, eta].filter((part) => part !== null).join(" · ");
+  // The extra-usage window has spend and never a reset: its detail is the spend alone.
   return (
     <UsageMeter
       label={windowLabel(window.window)}
       usedFraction={window.used_percent / 100}
-      detail={[reset, eta].filter((part) => part !== null).join(" · ")}
+      detail={window.spend === null ? timing : <SpendDetail spend={window.spend} />}
     />
   );
 }

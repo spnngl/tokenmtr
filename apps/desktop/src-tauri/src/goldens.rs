@@ -21,11 +21,11 @@ use tokenmtr_query::{
     AdvisorReport, AgentRecap, AlertView, BackupView, BillingMonth, BillingReport, BranchRow,
     Breakdown, Bucket, BudgetState, BudgetView, DaemonHealth, DaemonState, DateRange, FxRateView,
     GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, ModelRow, NO_GROUP,
-    ParseIssueView, Period, ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaWindowView,
-    STATUS_SCHEMA, Series, SeriesPoint, SessionCompactions, SessionDetail, SessionEvent,
-    SessionPage, SessionRow, SessionToolCall, SignalDay, SignalsReport, SinkHealth, SinkRunView,
-    SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, ToolRow, ToolsReport, Totals,
-    UnresolvedCwd, Usage,
+    ParseIssueView, Period, ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend,
+    QuotaWindowView, STATUS_SCHEMA, Series, SeriesPoint, SessionCompactions, SessionDetail,
+    SessionEvent, SessionPage, SessionRow, SessionToolCall, SignalDay, SignalsReport, SinkHealth,
+    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, ToolRow,
+    ToolsReport, Totals, UnresolvedCwd, Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -98,6 +98,7 @@ fn usage(events: u64, tokens: Tokens, money: Money, sources: Sources, approximat
         api_value_micros,
         api_value_usd_micros: api_value_micros,
         paid_micros,
+        extra_usage_micros: 0,
         subscription_value_micros,
         subscription_fee_micros,
         reported_events,
@@ -110,15 +111,19 @@ fn usage(events: u64, tokens: Tokens, money: Money, sources: Sources, approximat
 const SESSION: &str = "0b7c1d2e-5f60-4a8b-9c1d-2e3f4a5b6c7d";
 const PI_SESSION: &str = "2026-05-02T09-14-00";
 
-/// The selected period's usage: the overview and the billing total.
+/// The selected period's usage: the overview and the billing total, with $12.345 of Claude
+/// extra usage inside paid.
 fn period_usage() -> Usage {
-    usage(
-        1840,
-        [412_300, 98_234_500, 2_104_300, 512_000, 1_873_400, 120_500],
-        [184_523_100, 12_340_000, 172_183_100, 100_000_000],
-        [214, 1618, 8],
-        true,
-    )
+    Usage {
+        extra_usage_micros: 12_345_000,
+        ..usage(
+            1840,
+            [412_300, 98_234_500, 2_104_300, 512_000, 1_873_400, 120_500],
+            [184_523_100, 24_685_000, 172_183_100, 100_000_000],
+            [214, 1618, 8],
+            true,
+        )
+    }
 }
 
 fn overview() -> Value {
@@ -597,6 +602,7 @@ fn quota_meters() -> Vec<QuotaMeter> {
             resets_at: resets_at.map(at),
             resets_in_secs,
             eta,
+            spend: None,
         };
     let meter =
         |profile: &str, fetched_at, age_secs, status, account: Option<&str>, windows| QuotaMeter {
@@ -633,6 +639,15 @@ fn quota_meters() -> Vec<QuotaMeter> {
                     QuotaEta::WontHit,
                 ),
                 window("seven_day_opus", 2.0, None, None, QuotaEta::NotEnoughData),
+                QuotaWindowView {
+                    spend: Some(QuotaSpend {
+                        currency: Currency::Usd,
+                        spent_micros: 12_345_000,
+                        limit_micros: 50_000_000,
+                        approximate: false,
+                    }),
+                    ..window("extra_usage", 24.69, None, None, QuotaEta::NotEnoughData)
+                },
             ],
         ),
         meter(

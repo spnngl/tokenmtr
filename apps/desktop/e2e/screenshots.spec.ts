@@ -4,8 +4,8 @@ import { expect, type Page, test } from "@playwright/test";
 
 /**
  * Phase 12 screenshots: every full-app screen at 1280 and 390 px, the menu-bar recap at 360 px
- * (All, claude, pi), and the special states (empty, offline, incompatible, onboarding), each in
- * light and dark. Output: `e2e/screenshots/<theme>/<name>.png`. Run: `pnpm exec playwright test`.
+ * (All, claude, pi), the special states (empty, offline, incompatible, onboarding), and the quota
+ * screen without Claude extra usage, each in light and dark. Output: `e2e/screenshots/<theme>/<name>.png`. Run: `pnpm exec playwright test`.
  */
 const OUT = join(import.meta.dirname, "screenshots");
 const THEMES = ["light", "dark"] as const;
@@ -94,6 +94,14 @@ for (const theme of THEMES) {
             await shoot(page, theme, `${viewport.name}-state-${state}`);
           });
         }
+
+        test("quota without extra usage", async ({ page }) => {
+          await page.goto("/?mock=no-extra-usage#/quota");
+          await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+          await settle(page);
+          await expect(page.getByRole("meter", { name: "Extra usage" })).toHaveCount(0);
+          await shoot(page, theme, `${viewport.name}-quota-no-extra-usage`);
+        });
 
         test("command palette", async ({ page }) => {
           await page.goto("/?mock=populated#/");

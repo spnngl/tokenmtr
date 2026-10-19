@@ -114,12 +114,17 @@ pub fn render_html(report: &Report) -> String {
     }
     let _ = writeln!(out, "</tbody>\n</table>");
 
-    if report.unused_paid.micros() > 0 {
-        let _ = writeln!(
-            out,
-            "<p class=\"note\">Subscription fees nobody used: {}.</p>",
-            money(report.unused_paid, false)
-        );
+    for (label, amount) in [
+        ("Subscription fees nobody used", report.unused_paid),
+        ("Claude extra usage, in Paid", report.extra_usage),
+    ] {
+        if amount.micros() > 0 {
+            let _ = writeln!(
+                out,
+                "<p class=\"note\">{label}: {}.</p>",
+                money(amount, false)
+            );
+        }
     }
     if totals.approximate {
         let _ = writeln!(

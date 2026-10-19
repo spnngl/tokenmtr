@@ -109,6 +109,33 @@ describe("BillingScreen", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
+  it("shows Claude extra usage as its own line of Paid, and hides it without any", () => {
+    renderScreen({ kind: "ready", data: BILLING_DATA });
+    const kpi = screen.getByText("Extra usage", { selector: "dt" }).parentElement;
+    expect(within(kpi ?? document.body).getByText("$12.35")).toBeTruthy();
+    expect(screen.getByText("API cost, fees and extra usage")).toBeTruthy();
+    const months = screen.getByRole("table", { name: "Billing per month", hidden: true });
+    expect(
+      within(months).getByRole("columnheader", { name: /Extra usage/, hidden: true }),
+    ).toBeTruthy();
+    cleanup();
+
+    const none = (u: BillingData["report"]["total"]) => ({ ...u, extra_usage_micros: 0 });
+    renderScreen({
+      kind: "ready",
+      data: {
+        ...BILLING_DATA,
+        report: {
+          ...BILLING_DATA.report,
+          total: none(BILLING_DATA.report.total),
+          months: BILLING_DATA.report.months.map((month) => ({ ...month, extra_usage_micros: 0 })),
+        },
+      },
+    });
+    expect(screen.queryByText("Extra usage")).toBeNull();
+    expect(screen.getByText("API cost plus fees")).toBeTruthy();
+  });
+
   it("reaches the track-it button by keyboard", async () => {
     renderScreen({ kind: "ready", data: BILLING_DATA });
     const user = userEvent.setup();

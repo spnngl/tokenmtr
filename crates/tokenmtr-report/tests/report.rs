@@ -86,7 +86,33 @@ fn may() -> TestResult<ReportInput> {
             paid: micros(100_000_000),
             outside_scope: micros(0),
         }],
+        extra_usage: micros(0),
     })
+}
+
+#[test]
+fn extra_usage_is_paid_for_all_scope_only_and_has_its_own_line() -> TestResult {
+    let mut input = may()?;
+    input.extra_usage = micros(12_345_000);
+    let report = Report::from_input(input.clone())?;
+    assert_eq!(report.extra_usage, micros(12_345_000));
+    assert_eq!(report.totals.paid, micros(105_500_000 + 12_345_000));
+    assert_eq!(report.totals.api_value, micros(35_500_000), "no API value");
+    assert!(render_markdown(&report).contains("Claude extra usage, in Paid: "));
+    assert!(render_html(&report).contains("Claude extra usage, in Paid: "));
+    assert!(
+        render_csv(&report)?.contains("extra_usage,Claude extra usage,,,,,12.345000,false,EUR")
+    );
+
+    input.scope = Scope::Project("alpha".to_owned());
+    let report = Report::from_input(input)?;
+    assert_eq!(
+        report.extra_usage,
+        micros(0),
+        "extra usage belongs to no project"
+    );
+    assert!(!render_markdown(&report).contains("extra usage"));
+    Ok(())
 }
 
 #[test]

@@ -21,6 +21,7 @@ export function usage(overrides: Partial<Usage> = {}): Usage {
     api_value_micros: 0,
     api_value_usd_micros: 0,
     paid_micros: 0,
+    extra_usage_micros: 0,
     subscription_value_micros: 0,
     subscription_fee_micros: 0,
     reported_events: 0,

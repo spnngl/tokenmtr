@@ -7,6 +7,7 @@ pub mod billing;
 pub mod budget;
 pub mod dataset;
 pub mod event;
+pub mod extra_usage;
 pub mod forecast;
 pub mod fx;
 pub mod ids;
@@ -31,6 +32,7 @@ pub use event::{
     ApiCost, Capabilities, CostSource, Estimate, EventCost, EventKind, ParsedEvent, PriceModifiers,
     SignalKind, TokenCounts, ToolCall, UsageEvent, split_mcp_tool_name,
 };
+pub use extra_usage::{EXTRA_USAGE, ExtraUsage};
 pub use forecast::{LiveRate, QuotaEta, live_rate, project_period, quota_eta};
 pub use fx::{FxRate, FxTable, SelectedRate, convert};
 pub use ids::{

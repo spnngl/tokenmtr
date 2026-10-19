@@ -141,7 +141,7 @@ pub fn overview(
         usage.add_idle(idle);
     }
     let savings = if ctx.pricing().is_some() {
-        let by_model = fetch(reader, ctx, filters, Dim::Model, Scope::All)?;
+        let by_model = fetch(reader, ctx, filters, Dim::Model, Scope::Usage)?;
         cache_savings(ctx, &by_model.rows)?
     } else {
         None
@@ -204,14 +204,14 @@ pub fn models(
     ctx: &QueryContext,
     filters: &Filters,
 ) -> Result<Breakdown<ModelRow>, QueryError> {
-    let fetched = fetch(reader, ctx, filters, Dim::Model, Scope::All)?;
+    let fetched = fetch(reader, ctx, filters, Dim::Model, Scope::Usage)?;
     let mut by_model: BTreeMap<String, Usage> = BTreeMap::new();
     for row in &fetched.rows {
         let key = row.cell.k1.clone().unwrap_or_default();
         by_model.entry(key).or_default().add(row);
     }
     let whole: i64 = by_model.values().map(|u| u.api_value_micros).sum();
-    let (conditions, params) = where_sql(ctx, filters, Scope::All)?;
+    let (conditions, params) = where_sql(ctx, filters, Scope::Usage)?;
     let mut statement = reader.connection().prepare_cached(&format!(
         "SELECT model, SUM(cost_reported_usd_micros), SUM(cost_estimated_usd_micros) \
          FROM usage_event WHERE {conditions} AND cost_reported_usd_micros IS NOT NULL \
@@ -281,7 +281,7 @@ pub fn projects(
     ctx: &QueryContext,
     filters: &Filters,
 ) -> Result<Breakdown<ProjectRow>, QueryError> {
-    let fetched = fetch(reader, ctx, filters, Dim::Project, Scope::All)?;
+    let fetched = fetch(reader, ctx, filters, Dim::Project, Scope::Usage)?;
     let mut by_key: BTreeMap<(Option<String>, Option<String>), Usage> = BTreeMap::new();
     for row in &fetched.rows {
         by_key
@@ -341,7 +341,7 @@ pub fn branches(
     ctx: &QueryContext,
     filters: &Filters,
 ) -> Result<Breakdown<BranchRow>, QueryError> {
-    let fetched = fetch(reader, ctx, filters, Dim::Branch, Scope::All)?;
+    let fetched = fetch(reader, ctx, filters, Dim::Branch, Scope::Usage)?;
     let mut by_branch: BTreeMap<Option<String>, Usage> = BTreeMap::new();
     for row in &fetched.rows {
         by_branch.entry(row.cell.k1.clone()).or_default().add(row);

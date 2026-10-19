@@ -196,6 +196,8 @@ Types: `[x]` is a list of `x`. A default of "platform" means a path under `~/Lib
 | `enabled` | bool | `true` | Poll Claude's quota windows with the Claude Code sign-in ([install step 6](install.md#6-keychain-access-for-quota)). |
 | `interval` | duration | `"5m"` | Poll interval; at least `"1m"`. |
 
+When the account has extra usage switched on (Claude's pay-as-you-go spend beyond the plan), each poll also stores it as an `extra_usage` window: this month's spend against the monthly cap, in USD, with no reset time. The spend added since the previous poll lands on one usage event per profile and local day, with no tokens; a lower spend than the previous poll counts as a new month. The first poll counts the whole month so far on its day and marks it approximate.
+
 ### `[fx]`
 
 | Key | Type | Default | Meaning |
@@ -216,8 +218,8 @@ Types: `[x]` is a list of `x`. A default of "platform" means a path under `~/Lib
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `quota_thresholds` | `[percent]` | `[80, 95]` | Quota utilization levels that raise an alert, once per window and level. Stored sorted and unique. |
-| `quota_reset` | bool | `true` | Announce quota resets. |
+| `quota_thresholds` | `[percent]` | `[80, 95]` | Quota utilization levels that raise an alert, once per window and level; for the `extra_usage` window, once per calendar month and level. Stored sorted and unique. |
+| `quota_reset` | bool | `true` | Announce quota resets. Extra usage has no reset time and never announces one. |
 | `budget_thresholds` | `[percent]` | `[80, 100]` | Budget consumption levels that raise an alert, once per period and level. Stored sorted and unique. |
 | `sink_failing_after` | duration | `"30m"` | How long a sink may fail before alerting. |
 | `daemon_stale_after` | duration | `"15m"` | Heartbeat age that raises `daemon_stale`. |
@@ -299,7 +301,7 @@ Each filter list is non-empty and unique when present.
 
 Two subscriptions with the same provider, a shared agent, a shared profile and overlapping dates are an error.
 
-Paid cost is the API cost of events billed as `api` plus each fee prorated per day over its billing period, anchored on `start`. Claude's pay-as-you-go extra usage is not counted.
+Paid cost is the API cost of events billed as `api` plus each fee prorated per day over its billing period, anchored on `start`, plus Claude's extra usage (pay-as-you-go spend beyond the plan, also on subscription profiles). Extra usage adds nothing to API value, tokens or the model, project and session views; budgets with `measure = "paid"` count it.
 
 Known limit: session files do not record whether a call used an API key or a subscription login. An event bills as `subscription` when a subscription matches its provider, agent, profile and day; otherwise it bills as `api`. Declare only the subscriptions you pay for.
 

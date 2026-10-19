@@ -61,8 +61,8 @@ fn scan_ingests_the_agents_files_directly() -> TestResult {
         .success()
         .stdout(predicate::str::contains("claude"));
     let reader = StoreReader::open(&home.store_path())?;
-    // Two seeded events plus the scanned one.
-    assert_eq!(reader.usage_events_after(Revision::ZERO, 100)?.len(), 3);
+    // Two seeded events, the seeded extra-usage day and the scanned one.
+    assert_eq!(reader.usage_events_after(Revision::ZERO, 100)?.len(), 4);
     Ok(())
 }
 

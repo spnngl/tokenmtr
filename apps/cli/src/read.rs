@@ -278,8 +278,18 @@ fn render_meter(meter: &QuotaMeter, indent: &str) {
             QuotaEta::WontHit => ", on track to last".to_owned(),
             QuotaEta::NotEnoughData => String::new(),
         };
+        let spend = window
+            .spend
+            .map(|s| {
+                format!(
+                    " ({} of {} this month)",
+                    money(s.spent_micros, s.currency),
+                    money(s.limit_micros, s.currency)
+                )
+            })
+            .unwrap_or_default();
         println!(
-            "{indent}  {}: {} used{resets}{eta}",
+            "{indent}  {}: {} used{spend}{resets}{eta}",
             window.window,
             percent(window.used_percent)
         );

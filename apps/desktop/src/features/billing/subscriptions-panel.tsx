@@ -78,7 +78,11 @@ export function SubscriptionsPanel({
               approximate={report.total.approximate}
             />
           }
-          detail="API cost plus fees"
+          detail={
+            report.total.extra_usage_micros === 0
+              ? "API cost plus fees"
+              : "API cost, fees and extra usage"
+          }
         />
         <Kpi
           label="API value"
@@ -103,6 +107,19 @@ export function SubscriptionsPanel({
           }
           detail={`${formatCount(report.api.events)} pay-as-you-go events`}
         />
+        {report.total.extra_usage_micros === 0 ? null : (
+          <Kpi
+            label="Extra usage"
+            value={
+              <Amount
+                micros={report.total.extra_usage_micros}
+                currency={report.currency}
+                approximate={report.total.approximate}
+              />
+            }
+            detail="Claude pay-as-you-go beyond the plan, in Paid"
+          />
+        )}
       </KpiGrid>
       {report.subscriptions.length === 0 ? (
         <p className="text-sm text-fg-muted">

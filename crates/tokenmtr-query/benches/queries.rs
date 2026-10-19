@@ -310,18 +310,25 @@ fn seed_polls(store: &mut Store) {
                 profile: profile.clone(),
                 account: Some("dev@example.com".to_owned()),
                 fetched_at,
-                outcome: QuotaOutcome::Windows(vec![
-                    window(WindowId::five_hour(), 5),
-                    window(WindowId::seven_day(), 168),
-                ]),
+                outcome: QuotaOutcome::Windows {
+                    windows: vec![
+                        window(WindowId::five_hour(), 5),
+                        window(WindowId::seven_day(), 168),
+                    ],
+                    extra_usage: None,
+                },
             });
         }
         if polls.len() >= 5000 {
-            store.upsert_quota_snapshots(&polls).expect("quota");
+            store
+                .upsert_quota_snapshots(&polls, &jiff::tz::TimeZone::UTC)
+                .expect("quota");
             polls.clear();
         }
     }
-    store.upsert_quota_snapshots(&polls).expect("quota");
+    store
+        .upsert_quota_snapshots(&polls, &jiff::tz::TimeZone::UTC)
+        .expect("quota");
 }
 
 /// One ingest run per agent every awake half hour. `Store::record_ingest_run` commits (and

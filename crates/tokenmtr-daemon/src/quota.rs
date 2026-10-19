@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 use jiff::Timestamp;
 use tokenmtr_config::{ProfileConfig, ProfileLocation};
 use tokenmtr_control::{QuotaProfileStatus as Status, QuotaProfileSummary};
-use tokenmtr_core::alert::QuotaWindowStatus;
+use tokenmtr_core::alert::{QuotaCycle, QuotaWindowStatus};
 use tokenmtr_core::forecast::RESET_TOLERANCE;
-use tokenmtr_core::{AgentId, ProfileId, QuotaWindow};
+use tokenmtr_core::{AgentId, ExtraUsage, ProfileId, QuotaWindow};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_remote::{
     AccountInfo, ClaudeCredentials, ClaudeQuota, CredentialLocation, QuotaOutcome as Remote,
@@ -222,7 +222,7 @@ impl Ctx {
         if let Some(state) = lock(&self.run).quota.profiles.get_mut(&profile.id) {
             state.record(&poll.outcome, credentials.clone(), interval, started);
         }
-        let (outcome, status) = store_outcome(poll.outcome);
+        let (outcome, status) = store_outcome(poll.outcome, poll.extra_usage);
         let account = credentials
             .as_ref()
             .map(|credentials| credentials.account().clone())
@@ -258,17 +258,37 @@ impl Ctx {
             })
     }
 
-    /// Stores the polls, the detected accounts, then reacts (events, alerts).
+    /// Stores the polls (extra usage spend becomes usage events on display-zone days), the
+    /// detected accounts, then reacts (events, alerts; budgets too when extra usage was seen,
+    /// since it counts as paid).
     fn store_quota(&self, polled: Vec<Polled>) {
         let now = Timestamp::now();
+        let zone = tokenmtr_app::display_zone(&self.active().config);
         let mut statuses = Vec::new();
         let mut polls = Vec::with_capacity(polled.len());
+        let mut extra_seen = false;
         for poll in polled {
             let Some(outcome) = poll.outcome else {
                 continue;
             };
-            if let QuotaOutcome::Windows(windows) = &outcome {
+            if let QuotaOutcome::Windows {
+                windows,
+                extra_usage,
+            } = &outcome
+            {
                 statuses.extend(self.window_statuses(&poll.profile, windows));
+                if let Some(extra) = extra_usage {
+                    extra_seen = true;
+                    statuses.push(QuotaWindowStatus {
+                        agent: AgentId::CLAUDE,
+                        profile: poll.profile.clone(),
+                        window: ExtraUsage::window_id(),
+                        utilization: extra.utilization,
+                        cycle: QuotaCycle::Monthly {
+                            month: now.to_zoned(zone.clone()).date(),
+                        },
+                    });
+                }
             }
             if let Some(info) = poll.detected {
                 self.save_account(&poll.profile, info, now);
@@ -281,13 +301,13 @@ impl Ctx {
                 outcome,
             });
         }
-        if let Err(error) = lock(&self.store).upsert_quota_snapshots(&polls) {
+        if let Err(error) = lock(&self.store).upsert_quota_snapshots(&polls, &zone) {
             tracing::warn!(%error, "cannot store quota snapshots");
         }
         self.after_write(false);
         self.evaluate_alerts(Evaluation {
             quota: statuses,
-            budgets: false,
+            budgets: extra_seen,
         });
     }
 
@@ -332,8 +352,10 @@ impl Ctx {
                     profile: profile.clone(),
                     window: window.id.clone(),
                     utilization: window.state.utilization,
-                    resets_at,
-                    previous_resets_at,
+                    cycle: QuotaCycle::Rolling {
+                        resets_at,
+                        previous_resets_at,
+                    },
                 }
             })
             .collect()
@@ -343,9 +365,15 @@ impl Ctx {
 /// The store outcome and the `refresh_quota` status of a remote outcome. 403 and 429
 /// are stored as `failed`: the store and the app know no finer kinds, and neither proves the
 /// token is gone.
-fn store_outcome(outcome: Remote) -> (QuotaOutcome, Status) {
+fn store_outcome(outcome: Remote, extra_usage: Option<ExtraUsage>) -> (QuotaOutcome, Status) {
     match outcome {
-        Remote::Ok(snapshot) => (QuotaOutcome::Windows(snapshot.windows), Status::Ok),
+        Remote::Ok(snapshot) => (
+            QuotaOutcome::Windows {
+                windows: snapshot.windows,
+                extra_usage,
+            },
+            Status::Ok,
+        ),
         Remote::TokenExpired => (QuotaOutcome::TokenExpired, Status::TokenExpired),
         Remote::SignedOut => (QuotaOutcome::SignedOut, Status::SignedOut),
         Remote::Forbidden => (QuotaOutcome::Failed, Status::Forbidden),

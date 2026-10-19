@@ -76,6 +76,7 @@
         "api_value_micros": 41184000,
         "api_value_usd_micros": 41184000,
         "paid_micros": 2900000,
+        "extra_usage_micros": 0,
         "subscription_value_micros": 38284000,
         "subscription_fee_micros": 3333333,
         "reported_events": 0,
@@ -105,7 +106,8 @@
               "eta": {
                 "kind": "will_hit",
                 "at": "2026-05-03T15:31:00Z"
-              }
+              },
+              "spend": null
             },
             {
               "window": "seven_day",
@@ -114,7 +116,8 @@
               "resets_in_secs": 327481,
               "eta": {
                 "kind": "wont_hit"
-              }
+              },
+              "spend": null
             },
             {
               "window": "seven_day_opus",
@@ -123,6 +126,22 @@
               "resets_in_secs": null,
               "eta": {
                 "kind": "not_enough_data"
+              },
+              "spend": null
+            },
+            {
+              "window": "extra_usage",
+              "used_percent": 24.69,
+              "resets_at": null,
+              "resets_in_secs": null,
+              "eta": {
+                "kind": "not_enough_data"
+              },
+              "spend": {
+                "currency": "USD",
+                "spent_micros": 12345000,
+                "limit_micros": 50000000,
+                "approximate": false
               }
             }
           ]
@@ -219,6 +238,7 @@
         "api_value_micros": 39105000,
         "api_value_usd_micros": 39105000,
         "paid_micros": 0,
+        "extra_usage_micros": 0,
         "subscription_value_micros": 39105000,
         "subscription_fee_micros": 3333333,
         "reported_events": 0,
@@ -248,7 +268,8 @@
               "eta": {
                 "kind": "will_hit",
                 "at": "2026-05-03T15:31:00Z"
-              }
+              },
+              "spend": null
             },
             {
               "window": "seven_day",
@@ -257,7 +278,8 @@
               "resets_in_secs": 327481,
               "eta": {
                 "kind": "wont_hit"
-              }
+              },
+              "spend": null
             },
             {
               "window": "seven_day_opus",
@@ -266,6 +288,22 @@
               "resets_in_secs": null,
               "eta": {
                 "kind": "not_enough_data"
+              },
+              "spend": null
+            },
+            {
+              "window": "extra_usage",
+              "used_percent": 24.69,
+              "resets_at": null,
+              "resets_in_secs": null,
+              "eta": {
+                "kind": "not_enough_data"
+              },
+              "spend": {
+                "currency": "USD",
+                "spent_micros": 12345000,
+                "limit_micros": 50000000,
+                "approximate": false
               }
             }
           ]
@@ -362,6 +400,7 @@
         "api_value_micros": 2079000,
         "api_value_usd_micros": 2079000,
         "paid_micros": 2900000,
+        "extra_usage_micros": 0,
         "subscription_value_micros": -821000,
         "subscription_fee_micros": 0,
         "reported_events": 0,

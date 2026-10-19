@@ -13,7 +13,23 @@ type Month = BillingReport["months"][number];
 
 const AXIS_STYLE = { fontSize: 12, fill: "var(--fg-muted)" } as const;
 
-function monthColumns(currency: Currency): readonly Column<Month>[] {
+/** `withExtra`: a month has Claude extra usage, so its share of Paid gets a column. */
+function monthColumns(currency: Currency, withExtra: boolean): readonly Column<Month>[] {
+  const extra: readonly Column<Month>[] = withExtra
+    ? [
+        {
+          header: "Extra usage",
+          numeric: true,
+          cell: (row) => (
+            <Amount
+              micros={row.extra_usage_micros}
+              currency={currency}
+              approximate={row.approximate}
+            />
+          ),
+        },
+      ]
+    : [];
   return [
     { header: "Month", cell: (row) => row.month.slice(0, 7) },
     {
@@ -23,6 +39,7 @@ function monthColumns(currency: Currency): readonly Column<Month>[] {
         <Amount micros={row.paid_micros} currency={currency} approximate={row.approximate} />
       ),
     },
+    ...extra,
     {
       header: "API value",
       numeric: true,
@@ -38,6 +55,7 @@ function combine(first: Month, next: Month): Month {
   return {
     ...first,
     paid_micros: first.paid_micros + next.paid_micros,
+    extra_usage_micros: first.extra_usage_micros + next.extra_usage_micros,
     api_value_micros: first.api_value_micros + next.api_value_micros,
     approximate: first.approximate || next.approximate,
     roi: null,
@@ -90,7 +108,7 @@ export function MonthlyPanel({ report }: { readonly report: BillingReport }): Re
   return (
     <Section
       title="Paid against API value"
-      description="Per month. Paid is pay-as-you-go cost plus subscription fees; ROI is API value over fees."
+      description="Per month. Paid is pay-as-you-go cost, subscription fees and Claude extra usage; ROI is API value over fees."
     >
       {months.length === 0 ? (
         <p className="text-sm text-fg-muted">No usage in this range.</p>
@@ -102,7 +120,10 @@ export function MonthlyPanel({ report }: { readonly report: BillingReport }): Re
           table={
             <DataTable
               caption="Billing per month"
-              columns={monthColumns(report.currency)}
+              columns={monthColumns(
+                report.currency,
+                months.some((row) => row.extra_usage_micros !== 0),
+              )}
               rows={months}
               rowKey={(row) => row.month}
             />

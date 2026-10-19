@@ -115,6 +115,12 @@ fn quota_shows_the_window_and_the_percent() -> TestResult {
         .stdout(predicate::str::contains("42"));
     let quota = json(&home, &["quota", "--json"])?;
     assert_eq!(quota["meters"][0]["windows"][0]["used_percent"], 42.0);
+    // The extra-usage spend window comes last, with its money.
+    let extra = &quota["meters"][0]["windows"][1];
+    assert_eq!(extra["window"], "extra_usage");
+    assert_eq!(extra["resets_at"], serde_json::Value::Null);
+    assert_eq!(extra["spend"]["spent_micros"], 12_345_000);
+    assert_eq!(extra["spend"]["limit_micros"], 50_000_000);
     Ok(())
 }
 

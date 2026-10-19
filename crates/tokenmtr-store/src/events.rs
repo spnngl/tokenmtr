@@ -165,7 +165,8 @@ pub(crate) fn by_cwd(
         .collect()
 }
 
-/// When the first event of `(agent, profile)` that is not a stats-cache aggregate happened.
+/// When the first transcript event of `(agent, profile)` happened: not a stats-cache aggregate
+/// nor an extra-usage row.
 pub(crate) fn earliest_transcript(
     conn: &Connection,
     agent: AgentId,
@@ -174,13 +175,14 @@ pub(crate) fn earliest_transcript(
     let at: Option<i64> = conn
         .prepare_cached(
             "SELECT MIN(at_us) FROM usage_event \
-             WHERE agent = ?1 AND profile = ?2 AND kind != ?3",
+             WHERE agent = ?1 AND profile = ?2 AND kind NOT IN (?3, ?4)",
         )?
         .query_row(
             params![
                 agent.as_str(),
                 profile.as_str(),
-                enum_text(&EventKind::DailyAggregate)?
+                enum_text(&EventKind::DailyAggregate)?,
+                enum_text(&EventKind::ExtraUsage)?
             ],
             |row| row.get(0),
         )?;

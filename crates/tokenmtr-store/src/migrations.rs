@@ -9,7 +9,7 @@ use rusqlite_migration::{HookResult, M, Migrations};
 use uuid::Uuid;
 
 /// The schema version this build reads and writes: the number of migrations in `migrations()`.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// All migrations, oldest first.
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -22,6 +22,7 @@ pub(crate) fn migrations() -> Migrations<'static> {
         M::up(include_str!(
             "../migrations/0004_ingest_run_agent_index.sql"
         )),
+        M::up(include_str!("../migrations/0005_quota_snapshot_money.sql")),
     ])
 }
 

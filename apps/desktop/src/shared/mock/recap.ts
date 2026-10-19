@@ -4,7 +4,7 @@ import type { AgentRecap, Period, RecapSnapshot } from "../schemas";
 import { STATUS_SCHEMA_VERSION } from "../schemas";
 import { rangeOf, sumRaw } from "./aggregate";
 import { quotaLatestOf } from "./quota";
-import { budgetsOf, factsFor, totalsOf } from "./reports";
+import { budgetsOf, extraFactsFor, factsFor, totalsOf } from "./reports";
 import { addDays, NOW_ISO, NOW_MS, SESSIONS, TODAY } from "./seed";
 import { agentInfos, systemHealthOf } from "./system";
 
@@ -20,6 +20,7 @@ function recapFor(
   currency: Currency,
   quotaCapable: boolean,
   hasLive: boolean,
+  extraUsage: boolean,
 ): AgentRecap {
   const days = PERIOD_DAYS[period];
   const filters = {
@@ -44,13 +45,15 @@ function recapFor(
     const value = sumRaw(sparkFacts.filter((fact) => fact.date === date)).valueUsd;
     return { date, api_value_micros: currency === "EUR" ? Math.round(value * 0.92) : value };
   });
-  const totals = totalsOf(facts, currency, sessions);
+  const totals = totalsOf(facts, currency, sessions, extraUsage ? extraFactsFor(filters) : []);
   const elapsedDays = days - 1 + DAY_FRACTION;
   const topModel = [...facts]
     .sort((a, b) => b.valueUsd - a.valueUsd)
     .map((fact) => fact.model)
     .at(0);
-  const quota = quotaCapable ? quotaLatestOf({ ...defaultFilters(currency), agent }) : [];
+  const quota = quotaCapable
+    ? quotaLatestOf({ ...defaultFilters(currency), agent }, extraUsage)
+    : [];
   return {
     agent,
     period,
@@ -71,10 +74,23 @@ function recapFor(
   };
 }
 
-export function recapOf(period: Period, currency: Currency, empty: boolean): RecapSnapshot {
+/** `extraUsage`: claude/default has Claude extra usage switched on. */
+export function recapOf(
+  period: Period,
+  currency: Currency,
+  empty: boolean,
+  extraUsage = true,
+): RecapSnapshot {
   const agents = empty ? [] : agentInfos(new Set()).filter((info) => info.followed);
   const perAgent = agents.map((info) =>
-    recapFor(info.agent, period, currency, info.capabilities.quota, info.agent === "claude"),
+    recapFor(
+      info.agent,
+      period,
+      currency,
+      info.capabilities.quota,
+      info.agent === "claude",
+      extraUsage,
+    ),
   );
   const all =
     agents.length > 1
@@ -85,6 +101,7 @@ export function recapOf(period: Period, currency: Currency, empty: boolean): Rec
             currency,
             agents.some((info) => info.capabilities.quota),
             true,
+            extraUsage,
           ),
         ]
       : [];

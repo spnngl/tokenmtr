@@ -120,9 +120,10 @@
       "required": [
         "currency", "currency_fallback", "events", "input_uncached", "cache_read",
         "cache_write_5m", "cache_write_1h", "output", "reasoning", "total_tokens",
-        "api_value_micros", "api_value_usd_micros", "paid_micros", "subscription_value_micros",
-        "subscription_fee_micros", "reported_events", "estimated_events", "unpriced_events",
-        "approximate", "cached_input_percent", "cache_savings_micros", "roi", "sessions"
+        "api_value_micros", "api_value_usd_micros", "paid_micros", "extra_usage_micros",
+        "subscription_value_micros", "subscription_fee_micros", "reported_events",
+        "estimated_events", "unpriced_events", "approximate", "cached_input_percent",
+        "cache_savings_micros", "roi", "sessions"
       ],
       "properties": {
         "currency": { "$ref": "#/$defs/currency" },
@@ -138,6 +139,7 @@
         "api_value_micros": { "$ref": "#/$defs/micros" },
         "api_value_usd_micros": { "$ref": "#/$defs/micros" },
         "paid_micros": { "$ref": "#/$defs/micros" },
+        "extra_usage_micros": { "$ref": "#/$defs/micros" },
         "subscription_value_micros": { "$ref": "#/$defs/micros" },
         "subscription_fee_micros": { "$ref": "#/$defs/micros" },
         "reported_events": { "type": "integer", "minimum": 0 },
@@ -164,7 +166,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["window", "used_percent", "resets_at", "resets_in_secs", "eta"],
+            "required": ["window", "used_percent", "resets_at", "resets_in_secs", "eta", "spend"],
             "properties": {
               "window": { "type": "string" },
               "used_percent": { "type": "number" },
@@ -179,6 +181,21 @@
                 },
                 "if": { "properties": { "kind": { "const": "will_hit" } } },
                 "then": { "required": ["at"] }
+              },
+              "spend": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["currency", "spent_micros", "limit_micros", "approximate"],
+                    "properties": {
+                      "currency": { "$ref": "#/$defs/currency" },
+                      "spent_micros": { "$ref": "#/$defs/micros" },
+                      "limit_micros": { "$ref": "#/$defs/micros" },
+                      "approximate": { "type": "boolean" }
+                    }
+                  },
+                  { "type": "null" }
+                ]
               }
             }
           }

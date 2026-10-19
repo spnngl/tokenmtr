@@ -27,8 +27,10 @@ export const usageShape = {
   api_value_micros: microsSchema,
   /** Same, always in USD (never converted). */
   api_value_usd_micros: microsSchema,
-  /** Money actually paid: API cost plus prorated subscription fees. */
+  /** Money actually paid: API cost, prorated subscription fees and Claude extra usage. */
   paid_micros: microsSchema,
+  /** Claude extra usage (pay-as-you-go beyond the plan) inside `paid_micros`; no tokens. */
+  extra_usage_micros: microsSchema,
   subscription_value_micros: microsSchema,
   subscription_fee_micros: microsSchema,
   reported_events: countSchema,

@@ -1,7 +1,17 @@
 import type { Filters } from "../filters";
+import type { Currency } from "../format";
 import type { AdvisorReport, QuotaHistory, QuotaMeter, QuotaWindow } from "../schemas";
-import { matchesProfile, rangeOf, sumRaw } from "./aggregate";
-import { addDays, createRng, FACTS, hashString, NOW_MS, TODAY } from "./seed";
+import { convert, matchesProfile, rangeOf, sumRaw } from "./aggregate";
+import {
+  addDays,
+  createRng,
+  EXTRA_FACTS,
+  EXTRA_USAGE_LIMIT_USD_MICROS,
+  FACTS,
+  hashString,
+  NOW_MS,
+  TODAY,
+} from "./seed";
 
 const HOUR_MS = 3_600_000;
 
@@ -42,32 +52,55 @@ function windowView(seed: WindowSeed): QuotaWindow {
       seed.window === "five_hour"
         ? { kind: "will_hit", at: iso(NOW_MS + 1.67 * HOUR_MS) }
         : { kind: "wont_hit" },
+    spend: null,
   };
 }
 
-const METERS: readonly QuotaMeter[] = [
-  {
-    agent: "claude",
-    profile: "default",
-    fetched_at: iso(NOW_MS - 60_000),
-    age_secs: 60,
-    status: "ok",
-    account: "dev@example.com",
-    windows: WINDOWS.map(windowView),
-  },
-  {
-    agent: "claude",
-    profile: "work",
-    fetched_at: iso(NOW_MS - 3 * 24 * HOUR_MS),
-    age_secs: 3 * 24 * 3600,
-    status: "token_expired",
-    account: "dev@acme.example",
-    windows: [],
-  },
-];
+/** claude/default's monthly extra-usage window: this month's `EXTRA_FACTS` over the cap. */
+function extraUsageWindow(currency: Currency): QuotaWindow {
+  const month = TODAY.slice(0, 7);
+  const spentUsd = sumRaw(EXTRA_FACTS.filter((fact) => fact.date.startsWith(month))).extraUsd;
+  return {
+    window: "extra_usage",
+    used_percent: (spentUsd / EXTRA_USAGE_LIMIT_USD_MICROS) * 100,
+    resets_at: null,
+    resets_in_secs: null,
+    eta: { kind: "not_enough_data" },
+    spend: {
+      currency,
+      spent_micros: convert(spentUsd, currency),
+      limit_micros: convert(EXTRA_USAGE_LIMIT_USD_MICROS, currency),
+      approximate: false,
+    },
+  };
+}
 
-export function quotaLatestOf(filters: Filters): QuotaMeter[] {
-  return METERS.filter(
+function metersOf(currency: Currency, extraUsage: boolean): QuotaMeter[] {
+  return [
+    {
+      agent: "claude",
+      profile: "default",
+      fetched_at: iso(NOW_MS - 60_000),
+      age_secs: 60,
+      status: "ok",
+      account: "dev@example.com",
+      windows: [...WINDOWS.map(windowView), ...(extraUsage ? [extraUsageWindow(currency)] : [])],
+    },
+    {
+      agent: "claude",
+      profile: "work",
+      fetched_at: iso(NOW_MS - 3 * 24 * HOUR_MS),
+      age_secs: 3 * 24 * 3600,
+      status: "token_expired",
+      account: "dev@acme.example",
+      windows: [],
+    },
+  ];
+}
+
+/** Latest meters; `extraUsage` adds claude/default's extra-usage window (off: Claude omits it). */
+export function quotaLatestOf(filters: Filters, extraUsage = true): QuotaMeter[] {
+  return metersOf(filters.currency, extraUsage).filter(
     (meter) =>
       (filters.agent === null || meter.agent === filters.agent) &&
       matchesProfile(filters.profile, meter.agent, meter.profile),

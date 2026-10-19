@@ -15,7 +15,8 @@
         "eta": {
           "kind": "will_hit",
           "at": "2026-05-03T15:31:00Z"
-        }
+        },
+        "spend": null
       },
       {
         "window": "seven_day",
@@ -24,7 +25,8 @@
         "resets_in_secs": 327481,
         "eta": {
           "kind": "wont_hit"
-        }
+        },
+        "spend": null
       },
       {
         "window": "seven_day_opus",
@@ -33,6 +35,22 @@
         "resets_in_secs": null,
         "eta": {
           "kind": "not_enough_data"
+        },
+        "spend": null
+      },
+      {
+        "window": "extra_usage",
+        "used_percent": 24.69,
+        "resets_at": null,
+        "resets_in_secs": null,
+        "eta": {
+          "kind": "not_enough_data"
+        },
+        "spend": {
+          "currency": "USD",
+          "spent_micros": 12345000,
+          "limit_micros": 50000000,
+          "approximate": false
         }
       }
     ]

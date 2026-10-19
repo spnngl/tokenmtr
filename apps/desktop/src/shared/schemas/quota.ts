@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { countSchema, microsSchema, timestampSchema } from "./primitives";
+import { countSchema, currencySchema, microsSchema, timestampSchema } from "./primitives";
 import { planSchema } from "./usage";
 
 /** Forecast of when a window runs out (`QuotaEta`, tagged by `kind`). */
@@ -10,14 +10,29 @@ const quotaEtaSchema = z.discriminatedUnion("kind", [
 ]);
 export type QuotaEta = z.infer<typeof quotaEtaSchema>;
 
+/** Spend of a money window (`QuotaSpend`), converted to the display currency. */
+const quotaSpendSchema = z.object({
+  currency: currencySchema,
+  spent_micros: microsSchema,
+  limit_micros: microsSchema,
+  /** Converted with an old FX rate. */
+  approximate: z.boolean(),
+});
+export type QuotaSpend = z.infer<typeof quotaSpendSchema>;
+
+/** Claude's monthly pay-as-you-go window; the only one with `spend`, and no reset time. */
+export const EXTRA_USAGE_WINDOW = "extra_usage";
+
 const quotaWindowSchema = z.object({
-  /** `five_hour`, `seven_day`, ... */
+  /** `five_hour`, `seven_day`, ..., `extra_usage` (last). */
   window: z.string(),
   /** May exceed 100. */
   used_percent: z.number(),
   resets_at: timestampSchema.nullable(),
   resets_in_secs: z.number().int().nullable(),
   eta: quotaEtaSchema,
+  /** Spent and cap this month; set on `extra_usage` only. */
+  spend: quotaSpendSchema.nullable(),
 });
 export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
 

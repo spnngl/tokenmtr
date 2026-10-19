@@ -63,6 +63,20 @@ describe("Recap", () => {
     expect(within(quota).getByText(/resets in 2h 15m/)).toBeTruthy();
   });
 
+  it("shows the monthly extra-usage meter with spend and cap, and none when it is off", async () => {
+    renderRecap();
+    const quota = screen.getByRole("region", { name: "Quota" });
+    const extra = within(quota).getByRole("meter", { name: "Extra usage" });
+    expect(extra.textContent).toMatch(/\$\d+\.\d\d of \$50\.00 this month/);
+    cleanup();
+
+    const off = await createMockDataSource({ scenario: "no-extra-usage" }).recap("today", "USD");
+    renderRecap({ snapshot: off });
+    const plain = screen.getByRole("region", { name: "Quota" });
+    expect(within(plain).queryByRole("meter", { name: "Extra usage" })).toBeNull();
+    expect(within(plain).getAllByRole("meter").length).toBeGreaterThan(0);
+  });
+
   it("shows projected spend and the footer health with its reason", () => {
     renderRecap();
     const money = screen.getByRole("region", { name: "Money" });

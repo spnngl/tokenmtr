@@ -99,6 +99,7 @@ const fn kind_name(kind: EventKind) -> &'static str {
         EventKind::BranchSummary => "branch_summary",
         EventKind::Auxiliary => "auxiliary",
         EventKind::DailyAggregate => "daily_aggregate",
+        EventKind::ExtraUsage => "extra_usage",
     }
 }
 
@@ -278,6 +279,8 @@ pub fn quota_snapshot(
 ) -> Result<ExportRow, ExportError> {
     let q = &versioned.row;
     let window = q.window();
+    let window = window.as_ref();
+    let extra = q.extra_usage();
     let values = vec![
         text(q.export_id(machine)?.to_string()),
         revision(versioned.revision),
@@ -293,6 +296,8 @@ pub fn quota_snapshot(
             .map_or(Value::Null, instant),
         instant(q.fetched_at),
         text(status_name(q.status())),
+        extra.map_or(Value::Null, |e| usd(e.spent)),
+        extra.map_or(Value::Null, |e| usd(e.limit)),
     ];
     Ok(checked(
         Dataset::QuotaSnapshots,

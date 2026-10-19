@@ -40,6 +40,12 @@ impl WindowId {
         Self(Self::SEVEN_DAY.to_owned())
     }
 
+    /// The monthly extra-usage window id ([`crate::extra_usage::EXTRA_USAGE`]).
+    #[must_use]
+    pub fn extra_usage() -> Self {
+        Self(crate::extra_usage::EXTRA_USAGE.to_owned())
+    }
+
     /// The id as text.
     #[must_use]
     pub fn as_str(&self) -> &str {

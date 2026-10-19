@@ -95,6 +95,13 @@ pub fn render_markdown(report: &Report) -> String {
             money(report.unused_paid, false)
         );
     }
+    if report.extra_usage.micros() > 0 {
+        let _ = writeln!(
+            out,
+            "Claude extra usage, in Paid: {}.\n",
+            money(report.extra_usage, false)
+        );
+    }
     if totals.approximate {
         let _ = writeln!(out, "{APPROXIMATE_MARK} includes approximate events.\n");
     }

@@ -140,6 +140,8 @@ export interface RawUsage {
   readonly reasoning: number;
   readonly valueUsd: number;
   readonly paidUsd: number;
+  /** Claude extra usage inside `paidUsd`; only on `EXTRA_FACTS`. */
+  readonly extraUsd: number;
   readonly subscriptionValueUsd: number;
   readonly feeUsd: number;
   readonly reported: number;
@@ -188,6 +190,7 @@ function usageFor(
     ...tokens,
     valueUsd,
     paidUsd: (subscribed ? 0 : valueUsd) + feeUsd,
+    extraUsd: 0,
     subscriptionValueUsd: subscribed ? valueUsd : 0,
     feeUsd,
     reported: seed.reportsCost ? events : 0,
@@ -230,6 +233,54 @@ function buildFacts(): Fact[] {
 }
 
 export const FACTS: readonly Fact[] = buildFacts();
+
+/** The model label of extra-usage rows, as the backend stores them. */
+export const EXTRA_USAGE_MODEL = "extra_usage";
+/** Monthly cap of claude/default's extra usage. */
+export const EXTRA_USAGE_LIMIT_USD_MICROS = 50_000_000;
+
+/**
+ * Claude extra usage of claude/default: pay-as-you-go spend on some days, no tokens. Like the
+ * backend rows it is billed `api`, has no project, and counts in paid only. Kept apart from
+ * `FACTS` so only the views that show it (totals, series, billing, recap) read it.
+ */
+function buildExtraFacts(): Fact[] {
+  const rng = createRng(4_242);
+  const facts: Fact[] = [];
+  for (let back = HISTORY_DAYS - 1; back >= 0; back -= 1) {
+    const date = addDays(TODAY, -back);
+    if (weekdayOf(date) <= 5 && rng() < 0.35) {
+      const usd = Math.round(400_000 + rng() * 2_600_000);
+      facts.push({
+        date,
+        agent: "claude",
+        profile: "default",
+        model: EXTRA_USAGE_MODEL,
+        project: null,
+        client: null,
+        billing: "api",
+        events: 0,
+        input_uncached: 0,
+        cache_read: 0,
+        cache_write_5m: 0,
+        cache_write_1h: 0,
+        output: 0,
+        reasoning: 0,
+        valueUsd: 0,
+        paidUsd: usd,
+        extraUsd: usd,
+        subscriptionValueUsd: 0,
+        feeUsd: 0,
+        reported: 0,
+        estimated: 0,
+        unpriced: 0,
+      });
+    }
+  }
+  return facts;
+}
+
+export const EXTRA_FACTS: readonly Fact[] = buildExtraFacts();
 
 export interface SessionSeed {
   readonly agent: string;

@@ -41,7 +41,14 @@
 //!   events by API-value share, so any breakdown sums to the total. Idle fee days
 //!   appear only in unscoped views ([`Filters::is_scoped`] is false).
 //!   `roi` is subscription API value over the fees allocated.
-//! - Session and heatmap views skip daily aggregates and carry no fees.
+//! - Claude extra usage (`extra_usage` events: one per profile and local day,
+//!   spend without tokens) counts in `paid_micros` and `extra_usage_micros`,
+//!   never in API value, `events` or tokens, also on subscription profiles. It
+//!   passes the `api` billing filter. Model, project and branch breakdowns,
+//!   cache savings and the advisor leave it out; model and project series groups
+//!   too (it stays in the bucket totals).
+//! - Session and heatmap views skip daily aggregates and extra usage and carry
+//!   no fees.
 //!
 //! # JSON shapes
 //!
@@ -50,7 +57,7 @@
 //! [`Usage`]: `events`, token counts (`input_uncached`, `cache_read`,
 //! `cache_write_5m`, `cache_write_1h`, `output`, `reasoning`, `total_tokens`),
 //! `api_value_micros`, `api_value_usd_micros`, `paid_micros`,
-//! `subscription_value_micros`, `subscription_fee_micros`, `reported_events`,
+//! `extra_usage_micros`, `subscription_value_micros`, `subscription_fee_micros`, `reported_events`,
 //! `estimated_events`, `unpriced_events`, `approximate`. Entry points:
 //!
 //! | Function | Result |
@@ -101,8 +108,8 @@ pub use health::{
     ingest_status, parse_issues, sink_health,
 };
 pub use quota::{
-    AdvisorReport, QuotaHistory, QuotaMeter, QuotaPoint, QuotaWindowView, advisor, quota_history,
-    quota_latest,
+    AdvisorReport, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, advisor,
+    quota_history, quota_latest,
 };
 pub use range::{Bucket, DateRange, Period, RangeSpec};
 pub use recap::{

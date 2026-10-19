@@ -10,9 +10,9 @@ use tempfile::TempDir;
 use tokenmtr_core::event::{EventKind, SignalKind, ToolCall};
 use tokenmtr_core::quota::{QuotaWindowState, Utilization};
 use tokenmtr_core::{
-    AgentId, Alert, AlertKind, DedupKey, Estimate, EurPerUsd, EventCost, EventId, FxRate,
-    MachineId, ModelId, PricingVersion, ProfileId, QuotaWindow, SessionId, SinkId, SourceFileId,
-    TokenCounts, UsageEvent, UsdMicros, WindowId,
+    AgentId, Alert, AlertKind, DedupKey, Estimate, EurPerUsd, EventCost, EventId, ExtraUsage,
+    FxRate, MachineId, ModelId, PricingVersion, ProfileId, QuotaWindow, SessionId, SinkId,
+    SourceFileId, TokenCounts, UsageEvent, UsdMicros, WindowId,
 };
 use tokenmtr_core::{BillingPeriod, Currency, Money, Plan, Subscription, SubscriptionSpec};
 
@@ -460,16 +460,25 @@ fn quota_snapshots_store_windows_and_failures() {
     let polls = [
         poll(
             100,
-            QuotaOutcome::Windows(vec![
-                window(WindowId::FIVE_HOUR, 42.5),
-                window(WindowId::SEVEN_DAY, 10.0),
-            ]),
+            QuotaOutcome::Windows {
+                windows: vec![
+                    window(WindowId::FIVE_HOUR, 42.5),
+                    window(WindowId::SEVEN_DAY, 10.0),
+                ],
+                extra_usage: None,
+            },
         ),
         poll(200, QuotaOutcome::TokenExpired),
     ];
-    let stats = f.store.upsert_quota_snapshots(&polls).unwrap();
+    let stats = f.store.upsert_quota_snapshots(&polls, &utc()).unwrap();
     assert_eq!(stats.inserted, 3);
-    assert_eq!(f.store.upsert_quota_snapshots(&polls).unwrap().changed(), 0);
+    assert_eq!(
+        f.store
+            .upsert_quota_snapshots(&polls, &utc())
+            .unwrap()
+            .changed(),
+        0
+    );
     let rows = f.store.quota_snapshots_after(Revision::ZERO, 10).unwrap();
     assert_eq!(rows.len(), 3);
     let labels: Vec<_> = rows.iter().map(|r| r.row.window_label()).collect();
@@ -480,8 +489,142 @@ fn quota_snapshots_store_windows_and_failures() {
     assert!(matches!(rows[2].row.reading, QuotaReading::TokenExpired));
     assert_eq!(
         rows[0].row.window().unwrap(),
-        &window(WindowId::FIVE_HOUR, 42.5)
+        window(WindowId::FIVE_HOUR, 42.5)
     );
+}
+
+fn utc() -> jiff::tz::TimeZone {
+    jiff::tz::TimeZone::UTC
+}
+
+/// A Claude poll at `fetched` (seconds) reporting `spent` of a $50 extra-usage cap.
+fn extra_poll(profile: &str, fetched: &str, spent: i64) -> QuotaPoll {
+    QuotaPoll {
+        agent: AgentId::CLAUDE,
+        profile: ProfileId::try_from(profile).unwrap(),
+        account: None,
+        fetched_at: fetched.parse().unwrap(),
+        outcome: QuotaOutcome::Windows {
+            windows: vec![window(WindowId::FIVE_HOUR, 10.0)],
+            extra_usage: Some(ExtraUsage {
+                utilization: Utilization::new(10.0).unwrap(),
+                spent: UsdMicros::new(spent),
+                limit: UsdMicros::new(50_000_000),
+            }),
+        },
+    }
+}
+
+/// The live extra-usage events: (dedup key, cost, approximate).
+fn extra_events(store: &Store) -> Vec<(String, i64, bool)> {
+    let mut events: Vec<_> = store
+        .usage_events_after(Revision::ZERO, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|v| v.row.kind == EventKind::ExtraUsage)
+        .map(|v| {
+            (
+                v.row.dedup_key.as_str().to_owned(),
+                v.row.cost.reported().unwrap().get(),
+                v.row.approximate,
+            )
+        })
+        .collect();
+    events.sort();
+    events
+}
+
+#[test]
+fn extra_usage_is_stored_with_money_and_read_back() {
+    let mut f = fixture();
+    let poll = extra_poll("default", "2026-03-10T09:00:00Z", 12_345_000);
+    let stats = f.store.upsert_quota_snapshots(&[poll], &utc()).unwrap();
+    assert_eq!(stats.inserted, 2);
+    let rows = f.store.quota_snapshots_after(Revision::ZERO, 10).unwrap();
+    let extra = rows
+        .iter()
+        .find_map(|r| r.row.extra_usage())
+        .expect("extra usage row");
+    assert_eq!(extra.spent, UsdMicros::new(12_345_000));
+    assert_eq!(extra.limit, UsdMicros::new(50_000_000));
+    let labels: Vec<_> = rows.iter().map(|r| r.row.window_label()).collect();
+    assert!(labels.contains(&Some("Extra usage".to_owned())));
+    assert!(
+        rows.iter()
+            .any(|r| r.row.window().is_some_and(|w| w.state.resets_at.is_none()))
+    );
+}
+
+#[test]
+fn extra_usage_spend_accumulates_per_local_day() {
+    let mut f = fixture();
+    let zone = jiff::tz::TimeZone::get("Europe/Paris").unwrap();
+    // First observation: the whole month so far, approximate.
+    f.store
+        .upsert_quota_snapshots(
+            &[extra_poll("default", "2026-03-10T09:00:00Z", 5_000_000)],
+            &zone,
+        )
+        .unwrap();
+    assert_eq!(
+        extra_events(&f.store),
+        [("extra_usage|default|2026-03-10".to_owned(), 5_000_000, true)]
+    );
+    // Growth the same day adds to the same row; a repeated poll adds nothing.
+    let later = extra_poll("default", "2026-03-10T15:00:00Z", 7_500_000);
+    f.store
+        .upsert_quota_snapshots(std::slice::from_ref(&later), &zone)
+        .unwrap();
+    let before = head(&f.store, Dataset::UsageEvents);
+    f.store.upsert_quota_snapshots(&[later], &zone).unwrap();
+    assert_eq!(head(&f.store, Dataset::UsageEvents), before);
+    // No growth: no write either.
+    f.store
+        .upsert_quota_snapshots(
+            &[extra_poll("default", "2026-03-10T16:00:00Z", 7_500_000)],
+            &zone,
+        )
+        .unwrap();
+    assert_eq!(head(&f.store, Dataset::UsageEvents), before);
+    // 23:30 UTC is the next local day in Paris; a lower spend is a new month.
+    f.store
+        .upsert_quota_snapshots(
+            &[
+                extra_poll("default", "2026-03-10T23:30:00Z", 8_000_000),
+                extra_poll("default", "2026-04-01T08:00:00Z", 1_000_000),
+            ],
+            &zone,
+        )
+        .unwrap();
+    // Another profile has its own first observation.
+    f.store
+        .upsert_quota_snapshots(
+            &[extra_poll("work", "2026-03-10T09:00:00Z", 2_000_000)],
+            &zone,
+        )
+        .unwrap();
+    assert_eq!(
+        extra_events(&f.store),
+        [
+            ("extra_usage|default|2026-03-10".to_owned(), 7_500_000, true),
+            ("extra_usage|default|2026-03-11".to_owned(), 500_000, false),
+            (
+                "extra_usage|default|2026-04-01".to_owned(),
+                1_000_000,
+                false
+            ),
+            ("extra_usage|work|2026-03-10".to_owned(), 2_000_000, true),
+        ]
+    );
+    let noon = f
+        .store
+        .usage_events_after(Revision::ZERO, 100)
+        .unwrap()
+        .into_iter()
+        .find(|v| v.row.dedup_key.as_str() == "extra_usage|default|2026-03-11")
+        .unwrap();
+    assert_eq!(noon.row.at.to_string(), "2026-03-11T11:00:00Z");
+    assert_eq!(noon.row.tokens, TokenCounts::default());
 }
 
 #[test]

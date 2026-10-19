@@ -142,19 +142,22 @@ pub fn quota_poll(at: &str) -> TestResult<QuotaPoll> {
         profile: ProfileId::default_profile(),
         account: Some("me@example.com".to_owned()),
         fetched_at: at.parse()?,
-        outcome: QuotaOutcome::Windows(vec![QuotaWindow {
-            id: WindowId::five_hour(),
-            state: QuotaWindowState {
-                utilization: Utilization::new(42.5)?,
-                resets_at: Some("2026-05-01T15:00:00Z".parse()?),
-            },
-        }]),
+        outcome: QuotaOutcome::Windows {
+            windows: vec![QuotaWindow {
+                id: WindowId::five_hour(),
+                state: QuotaWindowState {
+                    utilization: Utilization::new(42.5)?,
+                    resets_at: Some("2026-05-01T15:00:00Z".parse()?),
+                },
+            }],
+            extra_usage: None,
+        },
     })
 }
 
 pub fn quota_sample(at: &str) -> TestResult<QuotaSample> {
     let poll = quota_poll(at)?;
-    let QuotaOutcome::Windows(mut windows) = poll.outcome else {
+    let QuotaOutcome::Windows { mut windows, .. } = poll.outcome else {
         return Err("fixture outcome is a window".into());
     };
     let window = windows.remove(0);
@@ -164,6 +167,18 @@ pub fn quota_sample(at: &str) -> TestResult<QuotaSample> {
         account: poll.account,
         fetched_at: poll.fetched_at,
         reading: QuotaReading::Window(window),
+    })
+}
+
+/// The Claude extra-usage window: $12.345 spent of a $50 cap.
+pub fn extra_usage_sample(at: &str) -> TestResult<QuotaSample> {
+    Ok(QuotaSample {
+        reading: QuotaReading::ExtraUsage(tokenmtr_core::ExtraUsage {
+            utilization: Utilization::new(24.69)?,
+            spent: tokenmtr_core::UsdMicros::new(12_345_000),
+            limit: tokenmtr_core::UsdMicros::new(50_000_000),
+        }),
+        ..quota_sample(at)?
     })
 }
 

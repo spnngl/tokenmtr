@@ -48,8 +48,12 @@ impl Dim {
 /// Which events count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Scope {
-    /// Everything, daily aggregates included: totals, series, models, projects.
+    /// Everything, daily aggregates and extra usage included: totals, money series, billing,
+    /// budgets.
     All,
+    /// Token usage: daily aggregates included, extra usage (spend without tokens) left out:
+    /// models, projects, branches, token series.
+    Usage,
     /// Real traffic only: sessions, heatmap. Fees are not allocated.
     Traffic,
 }
@@ -77,6 +81,8 @@ pub(crate) struct Cell {
     pub approximate: u64,
     pub first_at: Timestamp,
     pub last_at: Timestamp,
+    /// Claude extra-usage rows: spend in `cost_usd`, no tokens.
+    pub extra: bool,
 }
 
 impl Cell {
@@ -99,6 +105,8 @@ impl Cell {
 pub(crate) enum Mode {
     Api,
     Subscription(usize),
+    /// Claude extra usage: paid as spent, no API value, never shares a fee.
+    Extra,
 }
 
 /// A cell with its local date, billing mode and converted money.
@@ -172,8 +180,10 @@ pub(crate) fn where_sql(
         Value::Integer(from.as_microsecond()),
         Value::Integer(to.as_microsecond()),
     ];
-    if scope == Scope::Traffic {
-        sql.push_str(" AND kind <> 'daily_aggregate'");
+    match scope {
+        Scope::All => {}
+        Scope::Usage => sql.push_str(" AND kind <> 'extra_usage'"),
+        Scope::Traffic => sql.push_str(" AND kind NOT IN ('daily_aggregate', 'extra_usage')"),
     }
     filters.sql(&mut sql, &mut params);
     Ok((sql, params))
@@ -191,7 +201,8 @@ fn query_cells(
     let sql = format!(
         "SELECT at_us, agent, profile, provider, {k1}, {k2}, input_uncached, cache_read, \
          cache_write_5m, cache_write_1h, output, reasoning, cost_reported_usd_micros, \
-         cost_estimated_usd_micros, approximate FROM usage_event WHERE {conditions}"
+         cost_estimated_usd_micros, approximate, kind = 'extra_usage' FROM usage_event \
+         WHERE {conditions}"
     );
     let mut statement = reader.connection().prepare_cached(&sql)?;
     let mut rows = statement.query(rusqlite::params_from_iter(params))?;
@@ -205,6 +216,7 @@ fn query_cells(
             provider: text(row, 3)?,
             k1: text(row, 4)?,
             k2: text(row, 5)?,
+            extra: row.get(15)?,
         };
         let cell = groups.entry(at - at.rem_euclid(CELL_US)).or_default();
         let i = cell.iter().position(|g| g.key() == key).unwrap_or_else(|| {
@@ -253,6 +265,7 @@ struct GroupKey<'a> {
     provider: Option<&'a str>,
     k1: Option<&'a str>,
     k2: Option<&'a str>,
+    extra: bool,
 }
 
 /// The running sums of one group, before parsing into a [`Cell`].
@@ -262,6 +275,7 @@ struct Group {
     provider: Option<String>,
     k1: Option<String>,
     k2: Option<String>,
+    extra: bool,
     events: u64,
     tokens: TokenCounts,
     cost_usd: i64,
@@ -281,6 +295,7 @@ impl Group {
             provider: key.provider.map(str::to_owned),
             k1: key.k1.map(str::to_owned),
             k2: key.k2.map(str::to_owned),
+            extra: key.extra,
             events: 0,
             tokens: TokenCounts::default(),
             cost_usd: 0,
@@ -300,6 +315,7 @@ impl Group {
             provider: self.provider.as_deref(),
             k1: self.k1.as_deref(),
             k2: self.k2.as_deref(),
+            extra: self.extra,
         }
     }
 
@@ -367,13 +383,18 @@ impl Group {
             approximate: self.approximate,
             first_at: micros_ts(self.first_at)?,
             last_at: micros_ts(self.last_at)?,
+            extra: self.extra,
         })
     }
 }
 
 /// First matching subscription wins, like `tokenmtr_core::billing_mode`: coverage uses the
-/// cell's `local` date, the display-zone day its fee is charged on.
+/// cell's `local` date, the display-zone day its fee is charged on. Extra usage is spend beyond
+/// any plan, so no subscription covers it.
 fn mode_of(subs: &[Subscription], cell: &Cell, local: Date) -> Mode {
+    if cell.extra {
+        return Mode::Extra;
+    }
     subs.iter()
         .position(|s| {
             s.agents().contains(&cell.agent)
@@ -456,7 +477,8 @@ fn split(fee: i64, values: &[i64], total: i64) -> Vec<i64> {
 
 /// Rows (with local dates, billing modes and money in the display currency) for `filters`.
 ///
-/// Paid cost: pay-as-you-go rows pay their API value; subscription rows share that
+/// Paid cost: pay-as-you-go rows pay their API value; extra-usage rows pay their spend and have
+/// no API value (they pass the `api` billing filter: they are pay-as-you-go); subscription rows share that
 /// day's prorated fee by API-value share of the day's subscription usage. When the filters
 /// restrict the selection the shares still use the unrestricted usage as denominator and unused
 /// fees stay out; when unrestricted, a fee nobody used is reported in [`Fetched::idle`].
@@ -476,7 +498,7 @@ pub(crate) fn fetch(
         let mode = mode_of(subs, &cell, local);
         let keep = match (filters.billing_filter(), mode) {
             (BillingFilter::Any, _)
-            | (BillingFilter::Api, Mode::Api)
+            | (BillingFilter::Api, Mode::Api | Mode::Extra)
             | (BillingFilter::Subscription(None), Mode::Subscription(_)) => true,
             (BillingFilter::Subscription(Some(id)), Mode::Subscription(i)) => subs[i].id() == id,
             _ => false,
@@ -484,9 +506,13 @@ pub(crate) fn fetch(
         if !keep {
             continue;
         }
-        let (api, rate_approx) = usd_to(currency, ctx.fx(), utc, cell.cost_usd)?;
+        let (value, rate_approx) = usd_to(currency, ctx.fx(), utc, cell.cost_usd)?;
         let approximate = rate_approx || cell.approximate + cell.estimated + cell.unpriced > 0;
-        let paid = if mode == Mode::Api { api } else { 0 };
+        let (api, paid) = match mode {
+            Mode::Api => (value, value),
+            Mode::Subscription(_) => (value, 0),
+            Mode::Extra => (0, value),
+        };
         rows.push(Row {
             cell,
             local,
@@ -501,7 +527,7 @@ pub(crate) fn fetch(
         rows,
         idle: Vec::new(),
     };
-    if scope == Scope::All && !subs.is_empty() {
+    if scope != Scope::Traffic && !subs.is_empty() {
         allocate_fees(reader, ctx, filters, &mut fetched)?;
     }
     Ok(fetched)
@@ -601,7 +627,7 @@ fn fetch_plain(
             let local = ctx.zone().to_datetime(cell.start).date();
             match mode_of(ctx.subscriptions(), &cell, local) {
                 Mode::Subscription(i) => Some(((i, local), cell.cost_usd)),
-                Mode::Api => None,
+                Mode::Api | Mode::Extra => None,
             }
         })
         .collect())

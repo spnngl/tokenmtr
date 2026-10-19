@@ -8,7 +8,7 @@ use tokenmtr_core::Currency;
 use tokenmtr_store::StoreReader;
 
 use crate::context::QueryContext;
-use crate::engine::{Dim, Scope, fetch};
+use crate::engine::{Dim, Mode, Scope, fetch};
 use crate::error::QueryError;
 use crate::filters::Filters;
 use crate::range::Bucket;
@@ -38,7 +38,8 @@ pub struct GroupValue {
     pub total_tokens: u64,
     /// API value in the series currency.
     pub api_value_micros: i64,
-    /// Paid cost in the series currency (fees are not split by group).
+    /// Paid cost in the series currency (fees, and extra usage outside the agent split, are
+    /// not split by group).
     pub paid_micros: i64,
 }
 
@@ -122,6 +123,8 @@ pub fn series(
         let name = match group_by {
             GroupBy::None => continue,
             GroupBy::Agent => row.cell.agent.as_str().to_owned(),
+            // Extra usage has no model or project: like idle fees, it is in the bucket only.
+            GroupBy::Model | GroupBy::Project if row.mode == Mode::Extra => continue,
             GroupBy::Model | GroupBy::Project => {
                 row.cell.k1.clone().unwrap_or_else(|| NO_GROUP.to_owned())
             }

@@ -60,6 +60,27 @@ const WEEKDAY_COLUMNS = (currency: Currency): Column<WeekdaySummary>[] => [
   },
 ];
 
+/** The FX fallback first; otherwise the Claude extra usage inside Paid, when any. */
+function paidDetail(totals: Totals): ReactNode {
+  if (totals.currency_fallback) {
+    return "EUR rates unavailable: shown in USD";
+  }
+  if (totals.extra_usage_micros === 0) {
+    return undefined;
+  }
+  return (
+    <>
+      Includes{" "}
+      <Amount
+        micros={totals.extra_usage_micros}
+        currency={totals.currency}
+        approximate={totals.approximate}
+      />{" "}
+      extra usage
+    </>
+  );
+}
+
 function Kpis({ totals }: { readonly totals: Totals }): ReactNode {
   const { currency, approximate } = totals;
   return (
@@ -67,7 +88,7 @@ function Kpis({ totals }: { readonly totals: Totals }): ReactNode {
       <Kpi
         label="Paid"
         value={<Amount micros={totals.paid_micros} currency={currency} approximate={approximate} />}
-        detail={totals.currency_fallback ? "EUR rates unavailable: shown in USD" : undefined}
+        detail={paidDetail(totals)}
       />
       <Kpi
         label="API value"

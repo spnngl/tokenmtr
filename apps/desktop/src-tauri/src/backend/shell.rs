@@ -483,10 +483,11 @@ pub struct FilterOptions {
 }
 
 /// The distinct non-null values of `expression` (a column or an SQL expression over columns).
+/// Extra-usage rows carry a placeholder model and session, never a filter value.
 fn distinct(app: &AppContext, expression: &'static str) -> Result<Vec<String>, CommandError> {
     let sql = format!(
         "SELECT DISTINCT {expression} AS value FROM usage_event \
-         WHERE value IS NOT NULL ORDER BY value"
+         WHERE value IS NOT NULL AND kind <> 'extra_usage' ORDER BY value"
     );
     let mut statement = app
         .reader()

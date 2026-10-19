@@ -24,7 +24,7 @@ use tokenmtr_store::{Dataset, Revision};
 
 /// Version of the export schema; written to the `SQLite` sink's `_schema` table and bumped on any
 /// column change.
-pub const EXPORT_SCHEMA_VERSION: u32 = 2;
+pub const EXPORT_SCHEMA_VERSION: u32 = 3;
 
 /// The fixed number of fractional digits of a [`ColumnType::Decimal`] column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,7 +236,7 @@ static USAGE_EVENTS: [Column; 29] = [
     col(
         "kind",
         ColumnType::Text,
-        "`message`, `tool_result`, `compaction`, `branch_summary`, `auxiliary` or `daily_aggregate`.",
+        "`message`, `tool_result`, `compaction`, `branch_summary`, `auxiliary`, `daily_aggregate` or `extra_usage` (one row per profile and local day of Claude extra-usage spend, in `cost_reported_usd`, no tokens).",
     ),
     col(
         "approximate",
@@ -390,7 +390,7 @@ static SUBSCRIPTIONS: [Column; 13] = [
     ),
 ];
 
-static QUOTA_SNAPSHOTS: [Column; 12] = [
+static QUOTA_SNAPSHOTS: [Column; 14] = [
     col(
         "snapshot_id",
         ColumnType::Text,
@@ -441,6 +441,16 @@ static QUOTA_SNAPSHOTS: [Column; 12] = [
         "status",
         ColumnType::Text,
         "`ok`, `signed_out`, `token_expired` or `failed`.",
+    ),
+    opt(
+        "spent_usd",
+        USD,
+        "Spent this month, in USD; only on the `extra_usage` window (Claude pay-as-you-go spend).",
+    ),
+    opt(
+        "limit_usd",
+        USD,
+        "Monthly cap, in USD; only on the `extra_usage` window.",
     ),
 ];
 

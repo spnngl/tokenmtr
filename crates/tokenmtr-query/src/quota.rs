@@ -6,15 +6,16 @@ use jiff::{SignedDuration, Timestamp};
 use rusqlite::params_from_iter;
 use rusqlite::types::Value;
 use serde::Serialize;
+use tokenmtr_core::fx::utc_date;
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
-    Advice, AgentId, Plan, PlanCatalog, ProfileId, QuotaEta, QuotaSnapshot, QuotaWindow, UsdMicros,
-    Utilization, WindowId, advise, quota_eta, saturating_micros,
+    Advice, AgentId, Currency, Plan, PlanCatalog, ProfileId, QuotaEta, QuotaSnapshot, QuotaWindow,
+    UsdMicros, Utilization, WindowId, advise, quota_eta, saturating_micros,
 };
 use tokenmtr_store::{QuotaStatus, StoreRead, StoreReader};
 
 use crate::context::QueryContext;
-use crate::engine::{Dim, Scope, closed, fetch};
+use crate::engine::{Dim, Scope, closed, fetch, usd_to};
 use crate::error::QueryError;
 use crate::filters::{Filters, ProfileSelector};
 use crate::range::DateRange;
@@ -27,10 +28,18 @@ fn parse_agent(text: &str) -> Result<AgentId, QueryError> {
     text.parse().map_err(|_| QueryError::decode("agent", text))
 }
 
-/// Successful polls of one agent profile in `[from, to)`, oldest first.
-/// One `quota_snapshot` row: window id, used percent, reset µs, status, account.
-type WindowRow = (String, Option<f64>, Option<i64>, String, Option<String>);
+/// One `quota_snapshot` row of the latest poll.
+struct WindowRow {
+    window: String,
+    used_percent: Option<f64>,
+    resets_at_us: Option<i64>,
+    status: String,
+    account: Option<String>,
+    spent_usd_micros: Option<i64>,
+    limit_usd_micros: Option<i64>,
+}
 
+/// Successful polls of one agent profile in `[from, to)`, oldest first.
 pub(crate) fn load_snapshots(
     reader: &StoreReader,
     agent: AgentId,
@@ -90,6 +99,22 @@ pub struct QuotaWindowView {
     pub resets_in_secs: Option<i64>,
     /// Whether the window will be exhausted before it resets.
     pub eta: QuotaEta,
+    /// Money of a spend window (Claude `extra_usage`: monthly spend against a cap, no reset
+    /// time); absent for the other windows.
+    pub spend: Option<QuotaSpend>,
+}
+
+/// Spend against a monthly cap, converted like every other amount.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct QuotaSpend {
+    /// Currency of the two amounts.
+    pub currency: Currency,
+    /// Spent this month.
+    pub spent_micros: i64,
+    /// The monthly cap.
+    pub limit_micros: i64,
+    /// True when converted at an old FX rate.
+    pub approximate: bool,
 }
 
 /// The latest poll of one agent profile.
@@ -107,7 +132,7 @@ pub struct QuotaMeter {
     pub status: QuotaStatus,
     /// Account the poll belongs to.
     pub account: Option<String>,
-    /// Windows; empty unless `status` is `ok`.
+    /// Windows by id, the `extra_usage` spend window last; empty unless `status` is `ok`.
     pub windows: Vec<QuotaWindowView>,
 }
 
@@ -160,8 +185,10 @@ pub fn quota_latest(
         let agent = parse_agent(&agent_text)?;
         let fetched_at = micros_ts(at_us)?;
         let mut statement = reader.connection().prepare_cached(
-            "SELECT window_id, used_percent, resets_at_us, status, account FROM quota_snapshot \
-             WHERE agent = ? AND profile = ? AND fetched_at_us = ? ORDER BY window_id",
+            "SELECT window_id, used_percent, resets_at_us, status, account, spent_usd_micros, \
+             limit_usd_micros FROM quota_snapshot \
+             WHERE agent = ? AND profile = ? AND fetched_at_us = ? \
+             ORDER BY window_id = 'extra_usage', window_id",
         )?;
         let rows: Vec<WindowRow> = statement
             .query_map(
@@ -171,21 +198,23 @@ pub fn quota_latest(
                     Value::Integer(at_us),
                 ],
                 |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
+                    Ok(WindowRow {
+                        window: row.get(0)?,
+                        used_percent: row.get(1)?,
+                        resets_at_us: row.get(2)?,
+                        status: row.get(3)?,
+                        account: row.get(4)?,
+                        spent_usd_micros: row.get(5)?,
+                        limit_usd_micros: row.get(6)?,
+                    })
                 },
             )?
             .collect::<Result<_, _>>()?;
-        let Some(status) = rows.first().map(|r| r.3.as_str()) else {
+        let Some(status) = rows.first().map(|r| r.status.as_str()) else {
             continue;
         };
         let status: QuotaStatus = closed("quota status", status)?;
-        let account = rows.iter().find_map(|r| r.4.clone());
+        let account = rows.iter().find_map(|r| r.account.clone());
         let history = load_snapshots(
             reader,
             agent,
@@ -194,11 +223,16 @@ pub fn quota_latest(
             fetched_at.checked_add(SignedDuration::from_secs(1))?,
         )?;
         let mut windows = Vec::new();
-        for (window, percent, resets, _, _) in rows {
-            let (Some(used_percent), Ok(window)) = (percent, WindowId::new(window)) else {
+        for row in rows {
+            let (Some(used_percent), Ok(window)) = (row.used_percent, WindowId::new(row.window))
+            else {
                 continue;
             };
-            let resets_at = resets.map(micros_ts).transpose()?;
+            let spend = match (row.spent_usd_micros, row.limit_usd_micros) {
+                (Some(spent), Some(limit)) => Some(spend_in(ctx, fetched_at, spent, limit)?),
+                _ => None,
+            };
+            let resets_at = row.resets_at_us.map(micros_ts).transpose()?;
             let eta = match &resets_at {
                 Some(at) => quota_eta(&history, &window, *at),
                 None => QuotaEta::NotEnoughData,
@@ -209,6 +243,7 @@ pub fn quota_latest(
                 resets_in_secs: resets_at.map(|at| (at.as_second() - ctx.now().as_second()).max(0)),
                 resets_at,
                 eta,
+                spend,
             });
         }
         meters.push(QuotaMeter {
@@ -224,6 +259,24 @@ pub fn quota_latest(
         });
     }
     Ok(meters)
+}
+
+/// A spend window's USD amounts in the display currency, at the rate before the poll's UTC date.
+fn spend_in(
+    ctx: &QueryContext,
+    fetched_at: Timestamp,
+    spent_usd: i64,
+    limit_usd: i64,
+) -> Result<QuotaSpend, QueryError> {
+    let date = utc_date(fetched_at);
+    let (spent_micros, spent_approx) = usd_to(ctx.currency(), ctx.fx(), date, spent_usd)?;
+    let (limit_micros, limit_approx) = usd_to(ctx.currency(), ctx.fx(), date, limit_usd)?;
+    Ok(QuotaSpend {
+        currency: ctx.currency(),
+        spent_micros,
+        limit_micros,
+        approximate: spent_approx || limit_approx,
+    })
 }
 
 /// One sample of a quota history line.
@@ -350,7 +403,8 @@ pub fn advisor(
             agent: Some(agent),
             profile: profile.clone(),
         }]);
-    let value: i128 = fetch(reader, ctx, &filters, Dim::None, Scope::All)?
+    // API value only: extra usage is spend, not usage a plan would absorb.
+    let value: i128 = fetch(reader, ctx, &filters, Dim::None, Scope::Usage)?
         .rows
         .iter()
         .map(|r| i128::from(r.cell.cost_usd))

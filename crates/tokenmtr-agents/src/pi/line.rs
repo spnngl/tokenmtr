@@ -382,6 +382,7 @@ fn dedup_key(
         EventKind::BranchSummary => "branch_summary",
         EventKind::Auxiliary => "auxiliary",
         EventKind::DailyAggregate => "daily_aggregate",
+        EventKind::ExtraUsage => "extra_usage",
     };
     let TokenCounts {
         input_uncached,

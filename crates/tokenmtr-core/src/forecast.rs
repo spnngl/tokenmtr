@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
-use crate::event::{EventKind, UsageEvent};
+use crate::event::UsageEvent;
 use crate::ids::{AgentId, SessionId};
 use crate::money::{Money, MoneyError, UsdMicros, saturating_micros};
 use crate::quota::{QuotaSnapshot, WindowId};
@@ -165,7 +165,7 @@ pub fn live_rate(events: &[UsageEvent], now: Timestamp, window: SignedDuration) 
     let mut per_agent: BTreeMap<AgentId, Acc<'_>> = BTreeMap::new();
     for e in events
         .iter()
-        .filter(|e| e.kind != EventKind::DailyAggregate && e.at > since && e.at <= now)
+        .filter(|e| e.kind.is_traffic() && e.at > since && e.at <= now)
     {
         let acc = per_agent.entry(e.agent).or_default();
         acc.tokens += u128::from(e.tokens.total_tokens());
@@ -193,7 +193,7 @@ pub fn live_rate(events: &[UsageEvent], now: Timestamp, window: SignedDuration) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::TokenCounts;
+    use crate::event::{EventKind, TokenCounts};
     use crate::money::Currency;
     use crate::quota::{QuotaWindow, QuotaWindowState, Utilization};
     use crate::testing::{TestResult, usage_event};

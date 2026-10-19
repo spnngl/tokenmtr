@@ -14,9 +14,9 @@ use jiff::civil::date;
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
     AgentId, Alert, AlertKind, BillingPeriod, Currency, DedupKey, EurPerUsd, EventCost, EventId,
-    EventKind, FxRate, ModelId, Money, Plan, ProfileId, ProjectKey, ProviderId, QuotaWindow,
-    SessionId, Subscription, SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, UsdMicros,
-    Utilization, WindowId,
+    EventKind, ExtraUsage, FxRate, ModelId, Money, Plan, ProfileId, ProjectKey, ProviderId,
+    QuotaWindow, SessionId, Subscription, SubscriptionId, SubscriptionSpec, TokenCounts,
+    UsageEvent, UsdMicros, Utilization, WindowId,
 };
 use tokenmtr_platform::{ControlTransport, Paths};
 use tokenmtr_store::{FxSource, QuotaOutcome, QuotaPoll, Store, StoreRead as _};
@@ -114,8 +114,8 @@ fn event(store: &Store, key: &str, at: Timestamp, micros: i64) -> UsageEvent {
     }
 }
 
-/// Two priced events (one now, one on 2026-03-10), an FX rate, a quota window, an alert and a
-/// Claude subscription.
+/// Two priced events (one now, one on 2026-03-10), an FX rate, a quota window with $12.345 of
+/// extra usage (stored as today's extra-usage event), an alert and a Claude subscription.
 pub fn seed(home: &Home) -> TestResult {
     let mut store = home.store()?;
     let now = Timestamp::now();
@@ -131,19 +131,29 @@ pub fn seed(home: &Home) -> TestResult {
             eur_per_usd: EurPerUsd::from_scaled(900_000_000)?,
         }],
     )?;
-    store.upsert_quota_snapshots(&[QuotaPoll {
-        agent: AgentId::CLAUDE,
-        profile: ProfileId::default_profile(),
-        account: Some("me@example.com".to_owned()),
-        fetched_at: now,
-        outcome: QuotaOutcome::Windows(vec![QuotaWindow {
-            id: WindowId::five_hour(),
-            state: QuotaWindowState {
-                utilization: Utilization::new(42.0)?,
-                resets_at: now.checked_add(jiff::SignedDuration::from_hours(2)).ok(),
+    store.upsert_quota_snapshots(
+        &[QuotaPoll {
+            agent: AgentId::CLAUDE,
+            profile: ProfileId::default_profile(),
+            account: Some("me@example.com".to_owned()),
+            fetched_at: now,
+            outcome: QuotaOutcome::Windows {
+                windows: vec![QuotaWindow {
+                    id: WindowId::five_hour(),
+                    state: QuotaWindowState {
+                        utilization: Utilization::new(42.0)?,
+                        resets_at: now.checked_add(jiff::SignedDuration::from_hours(2)).ok(),
+                    },
+                }],
+                extra_usage: Some(ExtraUsage {
+                    utilization: Utilization::new(24.69)?,
+                    spent: UsdMicros::new(12_345_000),
+                    limit: UsdMicros::new(50_000_000),
+                }),
             },
-        }]),
-    }])?;
+        }],
+        &jiff::tz::TimeZone::UTC,
+    )?;
     store.save_alert(&Alert {
         kind: AlertKind::QuotaThreshold {
             window: WindowId::five_hour(),

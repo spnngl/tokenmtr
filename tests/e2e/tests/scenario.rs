@@ -92,8 +92,10 @@ async fn the_daemon_end_to_end() -> TestResult {
     let base = server.uri();
     let sandbox = Sandbox::new()?;
     sandbox.write_config(&sandbox.config(true))?;
-    let expected = reference_event_count(&sandbox)?;
-    assert!(expected > 10, "the fixtures hold {expected} events");
+    let transcripts = reference_event_count(&sandbox)?;
+    assert!(transcripts > 10, "the fixtures hold {transcripts} events");
+    // The quota poll adds the day's Claude extra-usage event (the mock reports $12.345 spent).
+    let expected = transcripts + 1;
 
     let daemon = sandbox.start_daemon(&base)?;
 
@@ -123,6 +125,7 @@ async fn the_daemon_end_to_end() -> TestResult {
     assert_eq!(window(&quota, "five_hour"), Some(37.0), "{quota}");
     assert_eq!(window(&quota, "seven_day"), Some(26.5), "{quota}");
     assert_eq!(window(&quota, "seven_day_sonnet"), Some(5.0), "{quota}");
+    assert_eq!(window(&quota, "extra_usage"), Some(24.69), "{quota}");
 
     // The FX history and the price list arrived through the mock.
     let fx = eventually(WAIT, "the FX rates", || {

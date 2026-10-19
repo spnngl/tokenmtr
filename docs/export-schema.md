@@ -3,7 +3,7 @@
 Every sink (CSV, JSONL, SQLite) carries the same five datasets with the same columns and the same
 values. The columns are defined once in `tokenmtr_export::schema`; the CSV header, the JSONL keys,
 the SQLite DDL and the table below all come from that definition.
-`EXPORT_SCHEMA_VERSION` (currently `2`) changes whenever a column is added, removed, renamed or
+`EXPORT_SCHEMA_VERSION` (currently `3`) changes whenever a column is added, removed, renamed or
 re-typed. A SQLite sink records it in its `_schema` table and refuses a file of another version.
 
 ## Row identity and revisions
@@ -98,7 +98,7 @@ Primary key: `event_id`. Partitioned by: `at_utc`.
 | `cwd` | text | yes | `cwd` | Working directory of the session. |
 | `git_branch` | text | yes | `git_branch` | Git branch at the event. |
 | `at_utc` | timestamp (UTC) | no |  | When the event happened; partitions files. |
-| `kind` | text | no |  | `message`, `tool_result`, `compaction`, `branch_summary`, `auxiliary` or `daily_aggregate`. |
+| `kind` | text | no |  | `message`, `tool_result`, `compaction`, `branch_summary`, `auxiliary`, `daily_aggregate` or `extra_usage` (one row per profile and local day of Claude extra-usage spend, in `cost_reported_usd`, no tokens). |
 | `approximate` | boolean | no |  | True when the row is an estimate, e.g. an imported daily aggregate. |
 | `input_uncached` | integer | no |  | Input tokens not served from cache. |
 | `cache_read` | integer | no |  | Input tokens read from cache. |
@@ -169,6 +169,8 @@ Primary key: `snapshot_id`. Partitioned by: `fetched_at_utc`.
 | `resets_at_utc` | timestamp (UTC) | yes |  | When the window resets, when the provider says. |
 | `fetched_at_utc` | timestamp (UTC) | no |  | When the poll happened; partitions files. |
 | `status` | text | no |  | `ok`, `signed_out`, `token_expired` or `failed`. |
+| `spent_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Spent this month, in USD; only on the `extra_usage` window (Claude pay-as-you-go spend). |
+| `limit_usd` | decimal(6); SQL: integer `*_micros` | yes |  | Monthly cap, in USD; only on the `extra_usage` window. |
 
 ### `fx_rates`
 

@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::engine::{Idle, Row};
+use crate::engine::{Idle, Mode, Row};
 
 /// Tokens, money and data quality of a set of events.
 ///
@@ -29,9 +29,12 @@ pub struct Usage {
     pub api_value_micros: i64,
     /// The same API value in USD.
     pub api_value_usd_micros: i64,
-    /// What was actually paid: API cost of pay-as-you-go events plus the share of prorated
-    /// subscription fees allocated by API-value share.
+    /// What was actually paid: API cost of pay-as-you-go events, the share of prorated
+    /// subscription fees allocated by API-value share, plus Claude extra usage.
     pub paid_micros: i64,
+    /// Claude extra usage (pay-as-you-go spend beyond the plan) inside `paid_micros`. It has no
+    /// tokens, no API value and is not counted in `events`.
+    pub extra_usage_micros: i64,
     /// API value of events covered by a subscription.
     pub subscription_value_micros: i64,
     /// Subscription fees allocated to these events.
@@ -49,6 +52,12 @@ pub struct Usage {
 impl Usage {
     /// Adds one engine row.
     pub(crate) fn add(&mut self, row: &Row) {
+        if row.mode == Mode::Extra {
+            self.paid_micros += row.paid;
+            self.extra_usage_micros += row.paid;
+            self.approximate |= row.approximate;
+            return;
+        }
         let c = &row.cell;
         self.events += c.events;
         self.input_uncached += c.input_uncached;

@@ -84,12 +84,28 @@ pub struct QuotaWindowStatus {
     pub window: WindowId,
     /// Current utilization.
     pub utilization: Utilization,
-    /// When the current window instance resets, as reported. It identifies the instance; the
-    /// rules snap it to [`RESET_TOLERANCE`] so jitter between polls keeps the same instance.
-    /// Without it thresholds cannot be deduplicated per window.
-    pub resets_at: Option<Timestamp>,
-    /// The `resets_at` of the instance seen at the previous poll.
-    pub previous_resets_at: Option<Timestamp>,
+    /// How the window's instances are told apart.
+    pub cycle: QuotaCycle,
+}
+
+/// How the instances of a quota window are told apart, so each threshold fires once per instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuotaCycle {
+    /// A window that reports its own reset instant (5-hour, 7-day).
+    Rolling {
+        /// When the current window instance resets, as reported. It identifies the instance;
+        /// the rules snap it to [`RESET_TOLERANCE`] so jitter between polls keeps the same
+        /// instance. Without it thresholds cannot be deduplicated per window.
+        resets_at: Option<Timestamp>,
+        /// The `resets_at` of the instance seen at the previous poll.
+        previous_resets_at: Option<Timestamp>,
+    },
+    /// A calendar-month window without a reported reset (Claude extra usage): the instance is
+    /// the local month of the poll, and no reset is announced.
+    Monthly {
+        /// Any day of that month.
+        month: Date,
+    },
 }
 
 /// Latest known state of one budget.
@@ -184,6 +200,14 @@ fn instance(resets_at: Option<Timestamp>) -> String {
     resets_at.map_or_else(|| "-".to_owned(), |t| snap(t).to_string())
 }
 
+/// The instance part of a quota threshold key: the snapped reset, or the month as `YYYY-MM`.
+fn cycle_instance(cycle: QuotaCycle) -> String {
+    match cycle {
+        QuotaCycle::Rolling { resets_at, .. } => instance(resets_at),
+        QuotaCycle::Monthly { month } => month.strftime("%Y-%m").to_string(),
+    }
+}
+
 /// Whether `resets_at` names another window instance than `previous`.
 fn is_new_instance(resets_at: Option<Timestamp>, previous: Timestamp) -> bool {
     resets_at.is_none_or(|t| t.duration_since(previous).abs() > RESET_TOLERANCE)
@@ -192,7 +216,8 @@ fn is_new_instance(resets_at: Option<Timestamp>, previous: Timestamp) -> bool {
 /// The alerts that should fire now, skipping dedup keys in `already_fired`.
 ///
 /// Each quota threshold fires once per agent, profile and window instance and again after the
-/// window resets (the instance, identified by the snapped `resets_at`, changes); budgets likewise per period; a sink alert once
+/// window resets (the instance, identified by the snapped `resets_at`, changes; for a monthly
+/// window, by the local month); budgets likewise per period; a sink alert once
 /// per failure streak; drift once per issue; backup failure once per failure time. When one
 /// evaluation crosses several thresholds, each fires. Output order is deterministic: quota,
 /// budgets, sinks, drift, backup.
@@ -226,15 +251,18 @@ pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert>
                         q.agent.as_str(),
                         q.profile,
                         q.window,
-                        instance(q.resets_at)
+                        cycle_instance(q.cycle)
                     ),
                 );
             }
         }
-        if let Some(previous) = q.previous_resets_at
+        if let QuotaCycle::Rolling {
+            resets_at,
+            previous_resets_at: Some(previous),
+        } = q.cycle
             && config.quota_reset
             && previous <= now
-            && is_new_instance(q.resets_at, previous)
+            && is_new_instance(resets_at, previous)
         {
             fire(
                 AlertKind::QuotaReset {
@@ -315,8 +343,10 @@ mod tests {
             profile: ProfileId::default_profile(),
             window: WindowId::five_hour(),
             utilization: Utilization::new(percent)?,
-            resets_at: Some(resets_at.parse()?),
-            previous_resets_at: previous.map(str::parse).transpose()?,
+            cycle: QuotaCycle::Rolling {
+                resets_at: Some(resets_at.parse()?),
+                previous_resets_at: previous.map(str::parse).transpose()?,
+            },
         })
     }
 
@@ -442,6 +472,46 @@ mod tests {
         work.profile = ProfileId::try_from("work")?;
         let a = evaluate_alerts(&inputs("2026-03-01T12:00:00Z", work, &first)?, &config);
         assert_eq!(percents(&a), vec![80]);
+        Ok(())
+    }
+
+    #[test]
+    fn monthly_thresholds_fire_once_per_month_without_reset_alerts() -> TestResult {
+        let config = AlertConfig::default();
+        let extra = |percent, month| -> Result<QuotaWindowStatus, Box<dyn std::error::Error>> {
+            Ok(QuotaWindowStatus {
+                window: WindowId::new(crate::extra_usage::EXTRA_USAGE)?,
+                utilization: Utilization::new(percent)?,
+                cycle: QuotaCycle::Monthly {
+                    month: jiff::civil::date(2026, month, 17),
+                },
+                ..quota(0.0, RESET_1, None)?
+            })
+        };
+        let march = evaluate_alerts(
+            &inputs("2026-03-17T12:00:00Z", extra(96.0, 3)?, &[])?,
+            &config,
+        );
+        assert_eq!(percents(&march), vec![80, 95]);
+        assert_eq!(
+            march[0].dedup_key,
+            "quota_threshold|claude|default|extra_usage|80|2026-03"
+        );
+        let again = evaluate_alerts(
+            &inputs("2026-03-20T12:00:00Z", extra(99.0, 3)?, &march)?,
+            &config,
+        );
+        assert_eq!(again, Vec::new());
+        let april = evaluate_alerts(
+            &inputs("2026-04-17T12:00:00Z", extra(85.0, 4)?, &march)?,
+            &config,
+        );
+        assert_eq!(percents(&april), vec![80]);
+        assert!(
+            !april
+                .iter()
+                .any(|x| matches!(x.kind, AlertKind::QuotaReset { .. }))
+        );
         Ok(())
     }
 

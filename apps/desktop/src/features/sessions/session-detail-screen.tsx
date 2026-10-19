@@ -28,6 +28,7 @@ const EVENT_KIND_LABEL: Readonly<Record<EventKind, string>> = {
   branch_summary: "Branch summary",
   auxiliary: "Auxiliary call",
   daily_aggregate: "Daily total",
+  extra_usage: "Extra usage",
 };
 
 /** How long the button says "Copied" before it offers to copy again. */

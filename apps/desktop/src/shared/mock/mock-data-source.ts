@@ -1,5 +1,6 @@
 import type { DataSource, NotificationPermissionState } from "../data-source";
 import { DataSourceError } from "../errors";
+import type { Filters } from "../filters";
 import type { Currency } from "../format";
 import type { AppState, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
@@ -10,6 +11,7 @@ import {
   billingOf,
   branchesOf,
   budgetsOf,
+  extraFactsFor,
   factsFor,
   heatmapOf,
   modelsOf,
@@ -34,8 +36,10 @@ import {
 } from "./system";
 
 export const MOCK_SCENARIOS = [
-  /** Three agents, 90 days of data, a failing sink, an open format drift. */
+  /** Three agents, 90 days of data, Claude extra usage, a failing sink, an open format drift. */
   "populated",
+  /** Populated, with Claude extra usage switched off (no meter, no billing line). */
+  "no-extra-usage",
   /** Populated, with one collector failing. */
   "partial",
   /** Populated, last scan older than twice the scan interval. */
@@ -94,6 +98,9 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
   const scenario = options.scenario ?? "populated";
   const latencyMs = options.latencyMs ?? 0;
   const empty = scenario === "empty";
+  const extraUsage = !empty && scenario !== "no-extra-usage";
+  /** Claude extra-usage rows under `filters`, when the scenario has any. */
+  const extrasFor = (filters: Filters) => (extraUsage ? extraFactsFor(filters) : []);
   const tenYears = new Set<string>();
   let onboarded = scenario !== "onboarding";
   let notifications: NotificationPermissionState = "undetermined";
@@ -169,6 +176,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           failed_collectors: 1,
         };
       case "populated":
+      case "no-extra-usage":
       case "empty":
       case "error":
       case "loading":
@@ -196,6 +204,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           empty ? [] : factsFor(filters),
           answered(filters.currency),
           empty ? 0 : sessionsOf(filters, 0, 1).total,
+          extrasFor(filters),
         ),
         currency_fallback: answered(filters.currency) !== filters.currency,
       })),
@@ -206,6 +215,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
           rangeOf(filters.range),
           answered(filters.currency),
           groupBy,
+          extrasFor(filters),
         ),
       ),
     models: (filters) => {
@@ -232,7 +242,9 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     tools: (filters) => read(() => toolsOf(empty ? [] : factsFor(filters))),
     signals: (filters) => read(() => signalsOf(rangeOf(filters.range))),
     billing: (filters) =>
-      read(() => billingOf(empty ? [] : factsFor(filters), answered(filters.currency))),
+      read(() =>
+        billingOf(empty ? [] : factsFor(filters), answered(filters.currency), extrasFor(filters)),
+      ),
 
     sessions: (filters, page, pageSize) => {
       const answeredFilters = { ...filters, currency: answered(filters.currency) };
@@ -246,14 +258,19 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       read(() => sessionDetailOf(agent, session, answered(currency))),
     sessionOrigin: (agent, session) => read(() => sessionOriginOf(agent, session)),
 
-    quotaLatest: (filters) => read(() => (empty ? [] : quotaLatestOf(filters))),
+    quotaLatest: (filters) =>
+      read(() =>
+        empty
+          ? []
+          : quotaLatestOf({ ...filters, currency: answered(filters.currency) }, extraUsage),
+      ),
     quotaHistory: (filters, agent) => read(() => (empty ? [] : quotaHistoryOf(filters, agent))),
     advisor: (filters) => read(() => (empty ? [] : advisorOf(filters))),
     budgets: () => read(() => (empty ? [] : budgetsOf(options.noFxRates === true))),
 
     recap: (period, currency) =>
       read(() => ({
-        ...recapOf(period, answered(currency), empty),
+        ...recapOf(period, answered(currency), empty, extraUsage),
         currency_fallback: answered(currency) !== currency,
       })),
     systemHealth: () => read(() => systemHealthOf()),

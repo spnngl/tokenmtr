@@ -5,7 +5,7 @@ mod common;
 use std::time::Duration;
 
 use common::{FAKE_TOKEN, TestResult, closed_port_base, endpoints, fixture, fixture_text};
-use tokenmtr_core::{Plan, WindowId};
+use tokenmtr_core::{Plan, UsdMicros, WindowId};
 use tokenmtr_remote::{
     ClaudeCredentials, ClaudeQuota, QuotaOutcome, RemoteError, build_client, parse_quota_response,
 };
@@ -64,8 +64,37 @@ async fn ok_maps_every_reported_window() -> TestResult {
         Some("2026-05-12T14:59:59.943648Z".parse()?)
     );
     let extra = poll.extra_usage.ok_or("extra_usage missing")?;
-    assert!(extra.is_enabled);
-    assert_eq!(extra.used_credits, Some(1234.5));
+    assert_eq!(extra.spent, UsdMicros::new(12_345_000));
+    assert_eq!(extra.limit, UsdMicros::new(50_000_000));
+    assert!((extra.utilization.percent() - 24.69).abs() < f64::EPSILON);
+    Ok(())
+}
+
+#[test]
+fn extra_usage_is_cents_and_only_when_enabled_and_valid() -> TestResult {
+    let parse = |extra: &str| -> Result<_, Box<dyn std::error::Error>> {
+        let body = format!(r#"{{"seven_day": {{"utilization": 12.0}}, "extra_usage": {extra}}}"#);
+        let parsed = parse_quota_response(body.as_bytes(), jiff::Timestamp::UNIX_EPOCH)?;
+        assert_eq!(parsed.snapshot.windows.len(), 1, "{extra}");
+        Ok(parsed.extra_usage)
+    };
+    let computed = parse(r#"{"is_enabled": true, "monthly_limit": 2000, "used_credits": 500.25}"#)?
+        .ok_or("enabled extra usage dropped")?;
+    assert_eq!(computed.spent, UsdMicros::new(5_002_500));
+    assert!((computed.utilization.percent() - 25.0125).abs() < 1e-9);
+    let unspent = parse(r#"{"is_enabled": true, "monthly_limit": 2000, "used_credits": null}"#)?
+        .ok_or("unspent extra usage dropped")?;
+    assert_eq!(unspent.spent, UsdMicros::new(0));
+    for dropped in [
+        r#"{"is_enabled": false, "monthly_limit": 2000, "used_credits": 5}"#,
+        r#"{"monthly_limit": 2000, "used_credits": 5}"#,
+        r#"{"is_enabled": true, "used_credits": 5}"#,
+        r#"{"is_enabled": true, "monthly_limit": 2000, "used_credits": -5}"#,
+        r#"{"is_enabled": true, "monthly_limit": "lots", "used_credits": 5}"#,
+        "null",
+    ] {
+        assert_eq!(parse(dropped)?, None, "{dropped}");
+    }
     Ok(())
 }
 

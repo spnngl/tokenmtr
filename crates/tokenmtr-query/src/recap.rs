@@ -355,7 +355,7 @@ fn live_events(
     let mut statement = reader.connection().prepare_cached(
         "SELECT agent, session, at_us, input_uncached, cache_read, cache_write_5m, \
          cache_write_1h, output, reasoning, cost_api_usd_micros FROM usage_event \
-         WHERE at_us > ? AND at_us <= ? AND kind <> 'daily_aggregate'",
+         WHERE at_us > ? AND at_us <= ? AND kind NOT IN ('daily_aggregate', 'extra_usage')",
     )?;
     let mut rows = statement.query([since.as_microsecond(), now.as_microsecond()])?;
     let (Ok(dedup_key), Ok(model), Ok(_)) = (
@@ -440,8 +440,10 @@ fn live(
     Ok(total)
 }
 
-/// The newest live event; walks `usage_event_at` backwards to the first live row.
-pub(crate) const LAST_ACTIVITY: &str = "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0";
+/// The newest live event; walks `usage_event_at` backwards to the first live row. Extra usage
+/// rows sit at local noon of the poll day, possibly ahead of now: they are spend, not activity.
+pub(crate) const LAST_ACTIVITY: &str =
+    "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0 AND kind <> 'extra_usage'";
 
 /// The newest live event of agent `?1`. `agent = ?` alone picks the `(agent, dedup_key)` index
 /// and reads every row of the agent. Instead, this skips from profile to profile on
@@ -452,7 +454,8 @@ pub(crate) const LAST_ACTIVITY_OF_AGENT: &str = "WITH RECURSIVE p(profile) AS ( 
        SELECT (SELECT MIN(profile) FROM usage_event WHERE agent = ?1 AND profile > p.profile) \
        FROM p WHERE p.profile IS NOT NULL) \
      SELECT MAX((SELECT MAX(at_us) FROM usage_event \
-                 WHERE agent = ?1 AND profile = p.profile AND superseded = 0)) \
+                 WHERE agent = ?1 AND profile = p.profile AND superseded = 0 \
+                   AND kind <> 'extra_usage')) \
      FROM p WHERE p.profile IS NOT NULL";
 
 fn last_activity(

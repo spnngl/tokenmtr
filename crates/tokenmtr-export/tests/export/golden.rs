@@ -10,8 +10,8 @@ use tokenmtr_export::{
 use tokenmtr_store::{Dataset, RedactionKey, Revision, Versioned};
 
 use crate::fixtures::{
-    TestResult, configured, fx_rate_row, live, machine, quota_sample, subscription, tool_call,
-    usage,
+    TestResult, configured, extra_usage_sample, fx_rate_row, live, machine, quota_sample,
+    subscription, tool_call, usage,
 };
 
 fn versioned<T>(row: T) -> Versioned<T> {
@@ -50,10 +50,13 @@ fn sample_rows(dataset: Dataset) -> TestResult<Vec<ExportRow>> {
                 &versioned(configured(subscription()?)),
             )]
         }
-        Dataset::QuotaSnapshots => vec![project::quota_snapshot(
-            &machine,
-            &versioned(quota_sample("2026-05-01T10:00:00Z")?),
-        )?],
+        Dataset::QuotaSnapshots => vec![
+            project::quota_snapshot(&machine, &versioned(quota_sample("2026-05-01T10:00:00Z")?))?,
+            project::quota_snapshot(
+                &machine,
+                &versioned(extra_usage_sample("2026-05-01T10:00:00Z")?),
+            )?,
+        ],
         Dataset::FxRates => vec![project::fx_rate(&versioned(fx_rate_row()?))],
     })
 }

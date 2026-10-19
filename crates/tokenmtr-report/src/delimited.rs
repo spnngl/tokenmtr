@@ -44,7 +44,8 @@ fn safe(text: &str) -> String {
 
 /// Renders the report as CSV with amounts at six decimals and no currency symbol.
 ///
-/// Sections: `total` (one row), `project`, `model`, `day`. Columns that do not apply stay empty.
+/// Sections: `total` (one row), `project`, `model`, `day`, then `extra_usage` (one row, only
+/// when the report counts Claude extra usage in `paid`). Columns that do not apply stay empty.
 ///
 /// # Errors
 ///
@@ -102,6 +103,19 @@ pub fn render_csv(report: &Report) -> Result<String, RenderError> {
             &exact_amount(day.api_value),
             "",
             &flag(day.approximate),
+            currency,
+        ])?;
+    }
+    if report.extra_usage.micros() > 0 {
+        writer.write_record([
+            "extra_usage",
+            "Claude extra usage",
+            "",
+            "",
+            "",
+            "",
+            &exact_amount(report.extra_usage),
+            &flag(false),
             currency,
         ])?;
     }

@@ -134,6 +134,7 @@ const EVENT_KINDS = [
   "branch_summary",
   "auxiliary",
   "daily_aggregate",
+  "extra_usage",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 

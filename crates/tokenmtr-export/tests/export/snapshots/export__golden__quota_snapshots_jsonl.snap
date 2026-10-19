@@ -2,4 +2,5 @@
 source: crates/tokenmtr-export/tests/export/golden.rs
 expression: text
 ---
-{"snapshot_id":"ccef2227b3333f6c83ce3cebe2c972b4","revision":7,"machine_id":"00000000-0000-0000-0000-000000000001","agent":"claude","profile":"default","account":"me@example.com","window_id":"five_hour","window_label":"5-hour","used_percent":42.5,"resets_at_utc":"2026-05-01T15:00:00Z","fetched_at_utc":"2026-05-01T10:00:00Z","status":"ok"}
+{"snapshot_id":"ccef2227b3333f6c83ce3cebe2c972b4","revision":7,"machine_id":"00000000-0000-0000-0000-000000000001","agent":"claude","profile":"default","account":"me@example.com","window_id":"five_hour","window_label":"5-hour","used_percent":42.5,"resets_at_utc":"2026-05-01T15:00:00Z","fetched_at_utc":"2026-05-01T10:00:00Z","status":"ok","spent_usd":null,"limit_usd":null}
+{"snapshot_id":"4d8174ec0c1061f400c31c1758da6b80","revision":7,"machine_id":"00000000-0000-0000-0000-000000000001","agent":"claude","profile":"default","account":"me@example.com","window_id":"extra_usage","window_label":"Extra usage","used_percent":24.69,"resets_at_utc":null,"fetched_at_utc":"2026-05-01T10:00:00Z","status":"ok","spent_usd":12.345000,"limit_usd":50.000000}

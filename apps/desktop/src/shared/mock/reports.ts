@@ -19,6 +19,7 @@ import {
   addDays,
   createRng,
   EUR_PER_USD,
+  EXTRA_FACTS,
   FACTS,
   type Fact,
   hashString,
@@ -30,8 +31,14 @@ import {
 
 const UNASSIGNED = "(unassigned)";
 
-export function totalsOf(facts: readonly Fact[], currency: Currency, sessions: number): Totals {
-  const raw = sumRaw(facts);
+/** Overview KPIs; `extras` (extra-usage rows) add to paid only. */
+export function totalsOf(
+  facts: readonly Fact[],
+  currency: Currency,
+  sessions: number,
+  extras: readonly Fact[] = [],
+): Totals {
+  const raw = sumRaw([...facts, ...extras]);
   const input = raw.input_uncached + raw.cache_read + raw.cache_write_5m + raw.cache_write_1h;
   return {
     currency,
@@ -76,14 +83,18 @@ function groupKey(fact: Fact, by: GroupBy): string {
   }
 }
 
+/** `extras` (extra-usage rows) are in the bucket totals and the agent split, in no model or project. */
 export function seriesOf(
   facts: readonly Fact[],
   range: DayRange,
   currency: Currency,
   by: GroupBy,
+  extras: readonly Fact[] = [],
 ): Series {
   const bucket = bucketFor(range);
   const byStart = groupBy(facts, (fact) => bucketStart(fact.date, bucket));
+  const extrasByStart = groupBy(extras, (fact) => bucketStart(fact.date, bucket));
+  const grouped = by === "none" || by === "agent";
   const starts: string[] = [];
   for (let date = range.start; date < range.end; date = addDays(date, 1)) {
     const start = bucketStart(date, bucket);
@@ -94,8 +105,9 @@ export function seriesOf(
   let cumulativeValue = 0;
   let cumulativePaid = 0;
   const points = starts.map((start) => {
-    const rows = byStart.get(start) ?? [];
-    const raw = sumRaw(rows);
+    const extraRows = extrasByStart.get(start) ?? [];
+    const rows = [...(byStart.get(start) ?? []), ...(grouped ? extraRows : [])];
+    const raw = sumRaw(grouped ? rows : [...rows, ...extraRows]);
     cumulativeValue += convert(raw.valueUsd, currency);
     cumulativePaid += convert(raw.paidUsd, currency);
     const groups = Object.fromEntries(
@@ -180,6 +192,7 @@ function scaleRaw(raw: RawUsage, share: number): RawUsage {
     reported: scale(raw.reported),
     estimated: scale(raw.estimated),
     unpriced: scale(raw.unpriced),
+    extraUsd: scale(raw.extraUsd),
   };
 }
 
@@ -287,11 +300,17 @@ export function signalsOf(range: DayRange): SignalsReport {
   };
 }
 
-export function billingOf(facts: readonly Fact[], currency: Currency): BillingReport {
+/** `extras` (extra-usage rows) count in the total and the months, in no billing line. */
+export function billingOf(
+  facts: readonly Fact[],
+  currency: Currency,
+  extras: readonly Fact[] = [],
+): BillingReport {
   const subscribed = facts.filter((fact) => fact.billing === "subscription");
   const api = facts.filter((fact) => fact.billing === "api");
   const subRaw = sumRaw(subscribed);
-  const months = [...groupBy(facts, (fact) => `${fact.date.slice(0, 7)}-01`)]
+  const all = [...facts, ...extras];
+  const months = [...groupBy(all, (fact) => `${fact.date.slice(0, 7)}-01`)]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, rows]) => {
       const raw = sumRaw(rows);
@@ -299,7 +318,7 @@ export function billingOf(facts: readonly Fact[], currency: Currency): BillingRe
     });
   return {
     currency,
-    total: wireUsage(sumRaw(facts), currency),
+    total: wireUsage(sumRaw(all), currency),
     api: wireUsage(sumRaw(api), currency),
     subscriptions:
       subscribed.length === 0
@@ -319,7 +338,7 @@ export function billingOf(facts: readonly Fact[], currency: Currency): BillingRe
             },
           ],
     months,
-    roi: roi(sumRaw(facts)),
+    roi: roi(sumRaw(all)),
   };
 }
 
@@ -410,4 +429,9 @@ export function budgetsOf(noFxRates = false): Budget[] {
 
 export function factsFor(filters: Filters): Fact[] {
   return selectFacts(FACTS, filters);
+}
+
+/** Extra-usage rows under `filters`: a model, project or client filter, or `subscription`, drops them. */
+export function extraFactsFor(filters: Filters): Fact[] {
+  return selectFacts(EXTRA_FACTS, filters);
 }

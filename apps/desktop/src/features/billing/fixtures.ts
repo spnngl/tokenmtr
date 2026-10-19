@@ -46,7 +46,10 @@ export const BUDGET_NO_RATE: Budget = {
   limit_micros: micros(20),
 };
 
-/** A subscription, a pay-as-you-go tail, three months, budgets over 100%, three advisor outcomes. */
+/**
+ * A subscription, a pay-as-you-go tail, Claude extra usage in the last month, three months,
+ * budgets over 100%, three advisor outcomes.
+ */
 export const BILLING_DATA: BillingData = {
   report: {
     currency: "USD",
@@ -55,7 +58,8 @@ export const BILLING_DATA: BillingData = {
       total_tokens: 90_000_000,
       api_value_micros: micros(640),
       api_value_usd_micros: micros(640),
-      paid_micros: micros(260),
+      paid_micros: micros(272.35),
+      extra_usage_micros: micros(12.35),
       subscription_value_micros: micros(560),
       subscription_fee_micros: micros(200),
     }),
@@ -103,7 +107,8 @@ export const BILLING_DATA: BillingData = {
         events: 1000 + index * 100,
         api_value_micros: micros(180 + index * 40),
         api_value_usd_micros: micros(180 + index * 40),
-        paid_micros: micros(70 + index * 10),
+        paid_micros: micros(70 + index * 10 + (index === 2 ? 12.35 : 0)),
+        extra_usage_micros: micros(index === 2 ? 12.35 : 0),
         subscription_fee_micros: micros(20),
       }),
       roi: index === 0 ? null : 2 + index,

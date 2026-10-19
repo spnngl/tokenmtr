@@ -135,4 +135,7 @@ pub struct ReportInput {
     pub days: Vec<DayInput>,
     /// Subscriptions active in the period.
     pub subscriptions: Vec<SubscriptionInput>,
+    /// Claude extra usage in the period: pay-as-you-go spend that belongs to no project, model or
+    /// day row. Paid for [`Scope::All`] only; ignored for a project or client scope.
+    pub extra_usage: Amount,
 }
