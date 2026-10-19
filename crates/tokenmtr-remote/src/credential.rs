@@ -34,6 +34,14 @@ impl Credential {
         }
     }
 
+    /// The scheme of the `Authorization` header (RFC 7235: matched without regard to case).
+    const fn scheme(&self) -> &'static str {
+        match self {
+            Self::Basic { .. } => "Basic",
+            Self::Bearer(_) => "Bearer",
+        }
+    }
+
     /// The `WWW-Authenticate` challenge of a scrape that failed authentication.
     pub(crate) const fn challenge(&self) -> &'static str {
         match self {
@@ -48,7 +56,10 @@ impl Credential {
 /// Both sides are hashed before the constant-time comparison, so neither the value's content
 /// nor its length leaks through timing.
 #[derive(Clone)]
-pub(crate) struct Expected([u8; 32]);
+pub(crate) struct Expected {
+    scheme: &'static str,
+    digest: [u8; 32],
+}
 
 impl std::fmt::Debug for Expected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,14 +69,25 @@ impl std::fmt::Debug for Expected {
 
 impl Expected {
     pub(crate) fn of(credential: &Credential) -> Self {
-        Self(digest(credential.header().expose_secret()))
+        Self {
+            scheme: credential.scheme(),
+            digest: digest(credential.header().expose_secret()),
+        }
     }
 
     /// Whether `presented` (the request's `Authorization` header, if any) matches.
     pub(crate) fn accepts(&self, presented: Option<&[u8]>) -> bool {
-        let presented = digest_bytes(presented.unwrap_or_default());
+        let presented = presented.unwrap_or_default();
+        // `basic` and `BASIC` are the same scheme; the credentials after it are compared exactly.
+        let canonical = match presented.iter().position(|byte| *byte == b' ') {
+            Some(space) if presented[..space].eq_ignore_ascii_case(self.scheme.as_bytes()) => {
+                [self.scheme.as_bytes(), &presented[space..]].concat()
+            }
+            _ => presented.to_vec(),
+        };
+        let presented = digest_bytes(&canonical);
         // A missing header hashes like an empty one, which no credential produces.
-        bool::from(self.0.ct_eq(&presented)) && presented != digest_bytes(b"")
+        bool::from(self.digest.ct_eq(&presented)) && presented != digest_bytes(b"")
     }
 }
 
@@ -100,7 +122,11 @@ mod tests {
         let expected = Expected::of(&basic());
         assert!(expected.accepts(Some(b"Basic dTpw")));
         assert!(!expected.accepts(Some(b"Basic dTpx")));
-        assert!(!expected.accepts(Some(b"basic dTpw")));
+        assert!(expected.accepts(Some(b"basic dTpw")));
+        assert!(expected.accepts(Some(b"BASIC dTpw")));
+        assert!(!expected.accepts(Some(b"basic dtpw")));
+        assert!(!expected.accepts(Some(b"Bearer dTpw")));
+        assert!(!expected.accepts(Some(b"dTpw")));
         assert!(!expected.accepts(Some(b"")));
         assert!(!expected.accepts(None));
     }

@@ -640,7 +640,7 @@ pub(crate) fn tools_sql(sessions: bool) -> String {
         "SELECT t.agent, t.profile, t.tool_name, COALESCE(t.mcp_server, ''), \
          CASE WHEN t.is_error IS NULL THEN 'unknown' WHEN t.is_error = 0 THEN 'false' \
               ELSE 'true' END, \
-         e.cwd, e.project, CASE WHEN e.id IS NULL THEN t.session END, {column}, t.at_us \
+         e.cwd, e.project, CASE WHEN e.cwd IS NULL AND e.project IS NULL THEN t.session END, {column}, t.at_us \
          FROM tool_call t LEFT JOIN usage_event e ON e.event_id = t.event_id{filter}"
     )
 }

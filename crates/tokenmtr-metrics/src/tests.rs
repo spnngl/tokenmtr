@@ -506,11 +506,13 @@ fn a_tool_call_without_an_event_takes_its_sessions_directory() {
         "github.com/acme/secret",
     );
     later.session = SessionId::try_from("s3".to_owned()).unwrap();
-    seed.put(&[known.clone(), elsewhere, blank, later]);
+    seed.put(&[known.clone(), elsewhere, blank.clone(), later]);
     seed.call("by-event", Some(&known), "unrelated", "Read");
     seed.call("by-session", None, "s1", "Read");
     seed.call("other-session", None, "s2", "Read");
     seed.call("blank-then-cwd", None, "s3", "Read");
+    // The event exists but knows nothing: its session does.
+    seed.call("blank-event", Some(&blank), "s3", "Read");
     seed.call(
         "unknown-event",
         Some(&seed.ev("ghost", "2026-02-28T10:00:00Z")),
@@ -521,8 +523,8 @@ fn a_tool_call_without_an_event_takes_its_sessions_directory() {
 
     let taken = take(&seed);
     let kept = fold(&seed, &taken, &filter(&[], &["/w/secret/*"]));
-    // Excluded: by-event, by-session, blank-then-cwd. Kept: s2, and the two with no origin.
-    assert_eq!(sum(&everything(&seed, &taken), Family::ToolCalls, &[]), 6);
+    // Excluded: by-event, by-session, blank-then-cwd, blank-event. Kept: s2, and the two with no origin.
+    assert_eq!(sum(&everything(&seed, &taken), Family::ToolCalls, &[]), 7);
     assert_eq!(sum(&kept, Family::ToolCalls, &[]), 3);
 }
 

@@ -176,6 +176,22 @@ fn urls_are_https_or_this_machine() {
 }
 
 #[test]
+fn a_rejected_url_is_never_echoed() {
+    for url in [
+        "ftp://u:hunter2@r.example/p",
+        "https://u:hunter2@r.example:99999/p",
+    ] {
+        let (_, violation) = invalid(&format!(
+            "[[metrics.remote_write]]\nid = \"w\"\nurl = \"{url}\"\n"
+        ));
+        assert!(
+            !format!("{violation} {violation:?}").contains("hunter2"),
+            "{url}"
+        );
+    }
+}
+
+#[test]
 fn ids_are_shared_with_sinks_and_across_outputs() {
     let sink = "[[sinks]]\nid = \"e\"\nkind = \"sqlite\"\n\n";
     let (path, violation) = invalid(&format!("{sink}{}", exporter("")));

@@ -238,7 +238,6 @@ fn build_url(text: &str, at: &ConfigPath) -> Checked<Url> {
         reject(
             at,
             Violation::InvalidUrl {
-                url: text.to_owned(),
                 reason: reason.to_owned(),
             },
         )

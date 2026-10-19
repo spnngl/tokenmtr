@@ -31,7 +31,7 @@ use tokenmtr_remote::remote_write::{Target, push};
 use tokenmtr_remote::{Credential, build_push_client, scrape};
 use tokenmtr_store::{Dataset, MetricsRun, Store, StoreRead, StoreReader};
 use tokio::net::TcpListener;
-use tokio::sync::{oneshot, watch};
+use tokio::sync::{Mutex as AsyncMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
@@ -110,8 +110,24 @@ struct State {
     last_refresh: Option<Instant>,
     /// Whether any refresh has published yet.
     refreshed: bool,
-    /// Servers of removed exporters, awaited at shutdown.
-    retired: Vec<JoinHandle<()>>,
+    /// Servers that were replaced or removed, with the address each held: a new bind waits for
+    /// the ones on its address, and shutdown awaits them all.
+    retired: Vec<(std::net::SocketAddr, JoinHandle<()>)>,
+    /// One lock per output id, so the jobs of one output never overlap (a reload can schedule a
+    /// job while the previous one still runs).
+    locks: HashMap<SinkId, Arc<AsyncMutex<()>>>,
+}
+
+impl State {
+    /// Retires `server`, which held `listen`.
+    fn retire(&mut self, listen: std::net::SocketAddr, server: Server) {
+        self.retired.retain(|(_, task)| !task.is_finished());
+        self.retired.push((listen, server.signal()));
+    }
+
+    fn lock_of(&mut self, id: &SinkId) -> Arc<AsyncMutex<()>> {
+        Arc::clone(self.locks.entry(id.clone()).or_default())
+    }
 }
 
 /// Everything the metrics jobs share, owned by the [`Ctx`].
@@ -150,6 +166,8 @@ struct Pushed {
     error: Option<String>,
     /// Whether trying again soon can help.
     retry: bool,
+    /// Whether the output was changed or removed while pushing: nothing more was sent.
+    superseded: bool,
 }
 
 impl Pushed {
@@ -158,6 +176,14 @@ impl Pushed {
             series: 0,
             error: Some(error.into()),
             retry,
+            superseded: false,
+        }
+    }
+
+    fn superseded() -> Self {
+        Self {
+            superseded: true,
+            ..Self::failed("the output changed", false)
         }
     }
 }
@@ -180,7 +206,7 @@ impl Ctx {
             if let Some(exporter) = state.exporters.remove(&id)
                 && let Some(server) = exporter.server
             {
-                state.retired.push(server.signal());
+                state.retire(exporter.bound.listen, server);
             }
             self.scheduler.cancel(Job::ExporterBind(id));
         }
@@ -199,8 +225,10 @@ impl Ctx {
                 |p| p.rendered.clone(),
             );
             let series = previous.as_ref().map_or(0, |p| p.series);
-            if let Some(server) = previous.and_then(|p| p.server) {
-                state.retired.push(server.signal());
+            if let Some(previous) = previous
+                && let Some(server) = previous.server
+            {
+                state.retire(previous.bound.listen, server);
             }
             state.exporters.insert(
                 config.id.clone(),
@@ -248,9 +276,11 @@ impl Ctx {
 
         if !enabled(new) {
             self.scheduler.cancel(Job::MetricsRefresh);
-        } else if old
-            .is_none_or(|o| o.metrics != new.metrics || o.subscriptions != new.subscriptions)
-        {
+        } else if old.is_none_or(|o| {
+            o.metrics != new.metrics
+                || o.subscriptions != new.subscriptions
+                || display_zone(o) != display_zone(new)
+        }) {
             self.schedule_now(Job::MetricsRefresh);
         }
     }
@@ -371,6 +401,8 @@ impl Ctx {
 
     /// (Re)starts the server of one exporter (the `ExporterBind` job).
     pub(crate) async fn bind_exporter(self: &Arc<Self>, id: SinkId) {
+        let lock_of = lock(&self.metrics.state).lock_of(&id);
+        let _one_at_a_time = lock_of.lock().await;
         let Some(config) = self
             .active()
             .config
@@ -393,18 +425,33 @@ impl Ctx {
         if let Some(old) = old {
             old.stop().await;
         }
+        // A replaced server may still hold the port while it drains.
+        let draining: Vec<_> = {
+            let mut state = lock(&self.metrics.state);
+            let (same, rest) = std::mem::take(&mut state.retired)
+                .into_iter()
+                .partition(|(listen, _)| *listen == config.listen);
+            state.retired = rest;
+            same
+        };
+        for (_, task) in draining {
+            if tokio::time::timeout(REBIND_WAIT, task).await.is_err() {
+                tracing::warn!(exporter = %id, "the previous metrics server did not stop in time");
+            }
+        }
         let started = Timestamp::now();
         match self.start_server(&config).await {
             Ok(server) => {
-                // `Err` hands the server back: the exporter was removed meanwhile.
+                // `Err` hands the server back: the exporter was removed or reconfigured
+                // meanwhile, and the job that follows binds the new one.
                 let installed = {
                     let mut state = lock(&self.metrics.state);
                     match state.exporters.get_mut(&id) {
-                        Some(exporter) => {
+                        Some(exporter) if exporter.bound == Binding::of(&config) => {
                             exporter.server = Some(server);
                             Ok(exporter.series)
                         }
-                        None => Err(server),
+                        _ => Err(server),
                     }
                 };
                 let series = match installed {
@@ -472,6 +519,8 @@ impl Ctx {
 
     /// Pushes one remote-write output's latest fold (the `RemoteWrite` job).
     pub(crate) async fn push_remote_write(self: &Arc<Self>, id: SinkId) {
+        let lock_of = lock(&self.metrics.state).lock_of(&id);
+        let _one_at_a_time = lock_of.lock().await;
         let Some(config) = self
             .active()
             .config
@@ -485,6 +534,10 @@ impl Ctx {
         };
         let started = Timestamp::now();
         let pushed = self.push_once(&config).await;
+        if pushed.superseded {
+            // The output was changed or removed mid-push; its new job runs on its own.
+            return;
+        }
         let interval = std_duration(config.interval);
         let (since, failures) =
             self.note_metrics(&id, started, pushed.series, pushed.error.as_deref());
@@ -523,14 +576,18 @@ impl Ctx {
         let window = self.active().config.metrics.session_window;
         let batches = match lock(&self.metrics.state).writers.get(&config.id) {
             Some(writer) => requests(&folded, &writer.seen, &prepared.external, now, window),
-            None => return Pushed::failed("the output was removed", false),
+            None => return Pushed::superseded(),
         };
         let mut pushed = Pushed {
             series: 0,
             error: None,
             retry: false,
+            superseded: false,
         };
         for batch in &batches {
+            if !self.is_current(config) {
+                return Pushed::superseded();
+            }
             let body = match batch.encode() {
                 Ok(body) => body,
                 Err(error) => {
@@ -541,8 +598,11 @@ impl Ctx {
             match push(client, &prepared.target, &body).await {
                 Ok(()) => {
                     pushed.series += count(batch.series());
-                    if let Some(writer) = lock(&self.metrics.state).writers.get_mut(&config.id) {
-                        writer.seen.accept(batch, now, window);
+                    match lock(&self.metrics.state).writers.get_mut(&config.id) {
+                        Some(writer) if writer.config == *config => {
+                            writer.seen.accept(batch, now, window);
+                        }
+                        _ => return Pushed::superseded(),
                     }
                 }
                 Err(error) => {
@@ -557,6 +617,14 @@ impl Ctx {
             }
         }
         pushed
+    }
+
+    /// Whether `config` is still what the output runs with.
+    fn is_current(&self, config: &RemoteWriteConfig) -> bool {
+        lock(&self.metrics.state)
+            .writers
+            .get(&config.id)
+            .is_some_and(|w| w.config == *config)
     }
 
     fn latest_fold(&self, id: &SinkId) -> Option<Arc<Folded>> {
@@ -686,7 +754,7 @@ impl Ctx {
             (servers, std::mem::take(&mut state.retired))
         };
         let mut tasks: Vec<JoinHandle<()>> = servers.into_iter().map(Server::signal).collect();
-        tasks.extend(retired);
+        tasks.extend(retired.into_iter().map(|(_, task)| task));
         for task in tasks {
             let _ = task.await;
         }

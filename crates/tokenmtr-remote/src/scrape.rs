@@ -34,6 +34,8 @@ use crate::credential::{Credential, Expected};
 const MAX_CONNECTIONS: usize = 64;
 /// How long a client may take to send its request headers, idle keep-alive included.
 const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
+/// The longest a connection lives, keep-alive included; a scraper reconnects.
+const CONNECTION_LIFETIME: Duration = Duration::from_secs(60);
 /// How long a shutdown waits for in-flight scrapes.
 const DRAIN: Duration = Duration::from_secs(2);
 const PATH: &str = "/metrics";
@@ -104,8 +106,11 @@ pub async fn serve(
         let connection = graceful.watch(connection);
         tokio::spawn(async move {
             // A client that hangs up mid-scrape is routine; the kind is all worth a trace.
-            if let Err(error) = connection.await {
-                tracing::debug!(error = %error, "scrape connection ended");
+            // The deadline keeps a client that never reads its answer from holding a slot.
+            match tokio::time::timeout(CONNECTION_LIFETIME, connection).await {
+                Ok(Err(error)) => tracing::debug!(error = %error, "scrape connection ended"),
+                Ok(Ok(())) => {}
+                Err(_elapsed) => tracing::debug!("scrape connection closed after its lifetime"),
             }
             drop(permit);
         });

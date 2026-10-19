@@ -35,14 +35,28 @@ fn secret(env: &dyn Env, source: &SecretSource) -> Result<SecretString, String> 
     }
 }
 
+/// No token or password is this long; a bigger file is not a secret file.
+const MAX_SECRET_BYTES: u64 = 16 * 1024;
+
 fn from_file(path: &Utf8Path) -> Result<SecretString, String> {
+    use std::io::Read as _;
     let name = format!("secret file {path}");
-    let metadata = std::fs::metadata(path).map_err(|e| format!("{name}: {}", e.kind()))?;
+    // One handle for the checks and the read, so the file cannot change in between.
+    let file = std::fs::File::open(path).map_err(|e| format!("{name}: {}", e.kind()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("{name}: {}", e.kind()))?;
     if !metadata.is_file() {
         return Err(format!("{name} is not a regular file"));
     }
     refuse_open_permissions(&metadata, &name)?;
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{name}: {}", e.kind()))?;
+    let mut text = String::new();
+    file.take(MAX_SECRET_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| format!("{name}: {}", e.kind()))?;
+    if u64::try_from(text.len()).is_ok_and(|bytes| bytes > MAX_SECRET_BYTES) {
+        return Err(format!("{name} is larger than {MAX_SECRET_BYTES} bytes"));
+    }
     non_empty(text, &name)
 }
 
