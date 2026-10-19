@@ -6681,7 +6681,13 @@ dependencies = [
 name = "tokenmtr-remote"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "bytes",
  "camino",
+ "flate2",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "jiff",
  "quick-xml",
  "reqwest",
@@ -6690,9 +6696,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
  "tempfile",
  "thiserror 2.0.21",
  "tokenmtr-core",
+ "tokenmtr-metrics",
  "tokenmtr-platform",
  "tokio",
  "tracing",

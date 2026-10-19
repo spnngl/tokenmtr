@@ -18,6 +18,7 @@ jiff = "0.2"
 tokenmtr-agents = { path = "../crates/tokenmtr-agents" }
 tokenmtr-config = { path = "../crates/tokenmtr-config" }
 tokenmtr-core = { path = "../crates/tokenmtr-core" }
+tokenmtr-metrics = { path = "../crates/tokenmtr-metrics" }
 tokenmtr-remote = { path = "../crates/tokenmtr-remote" }
 
 [[bin]]
@@ -65,6 +66,13 @@ bench = false
 [[bin]]
 name = "config"
 path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "accept_header"
+path = "fuzz_targets/accept_header.rs"
 test = false
 doc = false
 bench = false

@@ -43,10 +43,7 @@ const MAX_REDIRECTS: usize = 5;
 /// # Errors
 /// [`RemoteError::ClientBuild`] if the TLS backend cannot initialise.
 pub fn build_client() -> Result<Client, RemoteError> {
-    Client::builder()
-        .user_agent(user_agent())
-        .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(READ_TIMEOUT)
+    base_builder()
         .redirect(Policy::custom(|attempt| {
             if may_follow(attempt.previous(), attempt.url()) {
                 attempt.follow()
@@ -58,6 +55,25 @@ pub fn build_client() -> Result<Client, RemoteError> {
         .map_err(RemoteError::ClientBuild)
 }
 
+/// The client of remote-write pushes. It follows no redirect: the URL is the user's, and a
+/// receiver that redirects a push has answered with a refusal.
+///
+/// # Errors
+/// [`RemoteError::ClientBuild`] if the TLS backend cannot initialise.
+pub fn build_push_client() -> Result<Client, RemoteError> {
+    base_builder()
+        .redirect(Policy::none())
+        .build()
+        .map_err(RemoteError::ClientBuild)
+}
+
+fn base_builder() -> reqwest::ClientBuilder {
+    Client::builder()
+        .user_agent(user_agent())
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+}
+
 /// Whether a request may go to `url`: an [`ALLOWED_HOSTS`] host over HTTPS, or a loopback
 /// host over any scheme (the mock servers of tests; loopback cannot leak anything off the
 /// machine).
@@ -65,13 +81,17 @@ fn is_allowed(url: &Url) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
-    let loopback = host == "localhost"
+    is_loopback_host(host) || (url.scheme() == "https" && ALLOWED_HOSTS.contains(&host))
+}
+
+/// Whether `host` is `localhost` or a loopback IP address, bracketed or not.
+pub(crate) fn is_loopback_host(host: &str) -> bool {
+    host == "localhost"
         || host
             .trim_start_matches('[')
             .trim_end_matches(']')
             .parse::<IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback());
-    loopback || (url.scheme() == "https" && ALLOWED_HOSTS.contains(&host))
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 /// Whether to follow a redirect to `next` after `previous` hops: same host as the last hop, no

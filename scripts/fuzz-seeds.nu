@@ -48,5 +48,11 @@ def main [] {
     write-seeds $root ecb_xml (whole-files (do $http [ecb_daily.xml ecb_hist.xml]))
     write-seeds $root config (whole-files [($root | path join crates tokenmtr-config tests fixtures example.toml)])
 
+    write-seeds $root accept_header [
+        {name: prometheus, body: 'application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1'}
+        {name: gzip, body: 'gzip;q=0.5, deflate, *;q=0'}
+        {name: quality, body: 'text/plain;q=,application/openmetrics-text;q=1e-3;x=";",,'}
+    ]
+
     ls ($root | path join fuzz seeds) | each {|d| {target: ($d.name | path basename), seeds: (ls $d.name | length)} }
 }

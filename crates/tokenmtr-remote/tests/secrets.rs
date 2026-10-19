@@ -157,3 +157,95 @@ impl tokenmtr_platform::SecretStore for NoSecrets {
         Ok(None)
     }
 }
+
+const FAKE_PUSH_SECRET: &str = "pw-FAKE-PUSH-SECRET-1111";
+
+fn assert_clean_of(secret: &str, label: &str, text: &str) {
+    assert!(!text.contains(secret), "{label} leaks the secret: {text}");
+}
+
+#[tokio::test]
+async fn push_and_scrape_secrets_never_appear_in_logs_debug_or_errors() -> TestResult {
+    use secrecy::SecretString;
+    use tokenmtr_metrics::text::Rendered;
+    use tokenmtr_remote::remote_write::{Target, push};
+    use tokenmtr_remote::{Credential, build_push_client, scrape};
+
+    let logs = Capture::default();
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(logs.clone())
+            .with_ansi(false)
+            .finish(),
+    );
+    let credentials = [
+        Credential::Bearer(SecretString::from(FAKE_PUSH_SECRET)),
+        Credential::Basic {
+            username: "user".to_owned(),
+            password: SecretString::from(FAKE_PUSH_SECRET),
+        },
+    ];
+    let mut rendered: Vec<String> = credentials.iter().map(|c| format!("{c:?}")).collect();
+
+    // Receivers that echo the secret back in every kind of answer.
+    let echo = format!("denied {FAKE_PUSH_SECRET}");
+    for status in [200, 400, 401, 429, 500] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(status).set_body_string(echo.clone()))
+            .mount(&server)
+            .await;
+        let url = reqwest::Url::parse(&format!("{}/push", server.uri()))?;
+        for credential in &credentials {
+            let target = Target::new(url.clone(), Some("tenant"), Some(credential.clone()))?;
+            rendered.push(format!("{target:?}"));
+            let result = push(&build_push_client()?, &target, b"body").await;
+            rendered.push(format!("{result:?}"));
+            if let Err(error) = result {
+                rendered.push(error.to_string());
+            }
+        }
+    }
+    // A dead receiver: transport errors can embed URLs and headers.
+    let dead = Target::new(
+        closed_port_base()?.join("/push")?,
+        None,
+        Some(credentials[0].clone()),
+    )?;
+    if let Err(error) = push(&build_push_client()?, &dead, b"body").await {
+        rendered.push(format!("{error:?}"));
+        rendered.push(error.to_string());
+    }
+
+    // An exporter that requires the secret answers a wrong guess without echoing anything.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    let (_publish, subscribe) =
+        tokio::sync::watch::channel(std::sync::Arc::new(Rendered::default()));
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(async move {
+        scrape::serve(listener, subscribe, credentials.first(), async {
+            let _ = stopped.await;
+        })
+        .await
+    });
+    let client = reqwest::Client::new();
+    let answer = client
+        .get(format!("http://{addr}/metrics"))
+        .header("authorization", format!("Bearer {FAKE_PUSH_SECRET}x"))
+        .send()
+        .await?;
+    rendered.push(format!("{:?}", answer.headers()));
+    rendered.push(answer.text().await?);
+    let _ = stop.send(());
+    server.await??;
+
+    for (index, text) in rendered.iter().enumerate() {
+        assert_clean_of(FAKE_PUSH_SECRET, &format!("rendered value #{index}"), text);
+    }
+    let logs = logs.text();
+    assert!(!logs.is_empty(), "the capture saw no tracing events");
+    assert_clean_of(FAKE_PUSH_SECRET, "tracing output", &logs);
+    Ok(())
+}
