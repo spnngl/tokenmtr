@@ -5,13 +5,11 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Env, TestResult, append, claude_line, eventually, fast_timing, seed_logs};
+use common::{Env, TestResult, WAIT, append, claude_line, eventually, fast_timing, seed_logs};
 use tokenmtr_control::{Dataset, Event, Task};
 use tokenmtr_core::AlertKind;
 use tokenmtr_daemon::{Daemon, DaemonError};
 use tokenmtr_store::StoreRead as _;
-
-const FIVE_SECONDS: Duration = Duration::from_secs(5);
 
 fn csv_sink(env: &Env, interval: &str) -> String {
     format!(
@@ -39,20 +37,18 @@ async fn appended_line_reaches_the_store_and_the_csv_sink() -> TestResult {
     let daemon = env.start(fast_timing()).await?;
 
     assert!(
-        eventually(FIVE_SECONDS, || env.usage_events() == 2).await,
+        eventually(WAIT, || env.usage_events() == 2).await,
         "startup rescan: {} events",
         env.usage_events()
     );
     append(&env.claude_log(), &claude_line(2))?;
     assert!(
-        eventually(FIVE_SECONDS, || env.usage_events() == 3).await,
+        eventually(WAIT, || env.usage_events() == 3).await,
         "appended line: {} events",
         env.usage_events()
     );
     assert!(
-        eventually(Duration::from_secs(4), || csv_rows(&env).lines().count()
-            == 4)
-        .await,
+        eventually(WAIT, || csv_rows(&env).lines().count() == 4).await,
         "csv sink: {}",
         csv_rows(&env)
     );
@@ -74,7 +70,7 @@ async fn a_root_created_after_start_is_watched_without_waiting_for_the_sweep() -
     // Let the startup rescan finish first, so it cannot be the one finding the file.
     let started = std::time::Instant::now();
     while client.status().await?.last_scan_at.is_none() {
-        assert!(started.elapsed() < FIVE_SECONDS, "no startup scan");
+        assert!(started.elapsed() < WAIT, "no startup scan");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
@@ -82,7 +78,7 @@ async fn a_root_created_after_start_is_watched_without_waiting_for_the_sweep() -
     std::fs::create_dir_all(log.parent().ok_or("no parent")?)?;
     std::fs::write(&log, common::pi_session())?;
     assert!(
-        eventually(FIVE_SECONDS, || env.usage_events() == 1).await,
+        eventually(WAIT, || env.usage_events() == 1).await,
         "new root: {} events",
         env.usage_events()
     );
@@ -121,7 +117,7 @@ async fn a_shutdown_request_is_answered_then_the_owner_stops_the_daemon() -> Tes
     let daemon = env.start(fast_timing()).await?;
     let mut client = env.client().await?;
     client.shutdown().await?;
-    tokio::time::timeout(FIVE_SECONDS, daemon.stop_requested()).await?;
+    tokio::time::timeout(WAIT, daemon.stop_requested()).await?;
     daemon.shutdown().await?;
     assert!(
         !env.transport().socket_path().exists(),
@@ -135,7 +131,7 @@ async fn a_subscriber_gets_one_store_changed_per_append_and_none_when_idle() -> 
     let env = Env::new()?;
     seed_logs(&env)?;
     let daemon = env.start(fast_timing()).await?;
-    assert!(eventually(FIVE_SECONDS, || env.usage_events() == 2).await);
+    assert!(eventually(WAIT, || env.usage_events() == 2).await);
     // Let the startup change be published before subscribing.
     tokio::time::sleep(Duration::from_millis(800)).await;
     let mut events = env.client().await?.subscribe().await?;
@@ -144,7 +140,7 @@ async fn a_subscriber_gets_one_store_changed_per_append_and_none_when_idle() -> 
     assert!(idle.is_err(), "idle daemon pushed {idle:?}");
 
     append(&env.claude_log(), &claude_line(2))?;
-    let pushed = tokio::time::timeout(Duration::from_secs(1), events.next()).await??;
+    let pushed = tokio::time::timeout(WAIT, events.next()).await??;
     let Some(Event::StoreChanged { datasets }) = pushed else {
         return Err(format!("expected StoreChanged, got {pushed:?}").into());
     };
@@ -170,7 +166,7 @@ async fn a_failing_sink_raises_exactly_one_sink_failing_alert() -> TestResult {
     let mut events = env.client().await?.subscribe().await?;
 
     let alert = loop {
-        let event = tokio::time::timeout(Duration::from_secs(12), events.next()).await??;
+        let event = tokio::time::timeout(WAIT, events.next()).await??;
         if let Some(Event::AlertFired { alert }) = event {
             break alert;
         }
@@ -210,7 +206,7 @@ async fn shutdown_is_fast_and_removes_the_socket() -> TestResult {
     env.write_config(&csv_sink(&env, "1s"))?;
     let daemon = env.start(fast_timing()).await?;
     let _subscriber = env.client().await?.subscribe().await?;
-    assert!(eventually(FIVE_SECONDS, || env.usage_events() == 2).await);
+    assert!(eventually(WAIT, || env.usage_events() == 2).await);
 
     let started = Instant::now();
     daemon.shutdown().await?;
