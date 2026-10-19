@@ -30,5 +30,5 @@ pub use report::{RenderedReport, ReportFormat, ReportRange, ReportRequest, gener
 pub use retention::{RETENTION_DAYS, set_claude_retention};
 pub use settings::{
     add_project_rule, add_subscription, backup_dir, budget_specs, display_zone, ensure_config_file,
-    load_config, query_context, recap_config, sink_specs, store_path,
+    load_config, query_context, recap_config, set_menubar_rings, sink_specs, store_path,
 };

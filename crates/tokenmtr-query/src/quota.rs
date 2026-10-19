@@ -89,8 +89,10 @@ pub(crate) fn load_snapshots(
 /// One quota window of the latest poll.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct QuotaWindowView {
-    /// Window id (`five_hour`, `seven_day`, …).
+    /// Window id (`five_hour`, `seven_day`, `weekly_scoped:<model>`, …).
     pub window: WindowId,
+    /// Human name of the window ([`WindowId::label`]), e.g. `Weekly · Fable`.
+    pub label: String,
     /// Percent used; may exceed 100.
     pub used_percent: f64,
     /// When the window resets.
@@ -238,6 +240,7 @@ pub fn quota_latest(
                 None => QuotaEta::NotEnoughData,
             };
             windows.push(QuotaWindowView {
+                label: window.label(),
                 window,
                 used_percent,
                 resets_in_secs: resets_at.map(|at| (at.as_second() - ctx.now().as_second()).max(0)),
@@ -297,6 +300,8 @@ pub struct QuotaHistory {
     pub profile: String,
     /// Window id.
     pub window: String,
+    /// Human name of the window ([`WindowId::label`]).
+    pub label: String,
     /// Samples in time order.
     pub points: Vec<QuotaPoint>,
     /// Window resets inside the range (distinct reset times, 5-minute jitter merged).
@@ -326,6 +331,7 @@ pub fn quota_history(
                     agent,
                     profile: profile.to_owned(),
                     window: window.id.as_str().to_owned(),
+                    label: window.id.label(),
                     points: Vec::new(),
                     resets: Vec::new(),
                 });

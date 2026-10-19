@@ -100,6 +100,7 @@
           "windows": [
             {
               "window": "five_hour",
+              "label": "5-hour",
               "used_percent": 63.5,
               "resets_at": "2026-05-03T16:00:00Z",
               "resets_in_secs": 6481,
@@ -111,6 +112,7 @@
             },
             {
               "window": "seven_day",
+              "label": "7-day",
               "used_percent": 41.0,
               "resets_at": "2026-05-07T09:00:00Z",
               "resets_in_secs": 327481,
@@ -121,6 +123,7 @@
             },
             {
               "window": "seven_day_opus",
+              "label": "7-day Opus",
               "used_percent": 2.0,
               "resets_at": null,
               "resets_in_secs": null,
@@ -130,7 +133,19 @@
               "spend": null
             },
             {
+              "window": "weekly_scoped:fable",
+              "label": "Weekly · Fable",
+              "used_percent": 74.0,
+              "resets_at": "2026-05-07T09:00:00Z",
+              "resets_in_secs": 327481,
+              "eta": {
+                "kind": "wont_hit"
+              },
+              "spend": null
+            },
+            {
               "window": "extra_usage",
+              "label": "Extra usage",
               "used_percent": 24.69,
               "resets_at": null,
               "resets_in_secs": null,
@@ -262,6 +277,7 @@
           "windows": [
             {
               "window": "five_hour",
+              "label": "5-hour",
               "used_percent": 63.5,
               "resets_at": "2026-05-03T16:00:00Z",
               "resets_in_secs": 6481,
@@ -273,6 +289,7 @@
             },
             {
               "window": "seven_day",
+              "label": "7-day",
               "used_percent": 41.0,
               "resets_at": "2026-05-07T09:00:00Z",
               "resets_in_secs": 327481,
@@ -283,6 +300,7 @@
             },
             {
               "window": "seven_day_opus",
+              "label": "7-day Opus",
               "used_percent": 2.0,
               "resets_at": null,
               "resets_in_secs": null,
@@ -292,7 +310,19 @@
               "spend": null
             },
             {
+              "window": "weekly_scoped:fable",
+              "label": "Weekly · Fable",
+              "used_percent": 74.0,
+              "resets_at": "2026-05-07T09:00:00Z",
+              "resets_in_secs": 327481,
+              "eta": {
+                "kind": "wont_hit"
+              },
+              "spend": null
+            },
+            {
               "window": "extra_usage",
+              "label": "Extra usage",
               "used_percent": 24.69,
               "resets_at": null,
               "resets_in_secs": null,

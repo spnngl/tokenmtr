@@ -166,9 +166,10 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["window", "used_percent", "resets_at", "resets_in_secs", "eta", "spend"],
+            "required": ["window", "label", "used_percent", "resets_at", "resets_in_secs", "eta", "spend"],
             "properties": {
               "window": { "type": "string" },
+              "label": { "type": "string" },
               "used_percent": { "type": "number" },
               "resets_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
               "resets_in_secs": { "type": ["integer", "null"] },

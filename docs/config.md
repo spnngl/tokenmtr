@@ -37,7 +37,8 @@ enabled = true                 # ECB fetch
 
 [menubar]
 agents = ["claude", "pi"]      # one recap tab each; default: all enabled agents
-title = "paid_today"           # paid_today | api_today | tightest_quota | none
+rings = ["session", "weekly"]  # quota rings: session | weekly | per_model; [] = plain icon
+hidden_profiles = []           # profiles drawn without rings
 shortcut = "Alt+CommandOrControl+U"  # "" disables
 live_window = "10m"            # Live block window
 
@@ -214,7 +215,8 @@ When the account has extra usage switched on (Claude's pay-as-you-go spend beyon
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `agents` | `[agent]` | all enabled agents | Agents with a recap tab. Non-empty, unique, enabled. |
-| `title` | `paid_today`, `api_today`, `tightest_quota`, `none` | `"paid_today"` | Text next to the menu-bar icon. |
+| `rings` | `["session" \| "weekly" \| "per_model"]` | `["session", "weekly"]` | Quota windows drawn as rings in the menu bar, one per window and profile: `session` is the 5-hour window, `weekly` the 7-day window, `per_model` every weekly window scoped to one model. Each ring shows the percent used, amber from 70 %, red from 90 %; a dashed ring means the profile's quota cannot be read. Unique; `[]`, or no quota yet, shows the plain icon. The menu bar shows no text. |
+| `hidden_profiles` | `[profile]` | `[]` | Profiles drawn without rings. Unique. |
 | `shortcut` | string | `"Alt+CommandOrControl+U"` | Global shortcut that shows or hides the recap; `""` disables it. The desktop shell parses the syntax. |
 | `live_window` | duration | `"10m"` | Window of the recap's Live block: tokens per minute, API value per hour and active sessions over this window, shown while it has events. |
 

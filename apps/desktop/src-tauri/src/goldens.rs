@@ -12,6 +12,7 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use serde::Serialize;
 use serde_json::Value;
+use tokenmtr_config::MenubarRing;
 use tokenmtr_core::{
     Advice, AgentId, AlertKind, BillingPeriod, BudgetMeasure, BudgetPeriod, CostSource, Currency,
     Dataset, EventKind, Plan, PlanFit, QuotaEta, Recommendation, SignalKind, TokenCounts,
@@ -21,13 +22,14 @@ use tokenmtr_query::{
     AdvisorReport, AgentRecap, AlertView, BackupView, BillingAmounts, BillingMonth, BillingPoint,
     BillingReport, BillingSeries, BranchRow, Breakdown, Bucket, BudgetState, BudgetView,
     COST_EDGES_MICROS, CostBucket, DaemonHealth, DaemonState, DateRange, FxRateView, Granularity,
-    GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, ModelRow, NO_GROUP,
-    ParseIssueView, Period, ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend,
-    QuotaWindowView, STATUS_SCHEMA, Series, SeriesPoint, SessionAnalytics, SessionCompactions,
-    SessionDay, SessionDetail, SessionEvent, SessionPage, SessionPoint, SessionRow,
-    SessionStartCell, SessionTimeline, SessionToolCall, SignalDay, SignalsReport, SinkHealth,
-    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent,
-    TimelineSignal, TimelineTool, ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
+    GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, ModelRow,
+    ModelSessions, ModelSlice, NO_GROUP, ParseIssueView, Period, ProjectModelsRow, ProjectRow,
+    QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA, Series,
+    SeriesPoint, SessionAnalytics, SessionCompactions, SessionDay, SessionDetail, SessionEvent,
+    SessionModel, SessionPage, SessionPoint, SessionRow, SessionStartCell, SessionTimeline,
+    SessionToolCall, SignalDay, SignalModel, SignalsReport, SinkHealth, SinkRunView, SinkState,
+    SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent, TimelineSignal,
+    TimelineTool, ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -208,6 +210,54 @@ fn projects() -> Value {
     })
 }
 
+fn project_models() -> Value {
+    json(Breakdown {
+        currency: Currency::Usd,
+        rows: vec![
+            ProjectModelsRow {
+                project: Some("tokenmtr".to_owned()),
+                name: Some("TokenMtr".to_owned()),
+                models: vec![
+                    ModelSlice {
+                        model: "claude-sonnet-4-5".to_owned(),
+                        usage: usage(
+                            1180,
+                            [260_100, 64_100_200, 1_400_200, 380_000, 1_201_200, 70_100],
+                            [118_200_400, 7_100_000, 111_100_400, 0],
+                            [100, 1076, 4],
+                            false,
+                        ),
+                    },
+                    ModelSlice {
+                        model: "gpt-5".to_owned(),
+                        usage: usage(
+                            130,
+                            [30_000, 6_000_000, 100_000, 0, 100_000, 10_000],
+                            [13_000_000, 1_000_000, 12_000_000, 0],
+                            [50, 80, 0],
+                            false,
+                        ),
+                    },
+                ],
+            },
+            ProjectModelsRow {
+                project: None,
+                name: None,
+                models: vec![ModelSlice {
+                    model: "claude-sonnet-4-5".to_owned(),
+                    usage: usage(
+                        37,
+                        [8_000, 1_200_000, 30_000, 0, 20_000, 0],
+                        [2_410_300, 0, 2_410_300, 0],
+                        [0, 37, 0],
+                        true,
+                    ),
+                }],
+            },
+        ],
+    })
+}
+
 fn branches() -> Value {
     json(Breakdown {
         currency: Currency::Usd,
@@ -358,6 +408,29 @@ fn tools() -> Value {
             ),
         ],
         mcp_servers: vec![row(None, Some("linear"), 31, 2, 6.45, 7)],
+        by_model: vec![
+            ToolModelCalls {
+                tool_name: "Bash".to_owned(),
+                mcp_server: None,
+                model: Some("claude-opus-4-1".to_owned()),
+                calls: 700,
+                errors: 40,
+            },
+            ToolModelCalls {
+                tool_name: "Bash".to_owned(),
+                mcp_server: None,
+                model: Some("claude-sonnet-4-5".to_owned()),
+                calls: 112,
+                errors: 1,
+            },
+            ToolModelCalls {
+                tool_name: "mcp__linear__get_issue".to_owned(),
+                mcp_server: Some("linear".to_owned()),
+                model: None,
+                calls: 24,
+                errors: 0,
+            },
+        ],
     })
 }
 
@@ -386,6 +459,18 @@ fn signals() -> Value {
             SessionCompactions {
                 agent: AgentId::PI,
                 session: PI_SESSION.to_owned(),
+                compactions: 1,
+            },
+        ],
+        models: vec![
+            SignalModel {
+                model: Some("claude-opus-4-1".to_owned()),
+                api_errors: 2,
+                compactions: 2,
+            },
+            SignalModel {
+                model: None,
+                api_errors: 1,
                 compactions: 1,
             },
         ],
@@ -626,6 +711,13 @@ fn tokens([input_uncached, cache_read, short, long, output, reasoning]: Tokens) 
     }
 }
 
+fn model_sessions(model: &str) -> ModelSessions {
+    ModelSessions {
+        model: model.to_owned(),
+        sessions: 1,
+    }
+}
+
 /// Two sessions of a Paris week; the Pi one is pay-as-you-go and has no input.
 fn session_analytics() -> Value {
     let rows = vec![
@@ -661,6 +753,11 @@ fn session_analytics() -> Value {
             min_micros,
             max_micros: COST_EDGES_MICROS.get(i + 1).copied(),
             sessions: u64::from(min_micros == 0 || min_micros == 1_000_000),
+            models: match min_micros {
+                0 => vec![model_sessions("gpt-5")],
+                1_000_000 => vec![model_sessions("claude-opus-4-1")],
+                _ => Vec::new(),
+            },
         })
         .collect();
     let days = [("2026-05-01", 0), ("2026-05-02", 1), ("2026-05-03", 1)]
@@ -744,6 +841,22 @@ fn session_timeline() -> Value {
                 failed: 1,
             },
         ],
+        models: vec![
+            SessionModel {
+                model: "claude-opus-4-1".to_owned(),
+                events: 1,
+                tokens: tokens([1_200, 45_000, 800, 0, 1_204, 0]),
+                api_value_micros: 912_300,
+                approximate: false,
+            },
+            SessionModel {
+                model: "claude-sonnet-4-5".to_owned(),
+                events: 1,
+                tokens: tokens([400, 50_000, 300, 0, 310, 0]),
+                api_value_micros: 160_400,
+                approximate: false,
+            },
+        ],
     })
 }
 
@@ -804,6 +917,7 @@ fn quota_meters() -> Vec<QuotaMeter> {
     let window =
         |id: &str, used_percent, resets_at: Option<&str>, resets_in_secs, eta| QuotaWindowView {
             window: WindowId::new(id).unwrap(),
+            label: WindowId::new(id).unwrap().label(),
             used_percent,
             resets_at: resets_at.map(at),
             resets_in_secs,
@@ -845,6 +959,13 @@ fn quota_meters() -> Vec<QuotaMeter> {
                     QuotaEta::WontHit,
                 ),
                 window("seven_day_opus", 2.0, None, None, QuotaEta::NotEnoughData),
+                window(
+                    "weekly_scoped:fable",
+                    74.0,
+                    Some("2026-05-07T09:00:00Z"),
+                    Some(327_481),
+                    QuotaEta::WontHit,
+                ),
                 QuotaWindowView {
                     spend: Some(QuotaSpend {
                         currency: Currency::Usd,
@@ -905,6 +1026,7 @@ fn quota_history() -> Value {
             agent: AgentId::CLAUDE,
             profile: "default".to_owned(),
             window: WindowId::FIVE_HOUR.to_owned(),
+            label: WindowId::five_hour().label(),
             points: vec![
                 point("2026-05-03T11:05:00Z", 4.0),
                 point("2026-05-03T12:30:00Z", 28.5),
@@ -916,6 +1038,7 @@ fn quota_history() -> Value {
             agent: AgentId::CLAUDE,
             profile: "default".to_owned(),
             window: WindowId::SEVEN_DAY.to_owned(),
+            label: WindowId::seven_day().label(),
             points: vec![
                 point("2026-04-30T09:00:00Z", 0.0),
                 point("2026-05-03T14:10:00Z", 41.0),
@@ -1624,7 +1747,8 @@ fn settings() -> Value {
             models: 214,
         },
         tray: TrayBlock {
-            title: "paid_today".to_owned(),
+            rings: vec![MenubarRing::Session, MenubarRing::Weekly],
+            hidden_profiles: vec!["work".to_owned()],
             shortcut: "CmdOrCtrl+Shift+T".to_owned(),
         },
         alerts: AlertsBlock {
@@ -1703,6 +1827,7 @@ fn goldens() -> Vec<(&'static str, Value)> {
         ("series", series()),
         ("models", models()),
         ("projects", projects()),
+        ("project_models", project_models()),
         ("branches", branches()),
         ("unresolved_cwds", unresolved_cwds()),
         ("heatmap", heatmap()),

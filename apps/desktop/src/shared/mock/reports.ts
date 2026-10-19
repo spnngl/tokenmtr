@@ -7,6 +7,7 @@ import type {
   GroupBy,
   Heatmap,
   ModelRow,
+  ProjectModelsRow,
   ProjectRow,
   Series,
   SignalsReport,
@@ -76,7 +77,8 @@ function groupKey(fact: Fact, by: GroupBy): string {
     case "model":
       return fact.model;
     case "project":
-      return fact.project ?? UNASSIGNED;
+      // The backend's `NO_GROUP`.
+      return fact.project ?? "(none)";
     default:
       by satisfies never;
       throw new Error("unreachable group");
@@ -169,6 +171,23 @@ export function projectsOf(facts: readonly Fact[], currency: Currency): ProjectR
     .sort((a, b) => b.api_value_usd_micros - a.api_value_usd_micros);
 }
 
+/** Projects split by model, biggest API value first (like `project_models`). */
+export function projectModelsOf(facts: readonly Fact[], currency: Currency): ProjectModelsRow[] {
+  return [...groupBy(facts, (fact) => fact.project ?? UNASSIGNED)]
+    .map(([key, rows]): ProjectModelsRow => {
+      const project = key === UNASSIGNED ? null : key;
+      const models = [...groupBy(rows, (fact) => fact.model)]
+        .map(([model, members]) => ({ model, ...wireUsage(sumRaw(members), currency) }))
+        .sort((a, b) => b.api_value_micros - a.api_value_micros);
+      return { project, name: project, models };
+    })
+    .sort((a, b) => apiOf(b) - apiOf(a));
+}
+
+function apiOf(row: ProjectModelsRow): number {
+  return row.models.reduce((sum, slice) => sum + slice.api_value_micros, 0);
+}
+
 const BRANCH_SPLIT: readonly { readonly branch: string | null; readonly share: number }[] = [
   { branch: "main", share: 0.6 },
   { branch: "feature/budgets", share: 0.3 },
@@ -197,6 +216,10 @@ function scaleRaw(raw: RawUsage, share: number): RawUsage {
 }
 
 export function branchesOf(facts: readonly Fact[], currency: Currency): BranchRow[] {
+  // Like the backend, no usage means no branch rows rather than zeroed ones.
+  if (facts.length === 0) {
+    return [];
+  }
   const raw = sumRaw(facts);
   return BRANCH_SPLIT.map(({ branch, share }) => ({
     branch,
@@ -270,7 +293,32 @@ export function toolsOf(facts: readonly Fact[]): ToolsReport {
       sessions: own.reduce((sum, row) => sum + row.sessions, 0),
     };
   });
-  return { tools: rows, mcp_servers: servers };
+  const shares = sharesOf(
+    [...groupBy(facts, (fact) => fact.model)].map(([model, own]) => [model, sumRaw(own).events]),
+  );
+  const byModel = rows
+    .flatMap((row) =>
+      shares.map(({ model, share }) => ({
+        tool_name: row.tool_name ?? "",
+        mcp_server: row.mcp_server,
+        model,
+        calls: Math.round(row.calls * share),
+        errors: Math.round(row.errors * share),
+      })),
+    )
+    .filter((row) => row.calls > 0)
+    .toSorted((a, b) => b.calls - a.calls || a.tool_name.localeCompare(b.tool_name));
+  return { tools: rows, mcp_servers: servers, by_model: byModel };
+}
+
+/** Each model's share of the total weight, largest first. */
+function sharesOf(
+  weights: readonly (readonly [string, number])[],
+): { model: string; share: number }[] {
+  const total = weights.reduce((sum, [, weight]) => sum + weight, 0);
+  return weights
+    .map(([model, weight]) => ({ model, share: total === 0 ? 0 : weight / total }))
+    .toSorted((a, b) => b.share - a.share || a.model.localeCompare(b.model));
 }
 
 export function signalsOf(range: DayRange): SignalsReport {
@@ -292,12 +340,21 @@ export function signalsOf(range: DayRange): SignalsReport {
     session: session.session,
     compactions: 5 - index,
   }));
-  return {
-    days,
-    api_errors: days.reduce((sum, day) => sum + day.api_errors, 0),
-    compactions: days.reduce((sum, day) => sum + day.compactions, 0),
-    top_sessions: top,
-  };
+  const apiErrors = days.reduce((sum, day) => sum + day.api_errors, 0);
+  const compactions = days.reduce((sum, day) => sum + day.compactions, 0);
+  const shares = sharesOf(
+    [...groupBy(inRangeSessions, (session) => session.models[0] ?? "unknown")].map(
+      ([model, own]) => [model, own.length],
+    ),
+  );
+  const models = shares
+    .map(({ model, share }) => ({
+      model,
+      api_errors: Math.round(apiErrors * share),
+      compactions: Math.round(compactions * share),
+    }))
+    .filter((row) => row.api_errors + row.compactions > 0);
+  return { days, api_errors: apiErrors, compactions, top_sessions: top, models };
 }
 
 /** `extras` (extra-usage rows) count in the total and the months, in no billing line. */

@@ -68,11 +68,12 @@
 //! | [`overview`] | [`Totals`]: usage + `cached_input_percent`, `cache_savings_micros`, `roi`, `sessions` |
 //! | [`series`] | [`Series`]: contiguous, zero-filled [`SeriesPoint`]s, optional `groups` |
 //! | [`models`], [`projects`], [`branches`], [`unresolved_cwds`] | rows with usage |
+//! | [`project_models`] | [`ProjectModelsRow`]s: `project`, `name`, `models` ([`ModelSlice`]: `model` + usage) |
 //! | [`sessions`], [`session_detail`] | [`SessionPage`], [`SessionDetail`] |
-//! | [`tools`], [`signals`], [`heatmap`] | [`ToolsReport`], [`SignalsReport`], [`Heatmap`] |
+//! | [`tools`], [`signals`], [`heatmap`] | [`ToolsReport`] (`by_model`: [`ToolModelCalls`]), [`SignalsReport`] (`models`: [`SignalModel`]), [`Heatmap`] |
 //! | [`billing`] | [`BillingReport`]: total, api, per-subscription lines, months |
 //! | [`billing_series`] | [`BillingSeries`]: [`BillingPoint`]s with paid split, savings, `roi`, cumulative sums, optional per-agent amounts |
-//! | [`session_analytics`], [`session_timeline`] | [`SessionAnalytics`] (top [`SESSION_ROWS_LIMIT`] sessions, cost histogram, days, start grid), [`SessionTimeline`] |
+//! | [`session_analytics`], [`session_timeline`] | [`SessionAnalytics`] (top [`SESSION_ROWS_LIMIT`] sessions, cost histogram by dominant model, days, start grid), [`SessionTimeline`] (`models`: [`SessionModel`]) |
 //! | [`quota_latest`], [`quota_history`], [`advisor`] | [`QuotaMeter`], [`QuotaHistory`], [`AdvisorReport`] |
 //! | [`budgets`] | [`BudgetView`]: spent, limit, percent, projected |
 //! | [`recap`], [`status`] | [`Recap`], [`Status`] |
@@ -92,11 +93,13 @@ mod engine;
 mod error;
 mod filters;
 mod health;
+mod model_project;
 mod quota;
 mod range;
 mod recap;
 mod series;
 mod session_analytics;
+mod session_models;
 mod usage;
 
 pub use billing::{BillingMonth, BillingReport, SubscriptionLine, billing};
@@ -117,6 +120,7 @@ pub use health::{
     SinkHealth, SinkRunView, SinkSpec, SinkState, alerts, backup_runs, daemon_health, fx_rates,
     ingest_status, parse_issues, sink_health,
 };
+pub use model_project::{ModelSlice, ProjectModelsRow, project_models};
 pub use quota::{
     AdvisorReport, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, advisor,
     quota_history, quota_latest,
@@ -129,10 +133,11 @@ pub use recap::{
 };
 pub use series::{GroupBy, GroupValue, NO_GROUP, Series, SeriesPoint, series};
 pub use session_analytics::{
-    COST_EDGES_MICROS, CostBucket, SESSION_ROWS_LIMIT, SessionAnalytics, SessionDay, SessionPoint,
-    SessionStartCell, SessionTimeline, TIMELINE_LIMIT, TimelineEvent, TimelineSignal, TimelineTool,
-    session_analytics, session_timeline,
+    COST_EDGES_MICROS, CostBucket, ModelSessions, SESSION_ROWS_LIMIT, SessionAnalytics, SessionDay,
+    SessionPoint, SessionStartCell, SessionTimeline, TIMELINE_LIMIT, TimelineEvent, TimelineSignal,
+    TimelineTool, session_analytics, session_timeline,
 };
+pub use session_models::{SessionModel, SignalModel, ToolModelCalls};
 pub use usage::Usage;
 
 #[cfg(test)]

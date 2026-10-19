@@ -1,13 +1,13 @@
 //! Editing a config file without losing its comments or layout.
 
 use camino::{Utf8Path, Utf8PathBuf};
-use tokenmtr_core::SubscriptionSpec;
+use tokenmtr_core::{ProfileId, SubscriptionSpec};
 
 use crate::env::Env;
 use crate::error::ConfigError;
 use crate::format::{ConfigCodec, ConfigFormat};
 use crate::load::parse;
-use crate::model::Config;
+use crate::model::{Config, MenubarRing};
 use crate::raw::{RawProject, RawSubscription};
 
 /// A config file's text plus the format that edits it.
@@ -108,6 +108,24 @@ impl ConfigDocument {
         env: &dyn Env,
     ) -> Result<Config, ConfigError> {
         let text = self.format.append_project_rule(&self.text, rule)?;
+        self.commit(text, env)
+    }
+
+    /// Sets which quota windows the menu bar draws as rings and which profiles it skips
+    /// (`[menubar] rings` and `hidden_profiles`). Returns the validated config of the new text.
+    ///
+    /// # Errors
+    ///
+    /// As [`ConfigDocument::add_subscription`]; for example a duplicate ring.
+    pub fn set_menubar_rings(
+        &mut self,
+        rings: &[MenubarRing],
+        hidden_profiles: &[ProfileId],
+        env: &dyn Env,
+    ) -> Result<Config, ConfigError> {
+        let text = self
+            .format
+            .set_menubar_rings(&self.text, rings, hidden_profiles)?;
         self.commit(text, env)
     }
 

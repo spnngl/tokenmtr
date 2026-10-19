@@ -260,20 +260,37 @@ pub struct FxConfig {
     pub fixed_eur_per_usd: Option<EurPerUsd>,
 }
 
-/// What the tray icon title shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize)]
+/// A kind of quota window the menu bar draws as a ring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MenubarTitle {
-    /// Money paid today.
-    #[default]
-    PaidToday,
-    /// API value today.
-    ApiToday,
-    /// The quota window closest to its limit.
-    TightestQuota,
-    /// No title.
-    #[serde(rename = "none")]
-    Hidden,
+pub enum MenubarRing {
+    /// The five-hour session window (`five_hour`).
+    Session,
+    /// The seven-day window across models (`seven_day`).
+    Weekly,
+    /// Every weekly window scoped to one model (`weekly_scoped:<model>`).
+    PerModel,
+}
+
+impl MenubarRing {
+    /// Every kind, in drawing order.
+    pub const ALL: [Self; 3] = [Self::Session, Self::Weekly, Self::PerModel];
+
+    /// The config spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Session => "session",
+            Self::Weekly => "weekly",
+            Self::PerModel => "per_model",
+        }
+    }
+}
+
+impl fmt::Display for MenubarRing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// `[menubar]`.
@@ -281,8 +298,10 @@ pub enum MenubarTitle {
 pub struct MenubarConfig {
     /// Followed agents, one recap tab each: non-empty, enabled, unique.
     pub agents: Vec<AgentId>,
-    /// Tray title.
-    pub title: MenubarTitle,
+    /// Window kinds drawn as rings in the menu bar, unique; empty shows the plain icon.
+    pub rings: Vec<MenubarRing>,
+    /// Profiles whose quota gets no rings, unique.
+    pub hidden_profiles: Vec<ProfileId>,
     /// Global shortcut; `None` disables. Parsed by the desktop shell.
     pub shortcut: Option<String>,
     /// Window of the Live block.

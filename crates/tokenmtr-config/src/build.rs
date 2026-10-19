@@ -21,7 +21,7 @@ use crate::model::{
     AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry, BudgetScope,
     CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset, DisplayConfig,
     FileFormat, FileSink, FxConfig, ImportConfig, IntegrationsConfig, LoggingConfig, MachineConfig,
-    MenubarConfig, MenubarTitle, Percent, PricingConfig, PrivacyConfig, ProfileConfig,
+    MenubarConfig, MenubarRing, Percent, PricingConfig, PrivacyConfig, ProfileConfig,
     ProfileLocation, ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig,
     SupersetConfig, TimeZoneSetting,
 };
@@ -321,6 +321,15 @@ fn build_menubar(raw: &RawConfig, enabled: &[AgentId]) -> Checked<MenubarConfig>
         }
         None => enabled.to_vec(),
     };
+    let rings = match &raw.menubar.rings {
+        Some(rings) => {
+            unique(rings, &at.key("rings"))?;
+            rings.clone()
+        }
+        None => vec![MenubarRing::Session, MenubarRing::Weekly],
+    };
+    let hidden_profiles = raw.menubar.hidden_profiles.clone().unwrap_or_default();
+    unique(&hidden_profiles, &at.key("hidden_profiles"))?;
     let shortcut = match raw.menubar.shortcut.as_deref() {
         None => Some(DEFAULT_SHORTCUT.to_owned()),
         Some("") => None,
@@ -328,7 +337,8 @@ fn build_menubar(raw: &RawConfig, enabled: &[AgentId]) -> Checked<MenubarConfig>
     };
     Ok(MenubarConfig {
         agents,
-        title: raw.menubar.title.unwrap_or(MenubarTitle::PaidToday),
+        rings,
+        hidden_profiles,
         shortcut,
         live_window: duration_or(raw.menubar.live_window, SignedDuration::from_mins(10)),
     })

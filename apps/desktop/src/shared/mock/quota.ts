@@ -17,6 +17,8 @@ const HOUR_MS = 3_600_000;
 
 interface WindowSeed {
   readonly window: string;
+  /** What the backend's `WindowId::label` returns. */
+  readonly label: string;
   readonly cycleMs: number;
   /** The window resets this long after `NOW_MS`. */
   readonly resetsInMs: number;
@@ -25,8 +27,27 @@ interface WindowSeed {
 }
 
 const WINDOWS: readonly WindowSeed[] = [
-  { window: "five_hour", cycleMs: 5 * HOUR_MS, resetsInMs: 2.25 * HOUR_MS, peak: 135 },
-  { window: "seven_day", cycleMs: 7 * 24 * HOUR_MS, resetsInMs: 12 * HOUR_MS, peak: 100 },
+  {
+    window: "five_hour",
+    label: "5-hour",
+    cycleMs: 5 * HOUR_MS,
+    resetsInMs: 2.25 * HOUR_MS,
+    peak: 135,
+  },
+  {
+    window: "seven_day",
+    label: "7-day",
+    cycleMs: 7 * 24 * HOUR_MS,
+    resetsInMs: 12 * HOUR_MS,
+    peak: 100,
+  },
+  {
+    window: "weekly_scoped:fable",
+    label: "Weekly · Fable",
+    cycleMs: 7 * 24 * HOUR_MS,
+    resetsInMs: 12 * HOUR_MS,
+    peak: 80,
+  },
 ];
 
 function iso(ms: number): string {
@@ -45,6 +66,7 @@ function windowView(seed: WindowSeed): QuotaWindow {
   const used = usedAt(seed, NOW_MS);
   return {
     window: seed.window,
+    label: seed.label,
     used_percent: used,
     resets_at: iso(NOW_MS + seed.resetsInMs),
     resets_in_secs: Math.round(seed.resetsInMs / 1000),
@@ -62,6 +84,7 @@ function extraUsageWindow(currency: Currency): QuotaWindow {
   const spentUsd = sumRaw(EXTRA_FACTS.filter((fact) => fact.date.startsWith(month))).extraUsd;
   return {
     window: "extra_usage",
+    label: "Extra usage",
     used_percent: (spentUsd / EXTRA_USAGE_LIMIT_USD_MICROS) * 100,
     resets_at: null,
     resets_in_secs: null,
@@ -129,7 +152,14 @@ export function quotaHistoryOf(filters: Filters, agent: string): QuotaHistory[] 
             resets.unshift(iso(at));
           }
         }
-        return { agent: meter.agent, profile: meter.profile, window: seed.window, points, resets };
+        return {
+          agent: meter.agent,
+          profile: meter.profile,
+          window: seed.window,
+          label: seed.label,
+          points,
+          resets,
+        };
       }),
     );
 }

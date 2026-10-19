@@ -7,6 +7,7 @@ import type {
   CostBucket,
   Granularity,
   SessionAnalytics,
+  SessionModel,
   SessionPoint,
   SessionTimeline,
   TimelineEvent,
@@ -196,11 +197,15 @@ export function sessionAnalyticsOf(
   const points = matching.map((seed) => pointOf(seed, currency));
   const histogram = COST_EDGES.map((min, index): CostBucket => {
     const max = COST_EDGES[index + 1] ?? null;
-    const sessions = points.filter(
-      (p) =>
-        (index === 0 || p.api_value_micros >= min) && (max === null || p.api_value_micros < max),
-    ).length;
-    return { min_micros: min, max_micros: max, sessions };
+    const inBucket = matching.filter((_, i) => {
+      const api = points[i]?.api_value_micros ?? 0;
+      return (index === 0 || api >= min) && (max === null || api < max);
+    });
+    // The mock's dominant model is the session's first model.
+    const models = [...groupBy(inBucket, (seed) => seed.models[0] ?? "unknown")]
+      .map(([model, seeds]) => ({ model, sessions: seeds.length }))
+      .toSorted((a, b) => b.sessions - a.sessions || a.model.localeCompare(b.model));
+    return { min_micros: min, max_micros: max, sessions: inBucket.length, models };
   });
   const localStarts = matching.map((seed) => new Date(seed.startedAtMs + OFFSET_MS));
   const range = rangeOf(filters.range);
@@ -241,7 +246,7 @@ export function sessionTimelineOf(
 ): SessionTimeline {
   const seed = find(agent, session);
   if (seed === undefined) {
-    return { currency, events: [], events_truncated: false, signals: [], tools: [] };
+    return { currency, events: [], events_truncated: false, signals: [], tools: [], models: [] };
   }
   const rng = createRng(hashString(session));
   const u = seed.usage;
@@ -291,5 +296,45 @@ export function sessionTimelineOf(
   }))
     .filter((tool) => tool.calls > 0 && rng() < 0.95)
     .toSorted((a, b) => b.calls - a.calls || a.tool_name.localeCompare(b.tool_name));
-  return { currency, events, events_truncated: u.events > MAX_EVENTS, signals, tools };
+  return {
+    currency,
+    events,
+    events_truncated: u.events > MAX_EVENTS,
+    signals,
+    tools,
+    models: modelsOf(events),
+  };
 }
+
+/** The events' usage per model, highest API value first. */
+function modelsOf(events: readonly TimelineEvent[]): SessionModel[] {
+  return [...groupBy(events, (event) => event.model)]
+    .map(([model, group]): SessionModel => {
+      const tokens = { ...ZERO_TOKENS };
+      for (const event of group) {
+        for (const key of TOKEN_KEYS) {
+          tokens[key] += event.tokens[key];
+        }
+      }
+      const api = group.reduce((sum, event) => sum + event.api_value_micros, 0);
+      return { model, events: group.length, tokens, api_value_micros: api, approximate: false };
+    })
+    .toSorted((a, b) => b.api_value_micros - a.api_value_micros || a.model.localeCompare(b.model));
+}
+
+const TOKEN_KEYS = [
+  "input_uncached",
+  "cache_read",
+  "cache_write_5m",
+  "cache_write_1h",
+  "output",
+  "reasoning",
+] as const;
+const ZERO_TOKENS: SessionModel["tokens"] = {
+  input_uncached: 0,
+  cache_read: 0,
+  cache_write_5m: 0,
+  cache_write_1h: 0,
+  output: 0,
+  reasoning: 0,
+};

@@ -90,7 +90,7 @@ export function HorizontalBarChart({
             stroke="var(--border)"
           />
           <Tooltip formatter={formatTooltip(formatValue)} />
-          {series.length > 1 ? <Legend /> : null}
+          {series.length > 1 ? <Legend itemSorter={null} /> : null}
           {series.map((entry, index) => (
             <Bar
               key={entry.name}

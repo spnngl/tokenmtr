@@ -2,7 +2,7 @@ import type { DataSource, NotificationPermissionState } from "../data-source";
 import { DataSourceError } from "../errors";
 import type { Filters } from "../filters";
 import type { Currency } from "../format";
-import type { AppState, UnresolvedCwd } from "../schemas";
+import type { AppState, Settings, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
 import { billingSeriesOf, sessionAnalyticsOf, sessionTimelineOf } from "./analytics";
 import { advisorOf, quotaHistoryOf, quotaLatestOf } from "./quota";
@@ -16,6 +16,7 @@ import {
   factsFor,
   heatmapOf,
   modelsOf,
+  projectModelsOf,
   projectsOf,
   seriesOf,
   signalsOf,
@@ -103,6 +104,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
   /** Claude extra-usage rows under `filters`, when the scenario has any. */
   const extrasFor = (filters: Filters) => (extraUsage ? extraFactsFor(filters) : []);
   const tenYears = new Set<string>();
+  let menubarRings: Pick<Settings["tray"], "rings" | "hidden_profiles"> = {
+    rings: ["session", "weekly"],
+    hidden_profiles: [],
+  };
   let onboarded = scenario !== "onboarding";
   let notifications: NotificationPermissionState = "undetermined";
   let daemonInstalled = false;
@@ -203,7 +208,11 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     // `appState` ignores the error/loading scenarios: those exercise the screens, not the gate.
     appState: () => Promise.resolve(appState()),
     filterOptions: () => read(() => filterOptionsOf(empty ? [] : FACTS)),
-    settings: () => read(() => settingsOf(tenYears)),
+    settings: () =>
+      read(() => {
+        const settings = settingsOf(tenYears);
+        return { ...settings, tray: { ...settings.tray, ...menubarRings } };
+      }),
 
     overview: (filters) =>
       read(() => ({
@@ -234,6 +243,13 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
       return read(() => ({
         currency,
         rows: projectsOf(empty ? [] : factsFor(filters), currency),
+      }));
+    },
+    projectModels: (filters) => {
+      const currency = answered(filters.currency);
+      return read(() => ({
+        currency,
+        rows: projectModelsOf(empty ? [] : factsFor(filters), currency),
       }));
     },
     branches: (filters) => {
@@ -316,6 +332,10 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     projectRuleFor: (cwd) => read(() => ({ match: cwd, name: cwd.split("/").pop() ?? "project" })),
     addProjectRule: (cwd, name) => act("addProjectRule", cwd, name),
     addSubscription: (spec) => act("addSubscription", spec),
+    setMenubarRings: (rings, hiddenProfiles) => {
+      menubarRings = { rings: [...rings], hidden_profiles: [...hiddenProfiles] };
+      return act("setMenubarRings", rings, hiddenProfiles);
+    },
     connectKeychain: () => act("connectKeychain"),
     keepTenYears: (agent, profile) => {
       tenYears.add(`${agent}:${profile}`);

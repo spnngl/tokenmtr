@@ -1,16 +1,19 @@
 import type { ReactNode } from "react";
 import { type Remote, RemoteView } from "../../shared/remote-view";
+import type { Series } from "../../shared/schemas";
 import { PageHeader } from "../../shared/ui";
 import type { ModelsData } from "./model";
 import { ModelsView } from "./models-view";
 
 interface ModelsScreenProps {
   readonly remote: Remote<ModelsData>;
+  /** API value per bucket grouped by model, for the cost-over-time chart. */
+  readonly series: Remote<Series>;
   readonly onAddOverride: () => void;
 }
 
 /** The Models page: header plus every view state. */
-export function ModelsScreen({ remote, onAddOverride }: ModelsScreenProps): ReactNode {
+export function ModelsScreen({ remote, series, onAddOverride }: ModelsScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader to="/models" />
@@ -25,7 +28,7 @@ export function ModelsScreen({ remote, onAddOverride }: ModelsScreenProps): Reac
             : null
         }
       >
-        {(report) => <ModelsView report={report} onAddOverride={onAddOverride} />}
+        {(report) => <ModelsView report={report} series={series} onAddOverride={onAddOverride} />}
       </RemoteView>
     </div>
   );

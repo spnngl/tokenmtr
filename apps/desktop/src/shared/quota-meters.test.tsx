@@ -1,12 +1,13 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { etaText, QuotaMeters, windowLabel } from "./quota-meters";
+import { etaText, QuotaMeters } from "./quota-meters";
 import type { QuotaMeter, QuotaWindow } from "./schemas";
 
 afterEach(cleanup);
 
 const FIVE_HOUR: QuotaWindow = {
   window: "five_hour",
+  label: "5-hour",
   used_percent: 40,
   resets_at: "2026-06-15T14:00:00Z",
   resets_in_secs: 7200,
@@ -14,8 +15,19 @@ const FIVE_HOUR: QuotaWindow = {
   spend: null,
 };
 
+const FABLE: QuotaWindow = {
+  window: "weekly_scoped:fable",
+  label: "Weekly · Fable",
+  used_percent: 75,
+  resets_at: "2026-06-18T12:00:00Z",
+  resets_in_secs: 259_200,
+  eta: { kind: "not_enough_data" },
+  spend: null,
+};
+
 const EXTRA_USAGE: QuotaWindow = {
   window: "extra_usage",
+  label: "Extra usage",
   used_percent: 92.5,
   resets_at: null,
   resets_in_secs: null,
@@ -28,10 +40,10 @@ const EXTRA_USAGE: QuotaWindow = {
   },
 };
 
-function meter(windows: readonly QuotaWindow[]): QuotaMeter {
+function meter(windows: readonly QuotaWindow[], profile = "default"): QuotaMeter {
   return {
     agent: "claude",
-    profile: "default",
+    profile,
     fetched_at: "2026-06-15T12:00:00Z",
     age_secs: 60,
     status: "ok",
@@ -43,7 +55,18 @@ function meter(windows: readonly QuotaWindow[]): QuotaMeter {
 const NOW = Date.parse("2026-06-15T12:00:00Z");
 
 describe("QuotaMeters", () => {
-  it("shows the monthly extra-usage meter with spend, cap and the danger level", () => {
+  it("draws one donut per window named by the backend label, with percent and reset", () => {
+    render(<QuotaMeters meters={[meter([FIVE_HOUR, FABLE])]} timeZone="UTC" now={NOW} />);
+    const session = screen.getByRole("meter", { name: "5-hour" });
+    expect(session.getAttribute("aria-valuetext")).toBe("40% used, resets in 2h");
+    expect(within(session).getByText("40%")).toBeTruthy();
+    expect(within(session).getByText("Will not reach 100% before reset")).toBeTruthy();
+    const fable = screen.getByRole("meter", { name: "Weekly · Fable" });
+    // 75% is past the amber threshold: an icon, not colour alone.
+    expect(fable.querySelector("svg.text-warning")).not.toBeNull();
+  });
+
+  it("shows the monthly extra-usage donut with spend, cap and the danger level", () => {
     render(<QuotaMeters meters={[meter([FIVE_HOUR, EXTRA_USAGE])]} timeZone="UTC" now={NOW} />);
     const extra = screen.getByRole("meter", { name: "Extra usage" });
     expect(within(extra).getByText("93%")).toBeTruthy();
@@ -51,23 +74,17 @@ describe("QuotaMeters", () => {
     expect(within(extra).getByText(/\$50\.00/)).toBeTruthy();
     expect(within(extra).getByText(/this month/)).toBeTruthy();
     expect(within(extra).queryByText(/resets/i)).toBeNull();
-    // 92.5% is past the red threshold, like any other window.
     expect(extra.querySelector("svg.text-danger")).not.toBeNull();
   });
 
-  it("has no extra-usage meter when the account has extra usage off", () => {
-    render(<QuotaMeters meters={[meter([FIVE_HOUR])]} timeZone="UTC" now={NOW} />);
-    expect(screen.getByRole("meter", { name: "5-hour window" })).toBeTruthy();
-    expect(screen.queryByRole("meter", { name: "Extra usage" })).toBeNull();
-  });
-});
-
-describe("windowLabel", () => {
-  it("names known windows and title-cases the others", () => {
-    expect(windowLabel("five_hour")).toBe("5-hour window");
-    expect(windowLabel("seven_day")).toBe("7-day window");
-    expect(windowLabel("extra_usage")).toBe("Extra usage");
-    expect(windowLabel("seven_day_opus")).toBe("Seven day opus");
+  it("groups donuts per profile and shows a profile's problem in its own group", () => {
+    const expired: QuotaMeter = { ...meter([], "work"), status: "token_expired" };
+    render(<QuotaMeters meters={[meter([FIVE_HOUR]), expired]} timeZone="UTC" now={NOW} />);
+    const main = screen.getByRole("region", { name: "claude / default" });
+    expect(within(main).getByRole("meter", { name: "5-hour" })).toBeTruthy();
+    const work = screen.getByRole("region", { name: "claude / work" });
+    expect(within(work).queryByRole("meter")).toBeNull();
+    expect(within(work).getByRole("status").textContent).toMatch(/Token expired/);
   });
 });
 

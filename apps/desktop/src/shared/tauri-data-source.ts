@@ -19,6 +19,7 @@ import {
   ingestStatusSchema,
   modelsSchema,
   parseIssueSchema,
+  projectModelsSchema,
   projectRuleSchema,
   projectsSchema,
   quotaHistorySchema,
@@ -92,6 +93,7 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     series: (filters, groupBy) => read("series", { ...request(filters), groupBy }, seriesSchema),
     models: (filters) => read("models", request(filters), modelsSchema),
     projects: (filters) => read("projects", request(filters), projectsSchema),
+    projectModels: (filters) => read("project_models", request(filters), projectModelsSchema),
     branches: (filters) => read("branches", request(filters), branchesSchema),
     unresolvedCwds: (filters) =>
       read("unresolved_cwds", request(filters), z.array(unresolvedCwdSchema)),
@@ -142,6 +144,8 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     projectRuleFor: (cwd) => read("project_rule_for", { cwd }, projectRuleSchema),
     addProjectRule: (cwd, name) => act("add_project_rule", { cwd, name }),
     addSubscription: (spec) => act("add_subscription", { spec }),
+    // Tauri maps the camelCase key onto the command's `hidden_profiles` argument.
+    setMenubarRings: (rings, hiddenProfiles) => act("set_menubar_rings", { rings, hiddenProfiles }),
     connectKeychain: () => act("connect_keychain"),
     keepTenYears: (agent, profile) => act("keep_ten_years", { agent, profile }),
     setLaunchAtLogin: (enabled) => act("set_launch_at_login", { enabled }),

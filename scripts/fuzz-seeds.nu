@@ -44,7 +44,7 @@ def main [] {
     write-seeds $root pi_line (line-seeds $pi true)
     write-seeds $root stats_cache (whole-files [($fixtures | path join claude stats-cache.json)])
     write-seeds $root litellm_catalog (whole-files (do $http [litellm_small.json]))
-    write-seeds $root quota_response (whole-files (do $http [claude_usage.json claude_usage_sparse.json claude_profile.json claude_credentials.json]))
+    write-seeds $root quota_response (whole-files (do $http [claude_usage.json claude_usage_sparse.json claude_usage_limits.json claude_profile.json claude_credentials.json]))
     write-seeds $root ecb_xml (whole-files (do $http [ecb_daily.xml ecb_hist.xml]))
     write-seeds $root config (whole-files [($root | path join crates tokenmtr-config tests fixtures example.toml)])
 

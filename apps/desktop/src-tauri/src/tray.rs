@@ -1,21 +1,23 @@
-//! The menu-bar item: icon, title and native menu.
-//!
-//! The title text is computed by plain functions over [`TrayFigures`]; only [`install`] and
-//! [`refresh`] touch Tauri.
+//! The menu-bar icon: quota rings when there is something to show, the plain template icon
+//! otherwise, and the tray menu.
+
+mod rings;
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use jiff::Timestamp;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager as _, Wry};
-use tokenmtr_app::AppContext;
-use tokenmtr_config::MenubarTitle;
-use tokenmtr_core::Currency;
+use tokenmtr_config::{MenubarConfig, MenubarRing};
+use tokenmtr_core::WindowId;
 use tokenmtr_core::brand::{CLI_NAME, DISPLAY_NAME};
-use tokenmtr_query::{Period, Selection};
+use tokenmtr_query::{DateRange, Filters, QuotaMeter};
+use tokenmtr_store::QuotaStatus;
 
+pub use self::rings::{Level, Ring};
 use crate::backend::actions;
 use crate::error::CommandError;
 use crate::request::{DashboardTarget, Route};
@@ -30,114 +32,115 @@ const SCAN: &str = "scan";
 const SETTINGS: &str = "settings";
 const QUIT: &str = "quit";
 
-/// The numbers a tray title can show.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TrayFigures {
-    /// Currency of the money figures.
-    pub currency: Currency,
-    /// What today costs in cash: pay-as-you-go plus prorated fees.
-    pub paid_micros: i64,
-    /// What today's usage is worth at API prices.
-    pub api_value_micros: i64,
-    /// The highest utilization among all quota windows.
-    pub tightest_percent: Option<f64>,
-}
-
-/// Formats micro-units as `$12.34`, `€12.34`, or whole units from 100 up.
-#[must_use]
-pub fn format_money(micros: i64, currency: Currency) -> String {
-    let symbol = match currency {
-        Currency::Usd => '$',
-        Currency::Eur => '€',
-    };
-    let cents = (micros.max(0).saturating_add(5_000)) / 10_000;
-    if cents >= 10_000 {
-        format!("{symbol}{}", (cents + 50) / 100)
-    } else {
-        format!("{symbol}{}.{:02}", cents / 100, cents % 100)
-    }
-}
-
-/// The text next to the icon, `None` to show the icon alone.
-#[must_use]
-pub fn title_text(kind: MenubarTitle, figures: &TrayFigures) -> Option<String> {
+/// Whether a ring kind covers `window`.
+fn covers(kind: MenubarRing, window: &WindowId) -> bool {
     match kind {
-        MenubarTitle::Hidden => None,
-        MenubarTitle::PaidToday => Some(format_money(figures.paid_micros, figures.currency)),
-        MenubarTitle::ApiToday => Some(format_money(figures.api_value_micros, figures.currency)),
-        MenubarTitle::TightestQuota => figures
-            .tightest_percent
-            .map(|percent| format!("{}%", percent.round().max(0.0))),
+        MenubarRing::Session => window.as_str() == WindowId::FIVE_HOUR,
+        MenubarRing::Weekly => window.as_str() == WindowId::SEVEN_DAY,
+        MenubarRing::PerModel => window.scoped_model().is_some(),
     }
 }
 
-/// Reads today's figures across all agents.
-///
-/// # Errors
-///
-/// Store and query failures.
-pub fn figures(app: &AppContext, now: Timestamp) -> Result<TrayFigures, CommandError> {
-    let currency = app.config().display.currency;
-    let ctx = tokenmtr_app::query_context(app.config(), app.reader(), now, Some(currency))?;
-    let recap = tokenmtr_query::recap(
-        app.reader(),
-        &ctx,
-        &app.recap_config(),
-        Selection::All,
-        Period::Today,
-    )?
-    .recap;
-    let tightest_percent = recap
-        .quota
+/// The rings of each shown profile: the followed agents' profiles that are not hidden, one
+/// ring per selected window (session, weekly, then per model) or one dashed ring when the
+/// profile's quota cannot be read. Empty when no ring is selected or nothing was polled.
+#[must_use]
+pub fn ring_groups(meters: &[QuotaMeter], menubar: &MenubarConfig) -> Vec<Vec<Ring>> {
+    if menubar.rings.is_empty() {
+        return Vec::new();
+    }
+    meters
         .iter()
-        .flat_map(|meter| &meter.windows)
-        .map(|window| window.used_percent)
-        .reduce(f64::max);
-    Ok(TrayFigures {
-        currency: recap.currency,
-        paid_micros: recap.totals.usage.paid_micros,
-        api_value_micros: recap.totals.usage.api_value_micros,
-        tightest_percent,
-    })
+        .filter(|meter| {
+            menubar.agents.contains(&meter.agent)
+                && !menubar.hidden_profiles.contains(&meter.profile)
+        })
+        .map(|meter| {
+            if meter.status != QuotaStatus::Ok {
+                return vec![Ring::Unknown];
+            }
+            MenubarRing::ALL
+                .into_iter()
+                .filter(|kind| menubar.rings.contains(kind))
+                .flat_map(|kind| {
+                    meter
+                        .windows
+                        .iter()
+                        .filter(move |window| covers(kind, &window.window))
+                })
+                .map(|window| Ring::used(window.used_percent))
+                .collect()
+        })
+        .filter(|group: &Vec<Ring>| !group.is_empty())
+        .collect()
 }
 
-/// The title for the current store and config.
+/// The rings for the current store and config.
 ///
 /// # Errors
 ///
 /// Config, store and query failures.
-pub fn current_title(shell: &Shell, now: Timestamp) -> Result<Option<String>, CommandError> {
+pub fn current_rings(shell: &Shell, now: Timestamp) -> Result<Vec<Vec<Ring>>, CommandError> {
     let app = shell.backend.context()?;
-    Ok(title_text(app.config().menubar.title, &figures(&app, now)?))
+    let ctx = app.query_context(now)?;
+    let meters = tokenmtr_query::quota_latest(
+        app.reader(),
+        &ctx,
+        &Filters::new(DateRange::day(ctx.today())?),
+    )?;
+    Ok(ring_groups(&meters, &app.config().menubar))
 }
 
-/// Numbers title refreshes, so a slow one never overwrites the title of a later one.
+/// Numbers refreshes, so a slow one never overwrites the picture of a later one.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The rings on screen, so an unchanged picture is not set again.
+static SHOWN: Mutex<Option<Vec<Vec<Ring>>>> = Mutex::new(None);
 
-/// Recomputes the title off the main thread and applies it.
+/// Recomputes the rings off the main thread and redraws the icon when they changed.
 pub fn refresh(app: &AppHandle<Wry>) {
     let handle = app.clone();
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         let shell = handle.state::<Shell>().inner().clone();
-        let title = crate::backend::blocking(move || current_title(&shell, Timestamp::now())).await;
+        let groups =
+            crate::backend::blocking(move || current_rings(&shell, Timestamp::now())).await;
         if GENERATION.load(Ordering::SeqCst) != generation {
             return;
         }
         let Some(tray) = handle.tray_by_id(TRAY_ID) else {
             return;
         };
-        let text = match title {
-            Ok(text) => text,
+        let groups = match groups {
+            Ok(groups) => groups,
             Err(error) => {
-                tracing::debug!(%error, "tray title unavailable");
+                tracing::debug!(%error, "tray rings unavailable");
                 return;
             }
         };
-        if let Err(error) = tray.set_title(text) {
-            tracing::warn!(%error, "could not set the tray title");
+        let mut shown = SHOWN.lock().unwrap_or_else(PoisonError::into_inner);
+        if shown.as_ref() == Some(&groups) {
+            return;
+        }
+        match show(&tray, &groups) {
+            Ok(()) => *shown = Some(groups),
+            Err(error) => tracing::warn!(%error, "could not draw the tray icon"),
         }
     });
+}
+
+/// Sets the rings as a colour image, or the template icon when there is none.
+fn show(tray: &TrayIcon<Wry>, groups: &[Vec<Ring>]) -> tauri::Result<()> {
+    match rings::render(groups) {
+        Some(picture) => tray.set_icon_with_as_template(
+            Some(Image::new_owned(
+                picture.pixels,
+                picture.width,
+                picture.height,
+            )),
+            false,
+        ),
+        None => tray.set_icon_with_as_template(Some(Image::from_bytes(TRAY_ICON)?), true),
+    }
 }
 
 /// Creates the tray icon with its menu.
@@ -221,53 +224,111 @@ fn open(app: &AppHandle<Wry>, route: Route) {
 
 #[cfg(test)]
 mod tests {
+    use tokenmtr_core::{AgentId, ProfileId, QuotaEta};
+    use tokenmtr_query::QuotaWindowView;
+
     use super::*;
 
-    const FIGURES: TrayFigures = TrayFigures {
-        currency: Currency::Usd,
-        paid_micros: 12_345_678,
-        api_value_micros: 187_000_000,
-        tightest_percent: Some(81.6),
-    };
+    fn window(id: &str, used_percent: f64) -> QuotaWindowView {
+        let window = WindowId::new(id).unwrap();
+        QuotaWindowView {
+            label: window.label(),
+            window,
+            used_percent,
+            resets_at: None,
+            resets_in_secs: None,
+            eta: QuotaEta::NotEnoughData,
+            spend: None,
+        }
+    }
 
-    #[test]
-    fn money_has_cents_below_a_hundred_and_whole_units_above() {
-        assert_eq!(format_money(0, Currency::Usd), "$0.00");
-        assert_eq!(format_money(12_345_678, Currency::Usd), "$12.35");
-        assert_eq!(format_money(99_994_999, Currency::Eur), "€99.99");
-        assert_eq!(format_money(187_000_000, Currency::Usd), "$187");
-        assert_eq!(format_money(-5, Currency::Usd), "$0.00");
+    fn meter(profile: &str, status: QuotaStatus, windows: Vec<QuotaWindowView>) -> QuotaMeter {
+        QuotaMeter {
+            agent: AgentId::CLAUDE,
+            profile: ProfileId::try_from(profile).unwrap(),
+            fetched_at: Timestamp::UNIX_EPOCH,
+            age_secs: 0,
+            status,
+            account: None,
+            windows,
+        }
+    }
+
+    fn menubar(rings: Vec<MenubarRing>, hidden: &[&str]) -> MenubarConfig {
+        MenubarConfig {
+            agents: vec![AgentId::CLAUDE],
+            rings,
+            hidden_profiles: hidden
+                .iter()
+                .map(|p| ProfileId::try_from(*p).unwrap())
+                .collect(),
+            shortcut: None,
+            live_window: jiff::SignedDuration::from_mins(10),
+        }
+    }
+
+    fn meters() -> Vec<QuotaMeter> {
+        vec![
+            meter(
+                "default",
+                QuotaStatus::Ok,
+                vec![
+                    window("five_hour", 12.0),
+                    window("seven_day", 75.0),
+                    window("seven_day_opus", 5.0),
+                    window("weekly_scoped:fable", 95.0),
+                    window("extra_usage", 50.0),
+                ],
+            ),
+            meter("work", QuotaStatus::KeychainDenied, Vec::new()),
+        ]
     }
 
     #[test]
-    fn title_follows_the_configured_kind() {
+    fn rings_follow_the_selection_per_profile() {
+        let all = ring_groups(&meters(), &menubar(MenubarRing::ALL.to_vec(), &[]));
         assert_eq!(
-            title_text(MenubarTitle::PaidToday, &FIGURES).as_deref(),
-            Some("$12.35")
+            all,
+            [
+                vec![Ring::used(12.0), Ring::used(75.0), Ring::used(95.0)],
+                vec![Ring::Unknown],
+            ]
         );
+        let per_model = ring_groups(&meters(), &menubar(vec![MenubarRing::PerModel], &["work"]));
+        assert_eq!(per_model, [vec![Ring::used(95.0)]]);
+    }
+
+    const NONE: &[Vec<Ring>] = &[];
+
+    #[test]
+    fn no_selection_or_no_window_draws_nothing() {
+        assert_eq!(ring_groups(&meters(), &menubar(Vec::new(), &[])), NONE);
         assert_eq!(
-            title_text(MenubarTitle::ApiToday, &FIGURES).as_deref(),
-            Some("$187")
+            ring_groups(&[], &menubar(MenubarRing::ALL.to_vec(), &[])),
+            NONE
         );
+        let only_session = vec![meter(
+            "default",
+            QuotaStatus::Ok,
+            vec![window("seven_day", 1.0)],
+        )];
         assert_eq!(
-            title_text(MenubarTitle::TightestQuota, &FIGURES).as_deref(),
-            Some("82%")
+            ring_groups(&only_session, &menubar(vec![MenubarRing::Session], &[])),
+            NONE
         );
-        assert_eq!(title_text(MenubarTitle::Hidden, &FIGURES), None);
-        let no_quota = TrayFigures {
-            tightest_percent: None,
-            ..FIGURES
-        };
-        assert_eq!(title_text(MenubarTitle::TightestQuota, &no_quota), None);
     }
 
     #[test]
-    fn figures_read_today_from_the_store() -> Result<(), Box<dyn std::error::Error>> {
+    fn rings_read_the_store() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = crate::backend::fixture::seeded(crate::backend::fixture::CONFIG)?;
         let app = fixture.backend.context()?;
-        let figures = figures(&app, fixture.now)?;
-        assert_eq!(figures.api_value_micros, 5_000_000);
-        assert_eq!(figures.tightest_percent, None);
+        let ctx = app.query_context(fixture.now)?;
+        let meters = tokenmtr_query::quota_latest(
+            app.reader(),
+            &ctx,
+            &Filters::new(DateRange::day(ctx.today())?),
+        )?;
+        assert_eq!(ring_groups(&meters, &app.config().menubar), NONE);
         Ok(())
     }
 }

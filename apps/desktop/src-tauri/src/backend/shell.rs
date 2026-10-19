@@ -8,7 +8,7 @@ use rusqlite::OptionalExtension;
 use serde::Serialize;
 use tokenmtr_agents::ingest::DoctorReport;
 use tokenmtr_app::{AppContext, RETENTION_DAYS};
-use tokenmtr_config::{Config, MenubarTitle, ProfileLocation};
+use tokenmtr_config::{Config, MenubarRing, ProfileLocation};
 use tokenmtr_core::{AgentId, SessionId};
 use tokenmtr_query::{BackupView, DaemonHealth, FxRateView, QuotaMeter};
 use tokenmtr_store::StoreRead as _;
@@ -309,8 +309,10 @@ pub struct PricingBlock {
 /// Tray preferences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TrayBlock {
-    /// `paid_today`, `api_today`, `tightest_quota` or `none`.
-    pub title: String,
+    /// Window kinds drawn as menu-bar rings (`[menubar] rings`).
+    pub rings: Vec<MenubarRing>,
+    /// Profiles drawn without rings.
+    pub hidden_profiles: Vec<String>,
     /// Global shortcut; empty when disabled.
     pub shortcut: String,
 }
@@ -366,17 +368,6 @@ pub struct Settings {
     pub protected_folders: Vec<ProtectedFolder>,
     /// Recent backups.
     pub backups: Vec<BackupView>,
-}
-
-/// The text of a tray title kind, as the config spells it.
-#[must_use]
-pub const fn title_name(title: MenubarTitle) -> &'static str {
-    match title {
-        MenubarTitle::PaidToday => "paid_today",
-        MenubarTitle::ApiToday => "api_today",
-        MenubarTitle::TightestQuota => "tightest_quota",
-        MenubarTitle::Hidden => "none",
-    }
 }
 
 fn machine_name(config: &Config) -> String {
@@ -473,7 +464,13 @@ pub fn settings(
             models,
         },
         tray: TrayBlock {
-            title: title_name(config.menubar.title).to_owned(),
+            rings: config.menubar.rings.clone(),
+            hidden_profiles: config
+                .menubar
+                .hidden_profiles
+                .iter()
+                .map(|p| p.as_str().to_owned())
+                .collect(),
             shortcut: config.menubar.shortcut.clone().unwrap_or_default(),
         },
         alerts: AlertsBlock {

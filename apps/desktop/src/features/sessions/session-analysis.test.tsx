@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type Harness, renderApp } from "../../app/app-harness";
 import { axeViolations } from "../../shared/axe";
 import type { SessionPoint } from "../../shared/schemas";
-import { cacheHitBins, costBucketLabel, tokenMixValues, toolErrorRanking } from "./analysis-model";
+import {
+  cacheHitBins,
+  costBucketLabel,
+  histogramByModel,
+  tokenMixValues,
+  toolErrorRanking,
+} from "./analysis-model";
 
 afterEach(cleanup);
 
@@ -48,15 +54,39 @@ function point(overrides: Partial<SessionPoint>): SessionPoint {
 
 describe("session analysis model", () => {
   it("labels the first, inner and open cost buckets", () => {
-    expect(costBucketLabel({ min_micros: 0, max_micros: 10_000, sessions: 1 }, "USD")).toBe(
-      "< $0.01",
-    );
-    expect(costBucketLabel({ min_micros: 10_000, max_micros: 20_000, sessions: 1 }, "USD")).toBe(
-      "$0.01–$0.02",
-    );
-    expect(costBucketLabel({ min_micros: 100_000_000, max_micros: null, sessions: 1 }, "USD")).toBe(
-      "≥ $100.00",
-    );
+    expect(
+      costBucketLabel({ min_micros: 0, max_micros: 10_000, sessions: 1, models: [] }, "USD"),
+    ).toBe("< $0.01");
+    expect(
+      costBucketLabel({ min_micros: 10_000, max_micros: 20_000, sessions: 1, models: [] }, "USD"),
+    ).toBe("$0.01–$0.02");
+    expect(
+      costBucketLabel(
+        { min_micros: 100_000_000, max_micros: null, sessions: 1, models: [] },
+        "USD",
+      ),
+    ).toBe("≥ $100.00");
+  });
+
+  it("stacks the histogram by dominant model, top five then Other", () => {
+    const models = ["a", "b", "c", "d", "e", "f", "g"].map((model, index) => ({
+      model,
+      sessions: 10 - index,
+    }));
+    const { series, rows } = histogramByModel({
+      currency: "USD",
+      total: 0,
+      rows: [],
+      histogram: [
+        { min_micros: 0, max_micros: 10_000, sessions: 49, models },
+        { min_micros: 10_000, max_micros: null, sessions: 0, models: [] },
+      ],
+      days: [],
+      starts: [],
+    });
+    expect(series).toEqual(["a", "b", "c", "d", "e", "Other"]);
+    expect(rows[0]?.values).toEqual([10, 9, 8, 7, 6, 9]);
+    expect(rows[1]?.values).toEqual([0, 0, 0, 0, 0, 0]);
   });
 
   it("bins cache-hit ratios by ten points and skips sessions without input", () => {

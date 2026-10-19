@@ -1,26 +1,11 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { Label, Meter } from "react-aria-components";
 import { useConnectKeychain } from "./actions";
 import { Button } from "./button";
-import { formatClock, formatRelativeReset } from "./format";
+import { formatClock, formatPercent, formatRelativeReset } from "./format";
 import type { QuotaEta, QuotaMeter, QuotaSpend, QuotaStatus, QuotaWindow } from "./schemas";
 import { Amount } from "./ui";
-import { UsageMeter } from "./usage-meter";
-
-const WINDOW_LABELS: Readonly<Record<string, string>> = {
-  five_hour: "5-hour window",
-  seven_day: "7-day window",
-  extra_usage: "Extra usage",
-};
-
-/** `five_hour` -> "5-hour window"; unknown windows are title-cased rather than hidden. */
-export function windowLabel(window: string): string {
-  const known = WINDOW_LABELS[window];
-  if (known !== undefined) {
-    return known;
-  }
-  const words = window.replaceAll("_", " ");
-  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
-}
+import { LevelIcon, type MeterLevel, meterLevel } from "./usage-meter";
 
 const PROBLEMS: Readonly<Record<Exclude<QuotaStatus, "ok">, string>> = {
   signed_out: "Signed out. Sign in to the agent to see its quota.",
@@ -77,29 +62,89 @@ function SpendDetail(props: { readonly spend: QuotaSpend }): ReactNode {
   );
 }
 
-function WindowMeter(props: {
+const ARC: Record<MeterLevel, string> = {
+  ok: "text-accent",
+  warning: "text-warning",
+  danger: "text-danger",
+};
+
+/** A circle of circumference 100, so a dash length is a percentage. */
+const RADIUS = 100 / (2 * Math.PI);
+
+/** Profiles side by side from 320 px each; donuts side by side inside a profile. */
+const GROUPS: CSSProperties = {
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 20rem), 1fr))",
+};
+const DONUTS: CSSProperties = { gridTemplateColumns: "repeat(auto-fill, minmax(6rem, 1fr))" };
+
+/**
+ * One window as a donut: used percent in the centre, label and reset (or spend) below. A meter
+ * named by the label whose value text adds the reset; past 100% the ring is full and the centre
+ * keeps the true percentage.
+ */
+function WindowDonut(props: {
   readonly window: QuotaWindow;
   readonly timeZone: string;
   readonly now: number;
 }): ReactNode {
   const { window } = props;
+  const used = window.used_percent / 100;
+  const level = meterLevel(used);
   const reset =
     window.resets_at === null ? null : formatRelativeReset(Date.parse(window.resets_at), props.now);
   const eta = etaText(window.eta, props.timeZone);
-  const timing = [reset, eta].filter((part) => part !== null).join(" · ");
-  // The extra-usage window has spend and never a reset: its detail is the spend alone.
+  const valueLabel = [`${formatPercent(used)} used`, reset]
+    .filter((part) => part !== null)
+    .join(", ");
+  const filled = Math.min(Math.max(window.used_percent, 0), 100);
   return (
-    <UsageMeter
-      label={windowLabel(window.window)}
-      usedFraction={window.used_percent / 100}
-      detail={window.spend === null ? timing : <SpendDetail spend={window.spend} />}
-    />
+    <Meter
+      value={filled}
+      valueLabel={valueLabel}
+      className="flex flex-col items-center gap-1 text-center"
+    >
+      <div className="relative size-20">
+        <svg viewBox="0 0 36 36" className="size-full -rotate-90" aria-hidden>
+          <circle
+            cx="18"
+            cy="18"
+            r={RADIUS}
+            fill="none"
+            strokeWidth="3.5"
+            className="stroke-current text-surface-muted"
+          />
+          {filled === 0 ? null : (
+            <circle
+              cx="18"
+              cy="18"
+              r={RADIUS}
+              fill="none"
+              strokeWidth="3.5"
+              strokeDasharray={`${filled} ${100 - filled}`}
+              className={`stroke-current ${ARC[level]}`}
+            />
+          )}
+        </svg>
+        <span className="absolute inset-0 flex flex-col items-center justify-center text-sm font-semibold tabular-nums">
+          <LevelIcon level={level} />
+          {formatPercent(used)}
+        </span>
+      </div>
+      <Label className="text-sm font-medium">{window.label}</Label>
+      {/* The extra-usage window has spend and never a reset: its detail is the spend alone. */}
+      <p className="text-xs text-fg-muted">
+        {window.spend === null ? reset : <SpendDetail spend={window.spend} />}
+      </p>
+      {window.spend === null && eta !== null ? (
+        <p className="text-xs text-fg-muted">{eta}</p>
+      ) : null}
+    </Meter>
   );
 }
 
 /**
- * Quota meters of every profile that reports quota. Renders nothing for an empty list, so an
- * agent without the capability shows no block and no error.
+ * Quota donuts of every profile that reports quota, one group per agent profile. Renders nothing
+ * for an empty list, so an agent without the capability shows no block and no error.
  */
 export function QuotaMeters(props: {
   readonly meters: readonly QuotaMeter[];
@@ -109,36 +154,38 @@ export function QuotaMeters(props: {
   if (props.meters.length === 0) {
     return null;
   }
-  const showOwner = props.meters.length > 1;
   return (
-    <div className="flex flex-col gap-4">
-      {props.meters.map((meter) => (
-        <div key={`${meter.agent}:${meter.profile}`} className="flex flex-col gap-3">
-          {showOwner ? (
-            <p className="text-xs font-medium text-fg-muted">
-              {meter.agent} / {meter.profile}
+    <div className="grid gap-6" style={GROUPS}>
+      {props.meters.map((meter) => {
+        const owner = `${meter.agent} / ${meter.profile}`;
+        return (
+          <section key={owner} aria-label={owner} className="flex flex-col gap-3">
+            <h3 className="text-xs font-medium text-fg-muted">
+              {owner}
               {meter.account === null ? "" : ` (${meter.account})`}
-            </p>
-          ) : null}
-          {meter.status === "ok" ? (
-            meter.windows.map((window) => (
-              <WindowMeter
-                key={window.window}
-                window={window}
-                timeZone={props.timeZone}
-                now={props.now}
-              />
-            ))
-          ) : (
-            <>
-              <p role="status" className="text-sm text-fg-muted">
-                {PROBLEMS[meter.status]}
-              </p>
-              {meter.status === "keychain_denied" ? <ConnectKeychain /> : null}
-            </>
-          )}
-        </div>
-      ))}
+            </h3>
+            {meter.status === "ok" ? (
+              <div className="grid gap-3" style={DONUTS}>
+                {meter.windows.map((window) => (
+                  <WindowDonut
+                    key={window.window}
+                    window={window}
+                    timeZone={props.timeZone}
+                    now={props.now}
+                  />
+                ))}
+              </div>
+            ) : (
+              <>
+                <p role="status" className="text-sm text-fg-muted">
+                  {PROBLEMS[meter.status]}
+                </p>
+                {meter.status === "keychain_denied" ? <ConnectKeychain /> : null}
+              </>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

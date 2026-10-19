@@ -84,6 +84,12 @@ describe("golden command responses", () => {
     expect((await serve("projects").projects(FILTERS)).rows[1]?.client).toBe("Acme Corp");
   });
 
+  it("project_models", async () => {
+    const split = await serve("project_models").projectModels(FILTERS);
+    expect(split.rows[0]?.models[1]?.model).toBe("gpt-5");
+    expect(split.rows[1]?.project).toBeNull();
+  });
+
   it("branches", async () => {
     expect((await serve("branches").branches(FILTERS)).rows[1]?.branch).toBeNull();
   });
@@ -97,11 +103,15 @@ describe("golden command responses", () => {
   });
 
   it("tools", async () => {
-    expect((await serve("tools").tools(FILTERS)).mcp_servers[0]?.tool_name).toBeNull();
+    const tools = await serve("tools").tools(FILTERS);
+    expect(tools.mcp_servers[0]?.tool_name).toBeNull();
+    expect(tools.by_model[2]?.model).toBeNull();
   });
 
   it("signals", async () => {
-    expect((await serve("signals").signals(FILTERS)).compactions).toBe(3);
+    const signals = await serve("signals").signals(FILTERS);
+    expect(signals.compactions).toBe(3);
+    expect(signals.models[1]?.model).toBeNull();
   });
 
   it("billing", async () => {
@@ -135,11 +145,13 @@ describe("golden command responses", () => {
     const analytics = await serve("session_analytics").sessionAnalytics(FILTERS);
     expect(analytics.rows[0]?.cache_hit_percent).toBe(97.5);
     expect(analytics.starts).toHaveLength(168);
+    expect(analytics.histogram[0]?.models).toEqual([{ model: "gpt-5", sessions: 1 }]);
   });
 
   it("session_timeline", async () => {
     const timeline = await serve("session_timeline").sessionTimeline("claude", "0b7c1d2e", "USD");
     expect(timeline.signals[1]).toEqual({ at: "2026-05-03T13:30:02Z", kind: "compaction" });
+    expect(timeline.models[0]?.api_value_micros).toBe(912300);
   });
 
   it("quota_latest", async () => {

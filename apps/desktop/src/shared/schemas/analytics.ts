@@ -87,6 +87,8 @@ const costBucketSchema = z.object({
   min_micros: microsSchema,
   max_micros: microsSchema.nullable(),
   sessions: countSchema,
+  /** Sessions by dominant model (highest API value in the session), most first; sums to `sessions`. */
+  models: z.array(z.object({ model: z.string(), sessions: countSchema })),
 });
 export type CostBucket = z.infer<typeof costBucketSchema>;
 
@@ -123,6 +125,15 @@ const timelineEventSchema = z.object({
 });
 export type TimelineEvent = z.infer<typeof timelineEventSchema>;
 
+const sessionModelSchema = z.object({
+  model: z.string(),
+  events: countSchema,
+  tokens: tokenMixSchema,
+  api_value_micros: microsSchema,
+  approximate: z.boolean(),
+});
+export type SessionModel = z.infer<typeof sessionModelSchema>;
+
 export const sessionTimelineSchema = z.object({
   currency: currencySchema,
   /** At most 5000, in time order. */
@@ -138,5 +149,7 @@ export const sessionTimelineSchema = z.object({
       failed: countSchema,
     }),
   ),
+  /** Usage per model over the whole session (never truncated), highest API value first. */
+  models: z.array(sessionModelSchema),
 });
 export type SessionTimeline = z.infer<typeof sessionTimelineSchema>;

@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
+import { type BarDatum, HorizontalBarChart } from "../../shared/bar-chart";
 import { chartColor } from "../../shared/charts";
 import { formatCount } from "../../shared/format";
 import { ResponsiveChart } from "../../shared/responsive-chart";
 import type { SignalsReport } from "../../shared/schemas/usage";
+import { TOP_MODELS } from "../../shared/top-models";
 import { ChartFrame, type Column, DataTable, Kpi, KpiGrid, Section } from "../../shared/ui";
 import { useChartAnimation } from "../../shared/use-chart-animation";
-import { type SignalDay, signalPoints } from "./model";
+import { type SignalDay, signalPoints, signalsByModel } from "./model";
 
 type SessionRow = SignalsReport["top_sessions"][number];
 
@@ -21,6 +23,17 @@ const SESSION_COLUMNS: readonly Column<SessionRow>[] = [
   { header: "Session", cell: (row) => <code className="text-xs">{row.session}</code> },
   { header: "Compactions", numeric: true, cell: (row) => row.compactions },
 ];
+
+const MODEL_COLUMNS: readonly Column<BarDatum>[] = [
+  { header: "Model", cell: (row) => row.label },
+  { header: "API errors", numeric: true, cell: (row) => formatCount(row.values[0] ?? 0) },
+  { header: "Compactions", numeric: true, cell: (row) => formatCount(row.values[1] ?? 0) },
+];
+
+const SIGNAL_SERIES = [
+  { name: "API errors", color: "var(--danger)" },
+  { name: "Compactions", color: chartColor(1) },
+] as const;
 
 const AXIS_STYLE = { fontSize: 12, fill: "var(--fg-muted)" } as const;
 
@@ -62,10 +75,11 @@ function DailyChart({ days }: { readonly days: readonly SignalDay[] }): ReactNod
 /** API errors and compactions over time, and the sessions that compacted most. */
 export function SignalsPanel({ report }: { readonly report: SignalsReport }): ReactNode {
   const days = signalPoints(report.days);
+  const models = signalsByModel(report);
   return (
     <Section
       title="Errors and compactions"
-      description="API errors and context compactions per day."
+      description="API errors and context compactions per day and per model."
     >
       <KpiGrid>
         <Kpi label="API errors" value={formatCount(report.api_errors)} />
@@ -88,6 +102,29 @@ export function SignalsPanel({ report }: { readonly report: SignalsReport }): Re
           }
         >
           <DailyChart days={days} />
+        </ChartFrame>
+      )}
+      {models.length === 0 ? null : (
+        <ChartFrame
+          interactive
+          title="API errors and compactions per model"
+          description={`Top ${TOP_MODELS} models by signals, the rest as Other. A signal counts under the model its session used last before it.`}
+          points={models.length * SIGNAL_SERIES.length}
+          table={
+            <DataTable
+              caption="Signals per model"
+              columns={MODEL_COLUMNS}
+              rows={models}
+              rowKey={(row) => row.label}
+            />
+          }
+        >
+          <HorizontalBarChart
+            title="API errors and compactions per model"
+            rows={models}
+            series={SIGNAL_SERIES}
+            formatValue={(value) => formatCount(value)}
+          />
         </ChartFrame>
       )}
       {report.top_sessions.length === 0 ? null : (

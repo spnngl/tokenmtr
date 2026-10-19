@@ -93,6 +93,15 @@ pub fn projects(
     filtered(app, now, request, tokenmtr_query::projects)
 }
 
+/// `project_models`.
+pub fn project_models(
+    app: &AppContext,
+    now: Timestamp,
+    request: &QueryRequest,
+) -> Result<Value, CommandError> {
+    filtered(app, now, request, tokenmtr_query::project_models)
+}
+
 /// `branches`.
 pub fn branches(
     app: &AppContext,

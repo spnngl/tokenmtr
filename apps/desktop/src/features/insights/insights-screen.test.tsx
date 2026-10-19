@@ -4,9 +4,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
 import type { Remote } from "../../shared/remote-view";
 import { heatIntensity } from "../../shared/week-hour-table";
-import { INSIGHTS_DATA, signalDays } from "./fixtures";
+import { costSeries, INSIGHTS_DATA, signalDays } from "./fixtures";
 import { InsightsScreen } from "./insights-screen";
-import { heatGrid, type InsightsData, type SignalDay, signalPoints, toolLabel } from "./model";
+import {
+  costByModel,
+  heatGrid,
+  type InsightsData,
+  type SignalDay,
+  signalPoints,
+  signalsByModel,
+  toolCallsByModel,
+  toolKey,
+  toolLabel,
+} from "./model";
 
 afterEach(cleanup);
 
@@ -15,10 +25,11 @@ function renderScreen(remote: Remote<InsightsData>) {
 }
 
 const EMPTY: InsightsData = {
-  tools: { tools: [], mcp_servers: [] },
-  signals: { days: [], api_errors: 0, compactions: 0, top_sessions: [] },
+  tools: { tools: [], mcp_servers: [], by_model: [] },
+  signals: { days: [], api_errors: 0, compactions: 0, top_sessions: [], models: [] },
   branches: { currency: "USD", rows: [] },
   heatmap: { currency: "USD", cells: [] },
+  costs: { currency: "USD", bucket: "day", group_by: "model", points: [] },
 };
 
 describe("insights model", () => {
@@ -36,6 +47,44 @@ describe("insights model", () => {
       rows.reduce((total, row) => total + row.compactions, 0);
     expect(sum(merged)).toBe(sum(days));
     expect(merged[0]?.date).toBe(days[0]?.date);
+  });
+
+  it("splits tool calls by model, folding servers by their tools", () => {
+    const byTool = toolCallsByModel(INSIGHTS_DATA.tools.by_model, "tool");
+    expect(byTool.series).toEqual([
+      "claude-opus-4-1",
+      "claude-sonnet-4-5",
+      "gpt-5",
+      "Unknown model",
+    ]);
+    expect(byTool.values.get(toolKey({ tool_name: "Bash", mcp_server: null }))).toEqual([
+      800, 0, 404, 0,
+    ]);
+    const byServer = toolCallsByModel(INSIGHTS_DATA.tools.by_model, "server");
+    expect(byServer.series).toEqual(["claude-opus-4-1", "Unknown model"]);
+    expect(
+      byServer.values.get(toolKey({ tool_name: null, mcp_server: "notion" }, "server")),
+    ).toEqual([0, 22]);
+  });
+
+  it("keeps the top five models by API value and folds the rest into Other", () => {
+    const costs = costSeries(3);
+    const { series, rows } = costByModel(costs);
+    expect(series).toHaveLength(6);
+    expect(series.at(-1)).toBe("Other");
+    expect(series[0]).toBe("claude-opus-4-1");
+    const total = (values: readonly number[]) => values.reduce((sum, value) => sum + value, 0);
+    for (const [index, row] of rows.entries()) {
+      expect(total(row.values)).toBe(costs.points[index]?.api_value_micros);
+    }
+  });
+
+  it("labels signals without a model", () => {
+    expect(signalsByModel(INSIGHTS_DATA.signals).map((row) => row.label)).toEqual([
+      "claude-opus-4-1",
+      "gpt-5",
+      "Unknown model",
+    ]);
   });
 
   it("lays out the heatmap Monday first and scales intensity to the peak", () => {
@@ -85,6 +134,7 @@ describe("InsightsScreen", () => {
     const user = userEvent.setup();
     const tools = screen.getByRole("table", { name: "Tool calls per tool", hidden: true });
     expect(within(tools).getByText("linear / search_issues")).toBeTruthy();
+    expect(within(tools).getByRole("columnheader", { name: "claude-sonnet-4-5" })).toBeTruthy();
 
     await user.click(screen.getByRole("radio", { name: "By MCP server" }));
     const servers = screen.getByRole("table", { name: "Tool calls per MCP server", hidden: true });
@@ -93,9 +143,30 @@ describe("InsightsScreen", () => {
     for (const figure of container.querySelectorAll("figure[data-points]")) {
       expect(Number(figure.getAttribute("data-points"))).toBeLessThanOrEqual(400);
     }
-    expect(container.querySelectorAll("figure").length).toBe(3);
+    expect(container.querySelectorAll("figure").length).toBe(5);
+    const signals = screen.getByRole("table", { name: "Signals per model", hidden: true });
+    expect(within(signals).getByText("Unknown model")).toBeTruthy();
+    const costs = screen.getByRole("table", {
+      name: "API value per model over time",
+      hidden: true,
+    });
+    expect(within(costs).getByRole("columnheader", { name: "Other" })).toBeTruthy();
     expect(screen.getByRole("table", { name: "Activity by weekday and hour" })).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("cost by model opens its table and says so when nothing is priced", async () => {
+    const user = userEvent.setup();
+    renderScreen({
+      kind: "ready",
+      data: { ...INSIGHTS_DATA, costs: { ...INSIGHTS_DATA.costs, points: [] } },
+    });
+    expect(screen.getByText("No priced usage in this range.")).toBeTruthy();
+    cleanup();
+    renderScreen({ kind: "ready", data: INSIGHTS_DATA });
+    const figure = screen.getByRole("figure", { name: "API value per model over time" });
+    await user.click(within(figure).getByText("View as table"));
+    expect(within(figure).getByRole("table")).toBeTruthy();
   });
 
   it("heatmap metric toggle changes the cell text", async () => {

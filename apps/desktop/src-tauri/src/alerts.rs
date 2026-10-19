@@ -85,12 +85,15 @@ impl Notice {
         let (title, body, route) = match kind {
             AlertKind::QuotaThreshold { window, percent } => (
                 format!("Quota at {percent}%"),
-                format!("The {window} window passed {percent}% of its limit."),
+                format!(
+                    "The {} window passed {percent}% of its limit.",
+                    window.label()
+                ),
                 Route::Quota,
             ),
             AlertKind::QuotaReset { window } => (
                 "Quota reset".to_owned(),
-                format!("The {window} window has reset."),
+                format!("The {} window has reset.", window.label()),
                 Route::Quota,
             ),
             AlertKind::BudgetThreshold { budget, percent } => (

@@ -118,12 +118,71 @@ struct UsageResponse {
     seven_day_sonnet: Option<serde_json::Value>,
     seven_day_opus: Option<serde_json::Value>,
     extra_usage: Option<serde_json::Value>,
+    /// Newer limits, e.g. a weekly window scoped to one model; each entry is parsed on its own.
+    limits: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawWindow {
     utilization: Option<Utilization>,
     resets_at: Option<Timestamp>,
+}
+
+/// One `limits` entry: `{"kind": "weekly_scoped", "percent": 42.0, "resets_at": "...",
+/// "scope": {"model": {"display_name": "Fable"}}}`.
+#[derive(Debug, Deserialize)]
+struct RawLimit {
+    kind: String,
+    percent: Option<Utilization>,
+    resets_at: Option<Timestamp>,
+    scope: Option<RawScope>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawScope {
+    model: Option<RawModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawModel {
+    display_name: Option<String>,
+}
+
+const WEEKLY_SCOPED: &str = "weekly_scoped";
+
+/// The `weekly_scoped` windows of `limits`, one per model. Entries of another kind, without a
+/// model name or a percent, or malformed are skipped one by one.
+fn scoped_windows(limits: Option<serde_json::Value>) -> Vec<QuotaWindow> {
+    let entries: Vec<serde_json::Value> = part("limits", limits).unwrap_or_default();
+    let mut windows: Vec<QuotaWindow> = Vec::new();
+    for raw in entries {
+        let Some(limit) = part::<RawLimit>("limits", Some(raw)) else {
+            continue;
+        };
+        if limit.kind != WEEKLY_SCOPED {
+            continue;
+        }
+        let name = limit
+            .scope
+            .and_then(|s| s.model)
+            .and_then(|m| m.display_name);
+        let (Some(name), Some(utilization)) = (name, limit.percent) else {
+            continue;
+        };
+        let Ok(id) = WindowId::weekly_scoped(&name) else {
+            continue;
+        };
+        if windows.iter().all(|w| w.id != id) {
+            windows.push(QuotaWindow {
+                id,
+                state: QuotaWindowState {
+                    utilization,
+                    resets_at: limit.resets_at,
+                },
+            });
+        }
+    }
+    windows
 }
 
 /// Why a usage body was rejected. Carries the position and category only: serde messages quote
@@ -148,7 +207,8 @@ fn part<T: serde::de::DeserializeOwned>(name: &str, raw: Option<serde_json::Valu
 /// Parses an `/api/oauth/usage` body into windows stamped `fetched_at`. A window that is
 /// absent, `null`, has a `null` utilization, or is malformed (wrong types, a negative or
 /// non-finite utilization, an unparsable `resets_at`) is skipped; so is a disabled or malformed
-/// `extra_usage`.
+/// `extra_usage`. Each `weekly_scoped` entry of `limits` adds a window per model
+/// ([`WindowId::weekly_scoped`]) and replaces a top-level `seven_day_<model>` of the same model.
 ///
 /// # Errors
 /// [`QuotaParseError`] when the body is not a JSON object.
@@ -158,13 +218,18 @@ pub fn parse_quota_response(
 ) -> Result<ParsedQuota, QuotaParseError> {
     let response: UsageResponse =
         serde_json::from_slice(body).map_err(|e| QuotaParseError(e.into()))?;
-    let windows = [
+    let scoped = scoped_windows(response.limits);
+    let mut windows: Vec<QuotaWindow> = [
         (WindowId::FIVE_HOUR, response.five_hour),
         (WindowId::SEVEN_DAY, response.seven_day),
         ("seven_day_sonnet", response.seven_day_sonnet),
         ("seven_day_opus", response.seven_day_opus),
     ]
     .into_iter()
+    .filter(|(name, _)| {
+        let model = name.strip_prefix("seven_day_");
+        model.is_none() || !scoped.iter().any(|w| w.id.scoped_model() == model)
+    })
     .filter_map(|(name, raw)| {
         let raw: RawWindow = part(name, raw)?;
         Some(QuotaWindow {
@@ -176,6 +241,7 @@ pub fn parse_quota_response(
         })
     })
     .collect();
+    windows.extend(scoped);
     Ok(ParsedQuota {
         snapshot: QuotaSnapshot {
             fetched_at,

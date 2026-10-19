@@ -18,6 +18,7 @@ use crate::context::QueryContext;
 use crate::engine::{Dim, Row, Scope, closed, fetch, to_count, usd_to, where_sql};
 use crate::error::QueryError;
 use crate::filters::Filters;
+use crate::session_models::{SignalModel, ToolModelCalls, signal_models, tool_models};
 use crate::usage::{Usage, ratio};
 
 fn micros_ts(us: i64) -> Result<Timestamp, QueryError> {
@@ -290,12 +291,7 @@ pub fn projects(
             .add(row);
     }
     let whole: i64 = by_key.values().map(|u| u.api_value_micros).sum();
-    let mut statement = reader.connection().prepare_cached(
-        "SELECT project, MIN(name) FROM project_map WHERE project IS NOT NULL GROUP BY project",
-    )?;
-    let names: HashMap<String, Option<String>> = statement
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<Result<_, _>>()?;
+    let names = project_names(reader)?;
     let mut rows: Vec<ProjectRow> = by_key
         .into_iter()
         .map(|((project, client), usage)| ProjectRow {
@@ -319,6 +315,19 @@ pub fn projects(
         currency: ctx.currency(),
         rows,
     })
+}
+
+/// Display names of the project map, by project key.
+pub(crate) fn project_names(
+    reader: &StoreReader,
+) -> Result<HashMap<String, Option<String>>, QueryError> {
+    let mut statement = reader.connection().prepare_cached(
+        "SELECT project, MIN(name) FROM project_map WHERE project IS NOT NULL GROUP BY project",
+    )?;
+    let names = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    Ok(names)
 }
 
 /// One git branch of the insights screen.
@@ -807,6 +816,8 @@ pub struct ToolsReport {
     pub tools: Vec<ToolRow>,
     /// Per MCP server, most called first.
     pub mcp_servers: Vec<ToolRow>,
+    /// Per tool and model, most called first (see [`ToolModelCalls`] for the attribution).
+    pub by_model: Vec<ToolModelCalls>,
 }
 
 fn tool_rows(
@@ -845,7 +856,8 @@ fn tool_rows(
 }
 
 /// Tool calls in the range. Only the range, agents and profiles of `filters` apply: tool calls
-/// carry no model, project or client.
+/// carry no model, project or client. `by_model` attributes each call to the model its session
+/// used last before it.
 ///
 /// # Errors
 ///
@@ -873,12 +885,13 @@ pub fn tools(
         reader,
         "mcp_server, NULL",
         &format!("{conditions} AND mcp_server IS NOT NULL"),
-        params,
+        params.clone(),
         |server, _| (None, server),
     )?;
     Ok(ToolsReport {
         tools,
         mcp_servers: servers,
+        by_model: tool_models(reader, &conditions, params)?,
     })
 }
 
@@ -915,9 +928,12 @@ pub struct SignalsReport {
     pub compactions: u64,
     /// The ten sessions with most compactions.
     pub top_sessions: Vec<SessionCompactions>,
+    /// Per model, most signals first (see [`SignalModel`] for the attribution).
+    pub models: Vec<SignalModel>,
 }
 
-/// Signals in the range; only range and agents of `filters` apply.
+/// Signals in the range; only range and agents of `filters` apply. `models` attributes each
+/// signal to the model its session used last before it.
 ///
 /// # Errors
 ///
@@ -976,7 +992,7 @@ pub fn signals(
         "SELECT agent, session, COUNT(*) FROM session_signal WHERE {conditions} \
          AND kind = 'compaction' GROUP BY agent, session ORDER BY 3 DESC, 1, 2 LIMIT 10"
     ))?;
-    let mut rows = statement.query(params_from_iter(params))?;
+    let mut rows = statement.query(params_from_iter(params.iter().cloned()))?;
     let mut top_sessions = Vec::new();
     while let Some(row) = rows.next()? {
         let agent: String = row.get(0)?;
@@ -994,5 +1010,6 @@ pub fn signals(
         api_errors,
         compactions,
         top_sessions,
+        models: signal_models(reader, &conditions, params)?,
     })
 }

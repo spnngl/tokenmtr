@@ -29,8 +29,12 @@ pub(crate) enum Dim {
     None,
     Model,
     Project,
+    /// Project in `k1`, model in `k2`.
+    ProjectModel,
     Branch,
     Session,
+    /// Session in `k1`, model in `k2`.
+    SessionModel,
 }
 
 impl Dim {
@@ -39,8 +43,10 @@ impl Dim {
             Self::None => ("NULL", "NULL"),
             Self::Model => ("model", "NULL"),
             Self::Project => ("project", "client"),
+            Self::ProjectModel => ("project", "model"),
             Self::Branch => ("git_branch", "NULL"),
             Self::Session => ("session", "NULL"),
+            Self::SessionModel => ("session", "model"),
         }
     }
 }

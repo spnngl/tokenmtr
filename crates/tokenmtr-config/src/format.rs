@@ -4,9 +4,11 @@
 use std::ops::Range;
 
 use camino::Utf8Path;
-use toml_edit::{ArrayOfTables, DocumentMut, Item};
+use tokenmtr_core::ProfileId;
+use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, TableLike, Value};
 
 use crate::error::{ConfigPath, Segment};
+use crate::model::MenubarRing;
 use crate::raw::{RawConfig, RawProject, RawSubscription};
 
 /// The text did not decode into a [`RawConfig`].
@@ -30,6 +32,12 @@ pub enum EditError {
     /// The key exists but is not a `[[table array]]`.
     #[error("`{key}` exists but is not a [[{key}]] table array")]
     NotAnArrayOfTables {
+        /// The top-level key.
+        key: &'static str,
+    },
+    /// The key exists but is not a table.
+    #[error("`{key}` exists but is not a [{key}] table")]
+    NotATable {
         /// The top-level key.
         key: &'static str,
     },
@@ -67,6 +75,20 @@ pub trait ConfigCodec {
     ///
     /// [`EditError`] when `source` cannot be edited.
     fn append_project_rule(&self, source: &str, rule: &RawProject) -> Result<String, EditError>;
+
+    /// `source` with `[menubar]` `rings` and `hidden_profiles` set; the table is created when
+    /// missing, an existing value keeps its comment, and `hidden_profiles` is only written when
+    /// present or non-empty.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError`] when `source` cannot be edited.
+    fn set_menubar_rings(
+        &self,
+        source: &str,
+        rings: &[MenubarRing],
+        hidden_profiles: &[ProfileId],
+    ) -> Result<String, EditError>;
 }
 
 /// TOML, read with `toml` and edited with `toml_edit`.
@@ -108,6 +130,36 @@ impl ConfigCodec for TomlCodec {
     fn append_project_rule(&self, source: &str, rule: &RawProject) -> Result<String, EditError> {
         append_table(source, "projects", rule)
     }
+
+    fn set_menubar_rings(
+        &self,
+        source: &str,
+        rings: &[MenubarRing],
+        hidden_profiles: &[ProfileId],
+    ) -> Result<String, EditError> {
+        let mut document: DocumentMut = source.parse()?;
+        let menubar = document
+            .as_table_mut()
+            .entry("menubar")
+            .or_insert_with(toml_edit::table)
+            .as_table_like_mut()
+            .ok_or(EditError::NotATable { key: "menubar" })?;
+        set_array(menubar, "rings", rings.iter().map(|r| r.as_str()).collect());
+        if !hidden_profiles.is_empty() || menubar.contains_key("hidden_profiles") {
+            let profiles = hidden_profiles.iter().map(ProfileId::as_str).collect();
+            set_array(menubar, "hidden_profiles", profiles);
+        }
+        Ok(document.to_string())
+    }
+}
+
+/// Sets `key` to `array`, keeping the comment and spacing of an existing value.
+fn set_array(table: &mut dyn TableLike, key: &str, array: Array) {
+    let mut value = Value::Array(array);
+    if let Some(old) = table.get(key).and_then(Item::as_value) {
+        *value.decor_mut() = old.decor().clone();
+    }
+    table.insert(key, Item::Value(value));
 }
 
 fn append_table<T: serde::Serialize>(
@@ -171,5 +223,15 @@ impl ConfigCodec for ConfigFormat {
 
     fn append_project_rule(&self, source: &str, rule: &RawProject) -> Result<String, EditError> {
         self.codec().append_project_rule(source, rule)
+    }
+
+    fn set_menubar_rings(
+        &self,
+        source: &str,
+        rings: &[MenubarRing],
+        hidden_profiles: &[ProfileId],
+    ) -> Result<String, EditError> {
+        self.codec()
+            .set_menubar_rings(source, rings, hidden_profiles)
     }
 }

@@ -43,6 +43,8 @@ export const useModels = (filters: Filters) =>
   useRead(["models", filters], (ds) => ds.models(filters), KEEP);
 export const useProjects = (filters: Filters) =>
   useRead(["projects", filters], (ds) => ds.projects(filters), KEEP);
+export const useProjectModels = (filters: Filters) =>
+  useRead(["project-models", filters], (ds) => ds.projectModels(filters), KEEP);
 export const useBranches = (filters: Filters) =>
   useRead(["branches", filters], (ds) => ds.branches(filters), KEEP);
 export const useUnresolvedCwds = (filters: Filters) =>

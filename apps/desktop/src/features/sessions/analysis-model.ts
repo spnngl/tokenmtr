@@ -1,7 +1,8 @@
 import type { BarDatum } from "../../shared/bar-chart";
 import type { ColumnDatum } from "../../shared/column-chart";
 import { type Currency, formatCurrencyMicros } from "../../shared/format";
-import type { CostBucket, SessionPoint, TokenMix } from "../../shared/schemas";
+import type { CostBucket, SessionAnalytics, SessionPoint, TokenMix } from "../../shared/schemas";
+import { splitRows, topModels } from "../../shared/top-models";
 
 /** Short, recognisable form of a session id (the tables print the same prefix). */
 export function shortSession(session: string): string {
@@ -17,6 +18,29 @@ export function costBucketLabel(bucket: CostBucket, currency: Currency): string 
     return `< ${formatCurrencyMicros(bucket.max_micros, currency)}`;
   }
   return `${formatCurrencyMicros(bucket.min_micros, currency)}–${formatCurrencyMicros(bucket.max_micros, currency)}`;
+}
+
+/**
+ * The cost histogram stacked by dominant model: the top models by session count plus "Other",
+ * one row per bucket (empty buckets included) with its sessions per series.
+ */
+export function histogramByModel(data: SessionAnalytics): {
+  readonly series: readonly string[];
+  readonly rows: readonly BarDatum[];
+} {
+  const series = topModels(
+    data.histogram.flatMap((bucket) => bucket.models.map((m) => [m.model, m.sessions] as const)),
+  );
+  const rows = data.histogram.map((bucket): BarDatum => {
+    const label = costBucketLabel(bucket, data.currency);
+    const split = splitRows(bucket.models, series, (m) => ({
+      row: label,
+      model: m.model,
+      value: m.sessions,
+    }));
+    return { label, values: split.get(label) ?? series.map(() => 0) };
+  });
+  return { series, rows };
 }
 
 const CACHE_BINS = 10;

@@ -474,9 +474,9 @@ mod read {
     use tokenmtr_export::fetch_batch;
     use tokenmtr_query::{
         Bucket, Granularity, GroupBy, Period, QueryContext, Selection, billing, billing_series,
-        branches, heatmap, ingest_status, models, overview, projects, quota_history, quota_latest,
-        recap, series, session_analytics, session_detail, session_timeline, sessions, status,
-        tools, unresolved_cwds,
+        branches, heatmap, ingest_status, models, overview, project_models, projects,
+        quota_history, quota_latest, recap, series, session_analytics, session_detail,
+        session_timeline, sessions, signals, status, tools, unresolved_cwds,
     };
     use tokenmtr_store::{Dataset, Revision, StoreRead, StoreReader};
 
@@ -521,6 +521,13 @@ mod read {
     }
 
     #[divan::bench]
+    fn project_models_30d(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| {
+            project_models(r, c, &last_days(30)).expect("q")
+        });
+    }
+
+    #[divan::bench]
     fn branches_30d(bencher: Bencher<'_, '_>) {
         run(bencher, |r, c| branches(r, c, &last_days(30)).expect("q"));
     }
@@ -549,6 +556,11 @@ mod read {
     #[divan::bench]
     fn tools_30d(bencher: Bencher<'_, '_>) {
         run(bencher, |r, c| tools(r, c, &last_days(30)).expect("q"));
+    }
+
+    #[divan::bench]
+    fn signals_30d(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| signals(r, c, &last_days(30)).expect("q"));
     }
 
     #[divan::bench]

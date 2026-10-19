@@ -17,7 +17,8 @@ enabled = true                 # ECB fetch
 
 [menubar]
 agents = ["claude", "pi"]      # one recap tab each; default: all enabled agents
-title = "paid_today"           # paid_today | api_today | tightest_quota | none
+rings = ["session", "weekly"]  # quota rings: session | weekly | per_model; [] = plain icon
+hidden_profiles = []           # profiles drawn without rings
 shortcut = "Alt+CommandOrControl+U"  # "" disables
 live_window = "10m"            # Live block window
 

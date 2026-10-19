@@ -26,5 +26,28 @@
       "error_rate_percent": 6.45,
       "sessions": 7
     }
+  ],
+  "by_model": [
+    {
+      "tool_name": "Bash",
+      "mcp_server": null,
+      "model": "claude-opus-4-1",
+      "calls": 700,
+      "errors": 40
+    },
+    {
+      "tool_name": "Bash",
+      "mcp_server": null,
+      "model": "claude-sonnet-4-5",
+      "calls": 112,
+      "errors": 1
+    },
+    {
+      "tool_name": "mcp__linear__get_issue",
+      "mcp_server": "linear",
+      "model": null,
+      "calls": 24,
+      "errors": 0
+    }
   ]
 }

@@ -4,9 +4,10 @@ use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tokenmtr_config::{
-    Config, ConfigDocument, ConfigError, ConfigFormat, Env, RawProject, TimeZoneSetting, TomlCodec,
+    Config, ConfigDocument, ConfigError, ConfigFormat, Env, MenubarRing, RawProject,
+    TimeZoneSetting, TomlCodec,
 };
-use tokenmtr_core::SubscriptionSpec;
+use tokenmtr_core::{ProfileId, SubscriptionSpec};
 use tokenmtr_platform::Paths;
 use tokenmtr_platform::fs::replace_atomically;
 use tokenmtr_query::{
@@ -173,6 +174,23 @@ pub fn add_project_rule(
     env: &dyn Env,
 ) -> Result<Config, AppError> {
     edit_config(path, |document| document.add_project_rule(rule, env))
+}
+
+/// Sets `[menubar] rings` and `hidden_profiles` in the config file at `path`, keeping its
+/// comments.
+///
+/// # Errors
+///
+/// [`AppError::Config`] when the result is invalid; the file is untouched then.
+pub fn set_menubar_rings(
+    path: &Utf8Path,
+    rings: &[MenubarRing],
+    hidden_profiles: &[ProfileId],
+    env: &dyn Env,
+) -> Result<Config, AppError> {
+    edit_config(path, |document| {
+        document.set_menubar_rings(rings, hidden_profiles, env)
+    })
 }
 
 /// Creates the config file at `path` holding only comments (so the defaults) when it does

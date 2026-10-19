@@ -45,72 +45,96 @@
     {
       "min_micros": 0,
       "max_micros": 10000,
-      "sessions": 1
+      "sessions": 1,
+      "models": [
+        {
+          "model": "gpt-5",
+          "sessions": 1
+        }
+      ]
     },
     {
       "min_micros": 10000,
       "max_micros": 20000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 20000,
       "max_micros": 50000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 50000,
       "max_micros": 100000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 100000,
       "max_micros": 200000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 200000,
       "max_micros": 500000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 500000,
       "max_micros": 1000000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 1000000,
       "max_micros": 2000000,
-      "sessions": 1
+      "sessions": 1,
+      "models": [
+        {
+          "model": "claude-opus-4-1",
+          "sessions": 1
+        }
+      ]
     },
     {
       "min_micros": 2000000,
       "max_micros": 5000000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 5000000,
       "max_micros": 10000000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 10000000,
       "max_micros": 20000000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 20000000,
       "max_micros": 50000000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 50000000,
       "max_micros": 100000000,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     },
     {
       "min_micros": 100000000,
       "max_micros": null,
-      "sessions": 0
+      "sessions": 0,
+      "models": []
     }
   ],
   "days": [

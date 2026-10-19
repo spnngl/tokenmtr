@@ -18,7 +18,7 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::DialogExt as _;
 use tauri_plugin_notification::NotificationExt as _;
 use tokenmtr_app::AppContext;
-use tokenmtr_config::RawProject;
+use tokenmtr_config::{MenubarRing, RawProject};
 use tokenmtr_core::{AgentId, Currency, ProfileId, SessionId, SubscriptionSpec};
 use tokenmtr_platform::service::is_transient;
 use tokenmtr_platform::{
@@ -136,6 +136,7 @@ filtered_query!(
     overview,
     models,
     projects,
+    project_models,
     branches,
     unresolved_cwds,
     heatmap,
@@ -365,6 +366,20 @@ pub async fn add_subscription(
     Ok(())
 }
 
+/// Chooses the quota windows the menu bar draws as rings and the profiles it skips.
+#[tauri::command]
+pub async fn set_menubar_rings(
+    app: AppHandle<Wry>,
+    shell: State<'_, Shell>,
+    rings: Vec<MenubarRing>,
+    hidden_profiles: Vec<ProfileId>,
+) -> Reply<()> {
+    let backend = shell.backend.clone();
+    blocking(move || actions::set_menubar_rings(&backend, &rings, &hidden_profiles)).await?;
+    crate::tray::refresh(&app);
+    Ok(())
+}
+
 /// The project rule the app suggests for a directory.
 #[tauri::command]
 pub async fn project_rule_for(shell: State<'_, Shell>, cwd: String) -> Reply<RawProject> {
@@ -503,6 +518,7 @@ command_table!(
     series,
     models,
     projects,
+    project_models,
     branches,
     unresolved_cwds,
     heatmap,
@@ -534,6 +550,7 @@ command_table!(
     reveal_path,
     add_project_rule,
     add_subscription,
+    set_menubar_rings,
     project_rule_for,
     connect_keychain,
     keep_ten_years,

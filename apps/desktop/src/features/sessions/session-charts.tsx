@@ -36,6 +36,7 @@ import {
   TOKEN_MIX_SERIES,
   tokenMixValues,
 } from "./analysis-model";
+import { SessionModelsPanel } from "./session-models-panel";
 
 /** Tools drawn in the tool chart; the table lists them all. */
 const TOOL_BARS = 15;
@@ -270,7 +271,10 @@ function totals(timeline: SessionTimeline): { api: number; paid: number } {
   };
 }
 
-/** Charts of one session: cost over time with signal markers, token mix, cache hits, tools. */
+/**
+ * Charts of one session: cost over time with signal markers, usage per model, token mix, cache
+ * hits, tools.
+ */
 export function SessionCharts({
   timeline,
   timeZone,
@@ -299,6 +303,7 @@ export function SessionCharts({
       ) : (
         <CostOverTime timeline={timeline} timeZone={timeZone} />
       )}
+      {timeline.models.length === 0 ? null : <SessionModelsPanel timeline={timeline} />}
       <div className="grid gap-4 lg:grid-cols-2">
         <TokenMixPanel values={tokenMixValues(mix)} />
         {timeline.tools.length === 0 ? (

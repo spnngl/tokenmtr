@@ -84,6 +84,18 @@ export type ProjectRow = z.infer<typeof projectRowSchema>;
 export const projectsSchema = breakdownOf(projectRowSchema);
 export type Projects = z.infer<typeof projectsSchema>;
 
+const modelSliceSchema = z.object({ model: z.string(), ...usageShape });
+export type ModelSlice = z.infer<typeof modelSliceSchema>;
+/** Projects split by model (`project_models`): biggest API value first, models likewise. */
+const projectModelsRowSchema = z.object({
+  project: z.string().nullable(),
+  name: z.string().nullable(),
+  models: z.array(modelSliceSchema),
+});
+export type ProjectModelsRow = z.infer<typeof projectModelsRowSchema>;
+export const projectModelsSchema = breakdownOf(projectModelsRowSchema);
+export type ProjectModels = z.infer<typeof projectModelsSchema>;
+
 const branchRowSchema = z.object({ branch: z.string().nullable(), ...usageShape });
 export type BranchRow = z.infer<typeof branchRowSchema>;
 export const branchesSchema = breakdownOf(branchRowSchema);
@@ -196,9 +208,24 @@ const toolRowSchema = z.object({
 });
 export type ToolRow = z.infer<typeof toolRowSchema>;
 
+/**
+ * Calls of one tool by one model. A call counts under the model its session used last before
+ * it (else first after it); `model` is null when the session has no usage event.
+ */
+const toolModelCallsSchema = z.object({
+  tool_name: z.string(),
+  mcp_server: z.string().nullable(),
+  model: z.string().nullable(),
+  calls: countSchema,
+  errors: countSchema,
+});
+export type ToolModelCalls = z.infer<typeof toolModelCallsSchema>;
+
 export const toolsReportSchema = z.object({
   tools: z.array(toolRowSchema),
   mcp_servers: z.array(toolRowSchema),
+  /** Most called first. */
+  by_model: z.array(toolModelCallsSchema),
 });
 export type ToolsReport = z.infer<typeof toolsReportSchema>;
 
@@ -219,6 +246,14 @@ export const signalsReportSchema = z.object({
   api_errors: countSchema,
   compactions: countSchema,
   top_sessions: z.array(sessionCompactionsSchema),
+  /** Attributed like tool calls; most signals first, `model` null without usage events. */
+  models: z.array(
+    z.object({
+      model: z.string().nullable(),
+      api_errors: countSchema,
+      compactions: countSchema,
+    }),
+  ),
 });
 export type SignalsReport = z.infer<typeof signalsReportSchema>;
 

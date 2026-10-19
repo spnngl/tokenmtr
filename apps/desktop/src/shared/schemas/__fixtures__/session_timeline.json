@@ -58,5 +58,35 @@
       "calls": 1,
       "failed": 1
     }
+  ],
+  "models": [
+    {
+      "model": "claude-opus-4-1",
+      "events": 1,
+      "tokens": {
+        "input_uncached": 1200,
+        "cache_read": 45000,
+        "cache_write_5m": 800,
+        "cache_write_1h": 0,
+        "output": 1204,
+        "reasoning": 0
+      },
+      "api_value_micros": 912300,
+      "approximate": false
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "events": 1,
+      "tokens": {
+        "input_uncached": 400,
+        "cache_read": 50000,
+        "cache_write_5m": 300,
+        "cache_write_1h": 0,
+        "output": 310,
+        "reasoning": 0
+      },
+      "api_value_micros": 160400,
+      "approximate": false
+    }
   ]
 }

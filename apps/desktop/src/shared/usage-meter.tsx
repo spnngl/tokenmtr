@@ -6,7 +6,7 @@ import { formatPercent } from "./format";
 export type MeterLevel = "ok" | "warning" | "danger";
 
 /** Amber at >= 70%, red at >= 90%, as the UI brief (`BRIEF.md`) sets. */
-function meterLevel(usedFraction: number): MeterLevel {
+export function meterLevel(usedFraction: number): MeterLevel {
   if (usedFraction >= 0.9) {
     return "danger";
   }
@@ -30,6 +30,21 @@ interface UsageMeterProps {
   readonly detail?: ReactNode;
 }
 
+/** The icon of a warning or danger level, so colour is never the only cue; nothing when ok. */
+export function LevelIcon({ level }: { readonly level: MeterLevel }): ReactNode {
+  switch (level) {
+    case "warning":
+      return <TriangleAlert className="size-4 text-warning" aria-hidden />;
+    case "danger":
+      return <CircleAlert className="size-4 text-danger" aria-hidden />;
+    case "ok":
+      return null;
+    default:
+      level satisfies never;
+      throw new Error("unreachable level");
+  }
+}
+
 /** A labelled meter. Warning and danger levels add an icon, so colour is never the only cue. */
 export function UsageMeter({ label, usedFraction, detail }: UsageMeterProps): ReactNode {
   const level = meterLevel(usedFraction);
@@ -40,12 +55,7 @@ export function UsageMeter({ label, usedFraction, detail }: UsageMeterProps): Re
           <div className="flex items-center justify-between gap-2 text-sm">
             <Label className="min-w-0 truncate font-medium">{label}</Label>
             <span className="flex items-center gap-1 tabular-nums">
-              {level === "warning" ? (
-                <TriangleAlert className="size-4 text-warning" aria-hidden />
-              ) : null}
-              {level === "danger" ? (
-                <CircleAlert className="size-4 text-danger" aria-hidden />
-              ) : null}
+              <LevelIcon level={level} />
               {formatPercent(usedFraction)}
             </span>
           </div>

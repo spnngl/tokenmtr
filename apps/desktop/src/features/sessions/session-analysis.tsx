@@ -2,7 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CartesianGrid, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 import { useFilters } from "../../app/use-filters";
-import { HorizontalBarChart } from "../../shared/bar-chart";
+import { type BarDatum, HorizontalBarChart } from "../../shared/bar-chart";
 import { AXIS, chartColor, compactMoney } from "../../shared/charts";
 import { ColumnChart, type ColumnDatum } from "../../shared/column-chart";
 import { topRows } from "../../shared/decimate";
@@ -19,13 +19,15 @@ import { RankedBars } from "../../shared/ranked-bars";
 import { RemoteView } from "../../shared/remote-view";
 import { ResponsiveChart } from "../../shared/responsive-chart";
 import type { SessionAnalytics, SessionPoint } from "../../shared/schemas";
+import { StackedColumnChart } from "../../shared/stacked-column-chart";
+import { TOP_MODELS } from "../../shared/top-models";
 import { Amount, Card, ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
 import { useChartAnimation } from "../../shared/use-chart-animation";
 import { toRemote } from "../../shared/use-remote";
 import { WeekHourTable, weekHourGrid } from "../../shared/week-hour-table";
 import {
   cacheHitBins,
-  costBucketLabel,
+  histogramByModel,
   mixTotal,
   shortSession,
   TOKEN_MIX_SERIES,
@@ -69,33 +71,51 @@ const COUNT_COLUMNS = (header: string): Column<ColumnDatum>[] => [
 ];
 
 function CostHistogram({ data }: { readonly data: SessionAnalytics }): ReactNode {
-  const columns = data.histogram.map((bucket) => ({
-    label: costBucketLabel(bucket, data.currency),
-    value: bucket.sessions,
-  }));
+  const { series, rows } = histogramByModel(data);
+  const columns: Column<BarDatum>[] = [
+    { header: "API value", cell: (row) => row.label },
+    ...series.map(
+      (name, index): Column<BarDatum> => ({
+        header: name,
+        numeric: true,
+        cell: (row) => formatCount(row.values[index] ?? 0),
+        sortValue: (row) => row.values[index] ?? 0,
+      }),
+    ),
+    {
+      header: "Sessions",
+      numeric: true,
+      cell: (row) => formatCount(sum(row.values)),
+      sortValue: (row) => sum(row.values),
+    },
+  ];
   return (
     <ChartFrame
       interactive
       title="Sessions by API value"
-      description="How many sessions fall in each API value band, over every session in range."
-      points={columns.length}
+      description={`How many sessions fall in each API value band, over every session in range. Each session counts once, under its dominant model: the one with the highest API value in the session (top ${TOP_MODELS} models, the rest as Other).`}
+      points={rows.length}
       table={
         <DataTable
-          caption="Sessions by API value"
-          rows={columns}
+          caption="Sessions by API value and dominant model"
+          rows={rows}
           rowKey={(row) => row.label}
-          columns={COUNT_COLUMNS("API value")}
+          columns={columns}
         />
       }
     >
-      <ColumnChart
+      <StackedColumnChart
         title="Sessions by API value"
-        data={columns}
-        name="Sessions"
+        rows={rows}
+        series={series}
         formatValue={formatCount}
       />
     </ChartFrame>
   );
+}
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
 }
 
 function CostScatter({

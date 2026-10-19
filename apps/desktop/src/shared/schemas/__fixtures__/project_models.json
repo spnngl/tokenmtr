@@ -1,0 +1,80 @@
+{
+  "currency": "USD",
+  "rows": [
+    {
+      "project": "tokenmtr",
+      "name": "TokenMtr",
+      "models": [
+        {
+          "model": "claude-sonnet-4-5",
+          "events": 1180,
+          "input_uncached": 260100,
+          "cache_read": 64100200,
+          "cache_write_5m": 1400200,
+          "cache_write_1h": 380000,
+          "output": 1201200,
+          "reasoning": 70100,
+          "total_tokens": 67341700,
+          "api_value_micros": 118200400,
+          "api_value_usd_micros": 118200400,
+          "paid_micros": 7100000,
+          "extra_usage_micros": 0,
+          "subscription_value_micros": 111100400,
+          "subscription_fee_micros": 0,
+          "reported_events": 100,
+          "estimated_events": 1076,
+          "unpriced_events": 4,
+          "approximate": false
+        },
+        {
+          "model": "gpt-5",
+          "events": 130,
+          "input_uncached": 30000,
+          "cache_read": 6000000,
+          "cache_write_5m": 100000,
+          "cache_write_1h": 0,
+          "output": 100000,
+          "reasoning": 10000,
+          "total_tokens": 6230000,
+          "api_value_micros": 13000000,
+          "api_value_usd_micros": 13000000,
+          "paid_micros": 1000000,
+          "extra_usage_micros": 0,
+          "subscription_value_micros": 12000000,
+          "subscription_fee_micros": 0,
+          "reported_events": 50,
+          "estimated_events": 80,
+          "unpriced_events": 0,
+          "approximate": false
+        }
+      ]
+    },
+    {
+      "project": null,
+      "name": null,
+      "models": [
+        {
+          "model": "claude-sonnet-4-5",
+          "events": 37,
+          "input_uncached": 8000,
+          "cache_read": 1200000,
+          "cache_write_5m": 30000,
+          "cache_write_1h": 0,
+          "output": 20000,
+          "reasoning": 0,
+          "total_tokens": 1258000,
+          "api_value_micros": 2410300,
+          "api_value_usd_micros": 2410300,
+          "paid_micros": 0,
+          "extra_usage_micros": 0,
+          "subscription_value_micros": 2410300,
+          "subscription_fee_micros": 0,
+          "reported_events": 0,
+          "estimated_events": 37,
+          "unpriced_events": 0,
+          "approximate": true
+        }
+      ]
+    }
+  ]
+}

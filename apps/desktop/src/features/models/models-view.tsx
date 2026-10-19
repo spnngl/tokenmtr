@@ -1,12 +1,17 @@
 import type { ReactNode } from "react";
 import { Button } from "../../shared/button";
 import { formatCount, formatPercent, formatTokens } from "../../shared/format";
+import type { Remote } from "../../shared/remote-view";
+import type { Series } from "../../shared/schemas";
 import type { ModelRow } from "../../shared/schemas/usage";
 import { Amount, Badge, type Column, DataTable, Section } from "../../shared/ui";
 import { costSourceMix, divergentModels, type ModelsData, unpricedModels } from "./model";
+import { ModelCharts } from "./model-charts";
 
 interface ModelsViewProps {
   readonly report: ModelsData;
+  /** API value per bucket grouped by model, under the same filters. */
+  readonly series: Remote<Series>;
   /** Opens the pricing override editor in Settings. */
   readonly onAddOverride: () => void;
 }
@@ -83,8 +88,8 @@ function columns(report: ModelsData): readonly Column<ModelRow>[] {
   ];
 }
 
-/** Per-model tokens, cost, share and cost-source quality, with the warnings above the table. */
-export function ModelsView({ report, onAddOverride }: ModelsViewProps): ReactNode {
+/** Per-model charts, then tokens, cost, share and cost-source quality; warnings come first. */
+export function ModelsView({ report, series, onAddOverride }: ModelsViewProps): ReactNode {
   const unpriced = unpricedModels(report.rows);
   const divergent = divergentModels(report.rows);
   return (
@@ -112,6 +117,7 @@ export function ModelsView({ report, onAddOverride }: ModelsViewProps): ReactNod
           </p>
         </div>
       )}
+      <ModelCharts report={report} series={series} />
       <Section
         title="Models"
         description="Biggest API value first. A leading ≈ marks an estimated or unpriced figure."

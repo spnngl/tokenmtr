@@ -24,8 +24,10 @@ export type QuotaSpend = z.infer<typeof quotaSpendSchema>;
 export const EXTRA_USAGE_WINDOW = "extra_usage";
 
 const quotaWindowSchema = z.object({
-  /** `five_hour`, `seven_day`, ..., `extra_usage` (last). */
+  /** `five_hour`, `seven_day`, `weekly_scoped:<model>`, ..., `extra_usage` (last). */
   window: z.string(),
+  /** Display name from the backend, e.g. `Weekly · Fable`. */
+  label: z.string(),
   /** May exceed 100. */
   used_percent: z.number(),
   resets_at: timestampSchema.nullable(),
@@ -58,6 +60,8 @@ export const quotaHistorySchema = z.object({
   agent: z.string(),
   profile: z.string(),
   window: z.string(),
+  /** Display name from the backend. */
+  label: z.string(),
   points: z.array(quotaPointSchema),
   /** Distinct reset times inside the range. */
   resets: z.array(timestampSchema),

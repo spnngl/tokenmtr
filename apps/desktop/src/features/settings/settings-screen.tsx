@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Switch } from "react-aria-components";
 import {
   useDataAction,
   useInstallDaemon,
@@ -13,7 +12,7 @@ import { formatDateTime } from "../../shared/format";
 import { MoveToApplicationsHint } from "../../shared/move-to-applications";
 import { useSettings } from "../../shared/queries";
 import { RemoteView } from "../../shared/remote-view";
-import type { MenubarTitle, Settings } from "../../shared/schemas";
+import type { Settings } from "../../shared/schemas";
 import { ThemeSwitcher } from "../../shared/theme-switcher";
 import { Card, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
@@ -25,18 +24,12 @@ import {
   ProtectedFoldersSection,
   RecentAlertsSection,
 } from "./data-section";
+import { MenubarSection, SettingSwitch } from "./menubar-section";
 
 const DAEMON_TEXT: Record<Settings["daemon"]["state"], string> = {
   running: "Running",
   stale: "Not responding",
   never_started: "Never started",
-};
-
-const MENUBAR_TITLE_TEXT: Record<MenubarTitle, string> = {
-  paid_today: "Paid today",
-  api_today: "API value today",
-  tightest_quota: "Tightest quota",
-  none: "Icon only",
 };
 
 function Fact(props: { readonly label: string; readonly children: ReactNode }): ReactNode {
@@ -80,17 +73,13 @@ function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
           Reveal exports folder
         </Button>
       </div>
-      <Switch
+      <SettingSwitch
         // Shows the requested state while it is applied; a failure toasts and falls back.
         isSelected={login.isPending ? login.variables : settings.launch_at_login}
         onChange={(enabled) => login.mutate(enabled)}
-        className="group flex min-h-9 w-fit items-center gap-2 text-sm"
       >
-        <span className="flex h-5 w-9 items-center rounded-full border border-border bg-surface-muted px-0.5 transition-colors group-data-selected:bg-accent group-data-focus-visible:outline-2 group-data-focus-visible:outline-offset-2 group-data-focus-visible:outline-ring">
-          <span className="size-4 rounded-full bg-fg-muted transition-transform group-data-selected:translate-x-4 group-data-selected:bg-accent-fg" />
-        </span>
         Launch at login
-      </Switch>
+      </SettingSwitch>
       <MoveToApplicationsHint error={login.error} />
     </Card>
   );
@@ -166,7 +155,6 @@ function PreferencesCard({ settings }: { readonly settings: Settings }): ReactNo
   return (
     <Card title="Preferences">
       <dl className="flex flex-col gap-2">
-        <Fact label="Menu-bar title">{MENUBAR_TITLE_TEXT[tray.title]}</Fact>
         <Fact label="Global shortcut">
           <kbd>{tray.shortcut}</kbd>
         </Fact>
@@ -196,6 +184,7 @@ export function SettingsScreen(): ReactNode {
             <DaemonCard settings={settings} />
             <DisplayCard settings={settings} />
             <PreferencesCard settings={settings} />
+            <MenubarSection settings={settings} />
             <ProtectedFoldersSection folders={settings.protected_folders} />
             <BackupsSection backups={settings.backups} />
             <ParseIssuesSection />

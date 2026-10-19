@@ -84,9 +84,9 @@ const protectedFolderSchema = z.object({
   accessible: z.boolean(),
 });
 
-/** What the menu-bar item shows (`menubar.title`; `MenubarTitle` in `tokenmtr-config`). */
-const MENUBAR_TITLES = ["paid_today", "api_today", "tightest_quota", "none"] as const;
-export type MenubarTitle = (typeof MENUBAR_TITLES)[number];
+/** Quota windows the menu bar draws as rings (`menubar.rings`; `MenubarRing` in `tokenmtr-config`). */
+export const MENUBAR_RINGS = ["session", "weekly", "per_model"] as const;
+export type MenubarRing = (typeof MENUBAR_RINGS)[number];
 
 export const settingsSchema = z.object({
   config_path: z.string(),
@@ -101,7 +101,11 @@ export const settingsSchema = z.object({
     offline: z.boolean(),
   }),
   pricing: z.object({ snapshot_date: z.string(), models: countSchema }),
-  tray: z.object({ title: z.enum(MENUBAR_TITLES), shortcut: z.string() }),
+  tray: z.object({
+    rings: z.array(z.enum(MENUBAR_RINGS)),
+    hidden_profiles: z.array(z.string()),
+    shortcut: z.string(),
+  }),
   alerts: z.object({
     quota_thresholds: z.array(countSchema),
     budget_thresholds: z.array(countSchema),

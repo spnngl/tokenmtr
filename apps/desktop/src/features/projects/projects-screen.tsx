@@ -15,8 +15,11 @@ import {
 } from "../../shared/format";
 import {
   useBranches,
+  useModels,
+  useProjectModels,
   useProjectRuleFor,
   useProjects,
+  useSeries,
   useUnresolvedCwds,
 } from "../../shared/queries";
 import { RankedBars } from "../../shared/ranked-bars";
@@ -24,6 +27,14 @@ import { CardRemote, NO_USAGE_COPY, RemoteView } from "../../shared/remote-view"
 import type { ProjectRow, UnresolvedCwd } from "../../shared/schemas";
 import { Amount, Card, type Column, DataTable, PageHeader } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
+import { CostByModelPanel } from "../insights/cost-by-model-panel";
+import {
+  ModelCostBars,
+  ProjectCostLines,
+  ProjectModelBars,
+  projectLabel,
+  seriesLabels,
+} from "./project-charts";
 
 const NO_CLIENT = "No client";
 
@@ -50,7 +61,7 @@ function ProjectBars(props: {
         const { project } = row;
         return {
           key: project ?? "(none)",
-          label: row.name ?? project ?? "No project",
+          label: projectLabel(row),
           value: (
             <Amount
               micros={row.api_value_micros}
@@ -67,7 +78,38 @@ function ProjectBars(props: {
   );
 }
 
-/** One project's branches (`/projects/$project`); the filter bar's filters still apply. */
+/** Cost over time per project, and each project's split by model. */
+function ProjectsCharts({ rows }: { readonly rows: readonly ProjectRow[] }): ReactNode {
+  const { filters } = useFilters();
+  return (
+    <>
+      <CardRemote title="Cost over time" remote={toRemote(useSeries(filters, "project"))}>
+        {(series) => <ProjectCostLines series={series} label={seriesLabels(rows)} />}
+      </CardRemote>
+      <CardRemote title="Cost by model per project" remote={toRemote(useProjectModels(filters))}>
+        {(split) => <ProjectModelBars split={split} />}
+      </CardRemote>
+    </>
+  );
+}
+
+/** One project's cost by model, overall and over time. */
+function ProjectDetailCharts({ project }: { readonly project: string }): ReactNode {
+  const { filters } = useFilters();
+  const scoped = { ...filters, project };
+  return (
+    <>
+      <CardRemote title="Cost by model" remote={toRemote(useModels(scoped))}>
+        {({ rows, currency }) => <ModelCostBars rows={rows} currency={currency} />}
+      </CardRemote>
+      <CardRemote title="Cost by model over time" remote={toRemote(useSeries(scoped, "model"))}>
+        {(series) => <CostByModelPanel costs={series} />}
+      </CardRemote>
+    </>
+  );
+}
+
+/** One project's models and branches (`/projects/$project`); the filter bar's filters still apply. */
 export function ProjectDetailScreen({ project }: { readonly project: string }): ReactNode {
   const { filters } = useFilters();
   const navigate = useNavigate();
@@ -88,7 +130,7 @@ export function ProjectDetailScreen({ project }: { readonly project: string }): 
           All projects
         </Button>
       </div>
-      <PageHeader title={project} summary="Cost per git branch." />
+      <PageHeader title={project} summary="Cost per model and per git branch." />
       <RemoteView
         remote={remote}
         emptyWhen={({ rows }) => (rows.length === 0 ? NO_USAGE_COPY : null)}
@@ -96,24 +138,27 @@ export function ProjectDetailScreen({ project }: { readonly project: string }): 
         {({ rows, currency }) => {
           const max = Math.max(1, ...rows.map((row) => row.api_value_micros));
           return (
-            <Card title="Branches">
-              <RankedBars
-                label="Branches by API value"
-                items={rows.map((row) => ({
-                  key: row.branch ?? "(none)",
-                  label: row.branch ?? "No branch",
-                  value: (
-                    <Amount
-                      micros={row.api_value_micros}
-                      currency={currency}
-                      approximate={row.approximate}
-                    />
-                  ),
-                  percent: (row.api_value_micros / max) * 100,
-                  detail: `${formatTokens(row.total_tokens)} tokens`,
-                }))}
-              />
-            </Card>
+            <>
+              <ProjectDetailCharts project={project} />
+              <Card title="Branches">
+                <RankedBars
+                  label="Branches by API value"
+                  items={rows.map((row) => ({
+                    key: row.branch ?? "(none)",
+                    label: row.branch ?? "No branch",
+                    value: (
+                      <Amount
+                        micros={row.api_value_micros}
+                        currency={currency}
+                        approximate={row.approximate}
+                      />
+                    ),
+                    percent: (row.api_value_micros / max) * 100,
+                    detail: `${formatTokens(row.total_tokens)} tokens`,
+                  }))}
+                />
+              </Card>
+            </>
           );
         }}
       </RemoteView>
@@ -241,6 +286,7 @@ export function ProjectsScreen(): ReactNode {
       >
         {({ rows, currency }) => (
           <>
+            <ProjectsCharts rows={rows} />
             {groupByClient(rows).map(([client, inClient]) => (
               <Card key={client} title={client}>
                 <ProjectBars

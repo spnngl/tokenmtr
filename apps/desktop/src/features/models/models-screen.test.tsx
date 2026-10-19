@@ -3,14 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axeViolations } from "../../shared/axe";
 import type { Remote } from "../../shared/remote-view";
+import type { Series } from "../../shared/schemas";
+import { costSeries } from "../insights/fixtures";
 import { MODELS_REPORT } from "./fixtures";
 import type { ModelsData } from "./model";
 import { ModelsScreen } from "./models-screen";
 
 afterEach(cleanup);
 
-function renderScreen(remote: Remote<ModelsData>, onAddOverride = vi.fn()) {
-  return render(<ModelsScreen remote={remote} onAddOverride={onAddOverride} />);
+const SERIES: Remote<Series> = { kind: "ready", data: costSeries(7) };
+
+function renderScreen(
+  remote: Remote<ModelsData>,
+  onAddOverride = vi.fn(),
+  series: Remote<Series> = SERIES,
+) {
+  return render(<ModelsScreen remote={remote} series={series} onAddOverride={onAddOverride} />);
 }
 
 describe("ModelsScreen", () => {
@@ -52,12 +60,51 @@ describe("ModelsScreen", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
+  it("draws every per-model chart, each with its table", async () => {
+    const { container } = renderScreen({ kind: "ready", data: MODELS_REPORT });
+    const user = userEvent.setup();
+    for (const name of [
+      "API value per model over time",
+      "Cost share",
+      "Cost per million tokens",
+      "Token mix",
+      "Cache hit rate",
+    ]) {
+      const figure = screen.getByRole("figure", { name });
+      await user.click(within(figure).getByText("View as table"));
+      expect(within(figure).getByRole("table")).toBeTruthy();
+    }
+    const share = screen.getByRole("table", { name: "Cost share per model" });
+    expect(within(share).getByText("71.4%")).toBeTruthy();
+    const perMillion = screen.getByRole("table", { name: "Cost per million tokens per model" });
+    // The unpriced model has tokens but no value: its cost per token is zero, not missing.
+    expect(within(perMillion).getAllByRole("row")).toHaveLength(MODELS_REPORT.rows.length + 1);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("keeps the models when the cost series fails, with its own retry", async () => {
+    const onRetry = vi.fn();
+    renderScreen({ kind: "ready", data: MODELS_REPORT }, vi.fn(), {
+      kind: "error",
+      title: "Could not read the usage database",
+      message: "Store is locked",
+      onRetry,
+    });
+    expect(screen.getByRole("table", { name: "Usage per model" })).toBeTruthy();
+    expect(screen.getByRole("figure", { name: "Cost share" })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("reaches every control by keyboard", async () => {
     renderScreen({ kind: "ready", data: MODELS_REPORT });
     const user = userEvent.setup();
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add price override" }));
-    await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Usage per model" }));
+    const table = screen.getByRole("region", { name: "Usage per model" });
+    for (let step = 0; step < 40 && document.activeElement !== table; step += 1) {
+      await user.tab();
+    }
+    expect(document.activeElement).toBe(table);
   });
 });

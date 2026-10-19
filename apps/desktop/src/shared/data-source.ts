@@ -16,10 +16,12 @@ import type {
   GroupBy,
   Heatmap,
   IngestStatus,
+  MenubarRing,
   Models,
   ParseIssue,
   Period,
   Plan,
+  ProjectModels,
   ProjectRule,
   Projects,
   QuotaHistory,
@@ -92,6 +94,8 @@ export interface DataSource {
   series(filters: Filters, groupBy: GroupBy): Promise<Series>;
   models(filters: Filters): Promise<Models>;
   projects(filters: Filters): Promise<Projects>;
+  /** Projects split by model, biggest API value first. */
+  projectModels(filters: Filters): Promise<ProjectModels>;
   /** Branches of `filters.project`. */
   branches(filters: Filters): Promise<Branches>;
   unresolvedCwds(filters: Filters): Promise<UnresolvedCwd[]>;
@@ -148,6 +152,8 @@ export interface DataSource {
   addProjectRule(cwd: string, name: string): Promise<void>;
   /** Adds a `[[subscriptions]]` entry to the config (created when missing). */
   addSubscription(spec: SubscriptionSpec): Promise<void>;
+  /** Sets `[menubar] rings` and `hidden_profiles`: which quota windows get a menu-bar ring. */
+  setMenubarRings(rings: readonly MenubarRing[], hiddenProfiles: readonly string[]): Promise<void>;
   /** The daemon reads the Claude credentials once with the Keychain prompt allowed. */
   connectKeychain(): Promise<void>;
   /** Sets `cleanupPeriodDays` to ten years for one profile. */

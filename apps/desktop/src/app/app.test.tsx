@@ -165,13 +165,13 @@ describe("Overview", () => {
 });
 
 describe("Quota", () => {
-  it("shows both windows with their history and reset markers", async () => {
+  it("shows every window, per-model ones included, with history and reset markers", async () => {
     await renderApp("/quota");
-    expect(
-      await screen.findByRole("figure", { name: "claude / default: 5-hour window" }),
-    ).toBeTruthy();
-    expect(screen.getByRole("figure", { name: "claude / default: 7-day window" })).toBeTruthy();
-    expect(screen.getByText(/Will not reach 100% before reset/)).toBeTruthy();
+    expect(await screen.findByRole("figure", { name: "claude / default: 5-hour" })).toBeTruthy();
+    expect(screen.getByRole("figure", { name: "claude / default: 7-day" })).toBeTruthy();
+    expect(screen.getByRole("figure", { name: "claude / default: Weekly · Fable" })).toBeTruthy();
+    expect(screen.getByRole("meter", { name: "Weekly · Fable" })).toBeTruthy();
+    expect(screen.getAllByText(/Will not reach 100% before reset/).length).toBeGreaterThan(0);
   });
 
   it("shows no quota section for an agent without the capability", async () => {
@@ -381,6 +381,29 @@ describe("Settings", () => {
     expect(
       await screen.findByText("Move TokenMtr to Applications, then open it from there."),
     ).toBeTruthy();
+  });
+
+  it("chooses the menu-bar rings and the profiles drawn without rings", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    await renderApp("/settings", { onAction });
+    const perModel = await screen.findByRole("switch", { name: /Per model/ });
+    expect(screen.getByRole("switch", { name: /Session/ })).toHaveProperty("checked", true);
+    expect(perModel).toHaveProperty("checked", false);
+    await user.click(perModel);
+    await waitFor(() =>
+      expect(onAction).toHaveBeenCalledWith("setMenubarRings", [
+        ["session", "weekly", "per_model"],
+        [],
+      ]),
+    );
+    await user.click(await screen.findByRole("switch", { name: "work" }));
+    await waitFor(() =>
+      expect(onAction).toHaveBeenCalledWith("setMenubarRings", [
+        ["session", "weekly", "per_model"],
+        ["work"],
+      ]),
+    );
   });
 
   it("offers 10-year retention per profile with a retention window", async () => {

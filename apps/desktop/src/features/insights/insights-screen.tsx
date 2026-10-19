@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { type Remote, RemoteView } from "../../shared/remote-view";
 import { PageHeader } from "../../shared/ui";
 import { BranchesPanel } from "./branches-panel";
+import { CostByModelPanel } from "./cost-by-model-panel";
 import { HeatmapPanel } from "./heatmap-panel";
 import { type InsightsData, isInsightsEmpty } from "./model";
 import { SignalsPanel } from "./signals-panel";
@@ -13,7 +14,10 @@ interface InsightsScreenProps {
   readonly timeZone: string;
 }
 
-/** The Insights page: tools, signals, branches and the activity heatmap, in every view state. */
+/**
+ * The Insights page: tools, signals, cost by model, branches and the activity heatmap, in every
+ * view state.
+ */
 export function InsightsScreen({ remote, timeZone }: InsightsScreenProps): ReactNode {
   return (
     <div className="flex flex-col gap-6">
@@ -33,6 +37,7 @@ export function InsightsScreen({ remote, timeZone }: InsightsScreenProps): React
           <div className="flex flex-col gap-8">
             <ToolsPanel report={data.tools} />
             <SignalsPanel report={data.signals} />
+            <CostByModelPanel costs={data.costs} />
             <BranchesPanel rows={data.branches.rows} currency={data.branches.currency} />
             <HeatmapPanel heatmap={data.heatmap} timeZone={timeZone} />
           </div>

@@ -4,7 +4,7 @@ import { useAppConfig } from "../../shared/app-context";
 import { QuotaHistoryChart } from "../../shared/charts";
 import { formatDateTime, PLACEHOLDER } from "../../shared/format";
 import { useQuotaHistory, useQuotaLatest } from "../../shared/queries";
-import { QuotaMeters, windowLabel } from "../../shared/quota-meters";
+import { QuotaMeters } from "../../shared/quota-meters";
 import { CardRemote, RemoteView } from "../../shared/remote-view";
 import type { QuotaHistory } from "../../shared/schemas";
 import { Card, ChartFrame, type Column, DataTable, PageHeader } from "../../shared/ui";
@@ -23,7 +23,7 @@ function HistoryTable({ histories }: { readonly histories: readonly QuotaHistory
   const columns: Column<QuotaHistory>[] = [
     {
       header: "Window",
-      cell: (row) => `${row.profile} / ${windowLabel(row.window)}`,
+      cell: (row) => `${row.profile} / ${row.label}`,
     },
     { header: "Peak", numeric: true, cell: (row) => `${peak(row)}%`, sortValue: peak },
     {
@@ -62,7 +62,7 @@ function AgentHistory({ agent }: { readonly agent: string }): ReactNode {
         histories.map((history) => (
           <ChartFrame
             key={`${history.profile}:${history.window}`}
-            title={`${agent} / ${history.profile}: ${windowLabel(history.window)}`}
+            title={`${agent} / ${history.profile}: ${history.label}`}
             description={`Utilization history: ${history.points.length} points.`}
             points={history.points.length}
             table={<HistoryTable histories={[history]} />}

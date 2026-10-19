@@ -10,8 +10,8 @@ use camino::Utf8Path;
 use jiff::SignedDuration;
 use jiff::civil::date;
 use tokenmtr_config::{
-    ConfigDocument, ConfigError, ConfigFormat, FileFormat, LineCol, LogFormat, Partition,
-    ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
+    ConfigDocument, ConfigError, ConfigFormat, FileFormat, LineCol, LogFormat, MenubarRing,
+    Partition, ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation, load, load_str,
 };
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, EurMicros, ModelId, Money, Override, Plan, ProfileId,
@@ -78,6 +78,11 @@ fn the_example_parses() {
     assert!(matches!(config.display.timezone, TimeZoneSetting::System));
     assert_eq!(config.quota.interval, SignedDuration::from_mins(5));
     assert_eq!(config.menubar.agents, [AgentId::CLAUDE, AgentId::PI]);
+    assert_eq!(
+        config.menubar.rings,
+        [MenubarRing::Session, MenubarRing::Weekly]
+    );
+    assert_eq!(config.menubar.hidden_profiles, Vec::<ProfileId>::new());
     assert_eq!(config.menubar.live_window, SignedDuration::from_mins(10));
     assert_eq!(config.alerts.rules.quota_thresholds, [80, 95]);
     assert_eq!(config.alerts.rules.budget_thresholds, [80, 100]);
@@ -155,6 +160,10 @@ fn an_empty_file_is_the_default_config() {
     assert!(config.quota.enabled);
     assert_eq!(config.quota.interval, SignedDuration::from_mins(5));
     assert_eq!(config.menubar.agents, [AgentId::CLAUDE, AgentId::PI]);
+    assert_eq!(
+        config.menubar.rings,
+        [MenubarRing::Session, MenubarRing::Weekly]
+    );
     assert_eq!(
         config.menubar.shortcut.as_deref(),
         Some("Alt+CommandOrControl+U")
@@ -319,6 +328,23 @@ fn subscriptions_with_disjoint_dates_are_accepted() {
         "{SUBSCRIPTION}end = \"2025-03-01\"\n\n[[subscriptions]]\nid = \"b\"\nprovider = \"anthropic\"\nplan = \"max_5x\"\nagents = [\"claude\"]\nperiod = \"monthly\"\nstart = \"2025-03-01\"\n"
     );
     assert_eq!(parse(&source).unwrap().subscriptions.len(), 2);
+}
+
+#[test]
+fn menubar_rings_parse_and_must_be_unique() {
+    let config =
+        parse("[menubar]\nrings = [\"per_model\"]\nhidden_profiles = [\"work\"]\n").unwrap();
+    assert_eq!(config.menubar.rings, [MenubarRing::PerModel]);
+    assert_eq!(config.menubar.hidden_profiles.len(), 1);
+    assert_eq!(
+        parse("[menubar]\nrings = []\n").unwrap().menubar.rings,
+        Vec::<MenubarRing>::new()
+    );
+
+    let (path, _, _) = invalid("[menubar]\nrings = [\"weekly\", \"weekly\"]\n");
+    assert_eq!(path, "menubar.rings[1]");
+    let (path, _, _) = invalid("[menubar]\nhidden_profiles = [\"a\", \"a\"]\n");
+    assert_eq!(path, "menubar.hidden_profiles[1]");
 }
 
 #[test]
@@ -536,6 +562,35 @@ period = \"monthly\"
 start = \"2025-06-01\"
 "
     );
+}
+
+#[test]
+fn setting_menubar_rings_keeps_comments() {
+    let mut document = ConfigDocument::new(EXAMPLE, toml());
+    let work = ProfileId::try_from("work").unwrap();
+    let config = document
+        .set_menubar_rings(&[MenubarRing::PerModel], std::slice::from_ref(&work), &env)
+        .unwrap();
+
+    assert_eq!(config.menubar.rings, [MenubarRing::PerModel]);
+    assert_eq!(config.menubar.hidden_profiles, [work]);
+    assert!(document.text().contains(
+        "rings = [\"per_model\"]  # quota rings: session | weekly | per_model; [] = plain icon\n"
+    ));
+    assert!(
+        document
+            .text()
+            .contains("hidden_profiles = [\"work\"]           # profiles")
+    );
+
+    let mut bare = ConfigDocument::new("schema_version = 1\n", toml());
+    bare.set_menubar_rings(&[], &[], &env).unwrap();
+    assert_eq!(bare.text(), "schema_version = 1\n\n[menubar]\nrings = []\n");
+
+    let error = bare
+        .set_menubar_rings(&[MenubarRing::Weekly, MenubarRing::Weekly], &[], &env)
+        .unwrap_err();
+    assert!(matches!(error, ConfigError::Invalid { .. }), "{error}");
 }
 
 #[test]

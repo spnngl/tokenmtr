@@ -20,6 +20,7 @@ use crate::context::QueryContext;
 use crate::engine::{Dim, Scope, closed, covering, fetch, micros_ts, to_count, usd_to};
 use crate::error::QueryError;
 use crate::filters::Filters;
+use crate::session_models::{SessionModel, session_models};
 use crate::usage::Usage;
 
 /// Most session rows a [`SessionAnalytics`] carries, the most expensive first.
@@ -71,13 +72,25 @@ pub struct SessionPoint {
 }
 
 /// One bucket of the session cost histogram: API value in `[min_micros, max_micros)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CostBucket {
     /// Inclusive lower edge (the first bucket also holds negative values).
     pub min_micros: i64,
     /// Exclusive upper edge; absent for the last bucket.
     pub max_micros: Option<i64>,
     /// Sessions in the bucket.
+    pub sessions: u64,
+    /// The bucket's sessions by dominant model (highest API value in the session, ties to the
+    /// first name), most sessions first; they sum to `sessions`.
+    pub models: Vec<ModelSessions>,
+}
+
+/// Sessions whose dominant model is `model`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModelSessions {
+    /// Model.
+    pub model: String,
+    /// Sessions.
     pub sessions: u64,
 }
 
@@ -122,6 +135,19 @@ struct Acc {
     first: Timestamp,
     last: Timestamp,
     usage: Usage,
+    /// API value per model.
+    models: BTreeMap<String, i64>,
+}
+
+impl Acc {
+    /// The model of highest API value, ties to the first name.
+    fn dominant(&self) -> Option<&str> {
+        self.models
+            .iter()
+            .rev()
+            .max_by_key(|(_, api)| **api)
+            .map(|(model, _)| model.as_str())
+    }
 }
 
 /// Session charts of `filters`.
@@ -134,7 +160,7 @@ pub fn session_analytics(
     ctx: &QueryContext,
     filters: &Filters,
 ) -> Result<SessionAnalytics, QueryError> {
-    let fetched = fetch(reader, ctx, filters, Dim::Session, Scope::Traffic)?;
+    let fetched = fetch(reader, ctx, filters, Dim::SessionModel, Scope::Traffic)?;
     let mut by_session: BTreeMap<(AgentId, String), Acc> = BTreeMap::new();
     for row in &fetched.rows {
         let key = (row.cell.agent, row.cell.k1.clone().unwrap_or_default());
@@ -142,10 +168,14 @@ pub fn session_analytics(
             first: row.cell.first_at,
             last: row.cell.last_at,
             usage: Usage::default(),
+            models: BTreeMap::new(),
         });
         acc.first = acc.first.min(row.cell.first_at);
         acc.last = acc.last.max(row.cell.last_at);
         acc.usage.add(row);
+        *acc.models
+            .entry(row.cell.k2.clone().unwrap_or_default())
+            .or_default() += row.api;
     }
     let mut histogram: Vec<CostBucket> = COST_EDGES_MICROS
         .iter()
@@ -154,6 +184,7 @@ pub fn session_analytics(
             min_micros,
             max_micros: COST_EDGES_MICROS.get(i + 1).copied(),
             sessions: 0,
+            models: Vec::new(),
         })
         .collect();
     let mut days: Vec<SessionDay> = filters
@@ -176,6 +207,14 @@ pub fn session_analytics(
             .saturating_sub(1);
         if let Some(b) = histogram.get_mut(bucket) {
             b.sessions += 1;
+            let model = acc.dominant().unwrap_or_default();
+            match b.models.iter_mut().find(|m| m.model == model) {
+                Some(m) => m.sessions += 1,
+                None => b.models.push(ModelSessions {
+                    model: model.to_owned(),
+                    sessions: 1,
+                }),
+            }
         }
         let local = ctx.zone().to_datetime(acc.first);
         if let Some(d) = days.iter_mut().find(|d| d.day == local.date()) {
@@ -186,6 +225,13 @@ pub fn session_analytics(
         if let Some(cell) = starts.get_mut(weekday * 24 + hour) {
             cell.sessions += 1;
         }
+    }
+    for b in &mut histogram {
+        b.models.sort_by(|x, y| {
+            y.sessions
+                .cmp(&x.sessions)
+                .then_with(|| x.model.cmp(&y.model))
+        });
     }
     Ok(SessionAnalytics {
         currency: ctx.currency(),
@@ -347,6 +393,8 @@ pub struct SessionTimeline {
     pub signals: Vec<TimelineSignal>,
     /// Tool calls per tool, most called first.
     pub tools: Vec<TimelineTool>,
+    /// Usage per model over the whole session (never truncated), highest API value first.
+    pub models: Vec<SessionModel>,
 }
 
 /// Most events a [`SessionTimeline`] carries.
@@ -458,5 +506,6 @@ pub fn session_timeline(
         events_truncated,
         signals,
         tools,
+        models: session_models(reader, ctx, agent, session)?,
     })
 }

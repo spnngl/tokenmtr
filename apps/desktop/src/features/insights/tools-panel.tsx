@@ -4,10 +4,9 @@ import { topRows } from "../../shared/decimate";
 import { formatCount, formatPercent } from "../../shared/format";
 import type { ToolRow, ToolsReport } from "../../shared/schemas/usage";
 import { SegmentedControl } from "../../shared/segmented-control";
+import { TOP_MODELS } from "../../shared/top-models";
 import { ChartFrame, type Column, DataTable, Section } from "../../shared/ui";
-import { toolLabel } from "./model";
-
-type Grouping = "tool" | "server";
+import { type ToolGrouping, toolCallsByModel, toolKey, toolLabel } from "./model";
 
 const GROUPINGS = [
   { value: "tool", label: "By tool" },
@@ -16,27 +15,39 @@ const GROUPINGS = [
 
 const CHART_ROWS = 10;
 
-const COLUMNS: readonly Column<ToolRow>[] = [
-  { header: "Name", cell: (row) => <span className="font-medium">{toolLabel(row)}</span> },
-  { header: "Calls", numeric: true, cell: (row) => formatCount(row.calls) },
-  { header: "Errors", numeric: true, cell: (row) => formatCount(row.errors) },
-  {
-    header: "Error rate",
-    numeric: true,
-    cell: (row) => formatPercent(row.error_rate_percent / 100, 1),
-  },
-  { header: "Sessions", numeric: true, cell: (row) => formatCount(row.sessions) },
-];
-
-function rowKey(row: ToolRow): string {
-  return `${row.mcp_server ?? ""}\u0000${row.tool_name ?? ""}`;
+function columns(
+  series: readonly string[],
+  split: (row: ToolRow) => readonly number[],
+): Column<ToolRow>[] {
+  return [
+    { header: "Name", cell: (row) => <span className="font-medium">{toolLabel(row)}</span> },
+    ...series.map(
+      (name, index): Column<ToolRow> => ({
+        header: name,
+        numeric: true,
+        cell: (row) => formatCount(split(row)[index] ?? 0),
+      }),
+    ),
+    { header: "Calls", numeric: true, cell: (row) => formatCount(row.calls) },
+    { header: "Errors", numeric: true, cell: (row) => formatCount(row.errors) },
+    {
+      header: "Error rate",
+      numeric: true,
+      cell: (row) => formatPercent(row.error_rate_percent / 100, 1),
+    },
+    { header: "Sessions", numeric: true, cell: (row) => formatCount(row.sessions) },
+  ];
 }
 
-/** Tool calls by tool or by MCP server, with call volume, errors and error rate. */
+/** Tool calls by tool or by MCP server, stacked by model, with errors and error rate. */
 export function ToolsPanel({ report }: { readonly report: ToolsReport }): ReactNode {
-  const [grouping, setGrouping] = useState<Grouping>("tool");
+  const [grouping, setGrouping] = useState<ToolGrouping>("tool");
   const rows = grouping === "tool" ? report.tools : report.mcp_servers;
   const plotted = topRows(rows, CHART_ROWS);
+  const { series, values } = toolCallsByModel(report.by_model, grouping);
+  const split = (row: ToolRow): readonly number[] =>
+    values.get(toolKey(row, grouping)) ?? series.map(() => 0);
+  const title = grouping === "tool" ? "Calls per tool by model" : "Calls per MCP server by model";
   return (
     <Section
       title="Tool calls"
@@ -54,27 +65,25 @@ export function ToolsPanel({ report }: { readonly report: ToolsReport }): ReactN
         <p className="text-sm text-fg-muted">No tool calls in this range.</p>
       ) : (
         <ChartFrame
-          title={
-            grouping === "tool" ? "Calls and errors per tool" : "Calls and errors per MCP server"
-          }
-          description={`The ${plotted.length} busiest of ${rows.length}: calls and errors.`}
-          points={plotted.length}
+          interactive
+          title={title}
+          description={`The ${plotted.length} busiest of ${rows.length}, calls stacked by model (top ${TOP_MODELS}, the rest as Other). A call counts under the model its session used last before it; errors are in the table.`}
+          points={plotted.length * series.length}
           table={
             <DataTable
               caption={grouping === "tool" ? "Tool calls per tool" : "Tool calls per MCP server"}
-              columns={COLUMNS}
+              columns={columns(series, split)}
               rows={rows}
-              rowKey={rowKey}
+              rowKey={(row) => toolKey(row)}
             />
           }
         >
           <HorizontalBarChart
-            rows={plotted.map((row) => ({
-              label: toolLabel(row),
-              values: [row.calls, row.errors],
-            }))}
-            series={[{ name: "Calls" }, { name: "Errors", color: "var(--danger)" }]}
+            title={title}
+            rows={plotted.map((row) => ({ label: toolLabel(row), values: split(row) }))}
+            series={series.map((name) => ({ name }))}
             formatValue={(value) => formatCount(value)}
+            stacked
           />
         </ChartFrame>
       )}

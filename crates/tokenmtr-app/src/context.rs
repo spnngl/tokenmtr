@@ -12,7 +12,7 @@ use tokenmtr_agents::ingest::{
     DoctorReport, IngestSettings, Ingestor, ScanPriority, ScanReport, ScanRequest,
 };
 use tokenmtr_agents::{AgentKind, AgentSource, claude};
-use tokenmtr_config::{Config, Env, RawProject};
+use tokenmtr_config::{Config, Env, MenubarRing, RawProject};
 use tokenmtr_core::{AgentId, Plan, ProfileId, SubscriptionSpec};
 use tokenmtr_export::Target;
 use tokenmtr_platform::{ControlTransport, Paths};
@@ -29,7 +29,7 @@ use crate::report::{RenderedReport, ReportRequest, generate_report};
 use crate::retention::set_claude_retention;
 use crate::settings::{
     add_project_rule, add_subscription, backup_dir, budget_specs, load_config, query_context,
-    recap_config, sink_specs, store_path,
+    recap_config, set_menubar_rings, sink_specs, store_path,
 };
 
 /// The detected plan of one account (from the provider's account endpoint).
@@ -444,6 +444,21 @@ impl AppContext {
     /// [`AppError::Config`] when the result is invalid; the file is untouched then.
     pub fn add_project_rule(&mut self, rule: &RawProject) -> Result<(), AppError> {
         self.config = add_project_rule(&self.config_path, rule, &*self.env)?;
+        Ok(())
+    }
+
+    /// Sets which quota windows the menu bar draws as rings and which profiles it skips,
+    /// keeping the config file's comments.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::Config`] when the result is invalid; the file is untouched then.
+    pub fn set_menubar_rings(
+        &mut self,
+        rings: &[MenubarRing],
+        hidden_profiles: &[ProfileId],
+    ) -> Result<(), AppError> {
+        self.config = set_menubar_rings(&self.config_path, rings, hidden_profiles, &*self.env)?;
         Ok(())
     }
 

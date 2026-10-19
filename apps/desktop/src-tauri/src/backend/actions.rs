@@ -7,7 +7,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use tokenmtr_app::{EraseScope, ReportRequest};
-use tokenmtr_config::RawProject;
+use tokenmtr_config::{MenubarRing, RawProject};
 use tokenmtr_control::Client;
 use tokenmtr_core::{AgentId, ProfileId, ProjectKey, SessionId, SubscriptionSpec};
 use tokenmtr_platform::{LaunchdService, SystemRunner};
@@ -220,6 +220,22 @@ pub fn add_subscription(backend: &Backend, spec: &SubscriptionSpec) -> Result<()
     Ok(())
 }
 
+/// Sets which quota windows the menu bar draws as rings and which profiles it skips.
+///
+/// # Errors
+///
+/// A config that would become invalid, for example a ring kind listed twice.
+pub fn set_menubar_rings(
+    backend: &Backend,
+    rings: &[MenubarRing],
+    hidden_profiles: &[ProfileId],
+) -> Result<(), CommandError> {
+    backend
+        .context()?
+        .set_menubar_rings(rings, hidden_profiles)?;
+    Ok(())
+}
+
 /// Raises the transcript retention of a Claude profile to ten years.
 ///
 /// # Errors
@@ -338,6 +354,31 @@ mod tests {
         assert_eq!(
             reveal_path(&fixture.backend, &ghost).map_err(|e| e.kind),
             Err(ErrorKind::InvalidRequest)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn set_menubar_rings_writes_the_config() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = seeded(CONFIG)?;
+        let work = ProfileId::try_from("work")?;
+        set_menubar_rings(
+            &fixture.backend,
+            &[MenubarRing::PerModel],
+            std::slice::from_ref(&work),
+        )?;
+        let text = std::fs::read_to_string(fixture.backend.config_path())?;
+        assert!(text.contains("rings = [\"per_model\"]"), "{text}");
+        let config = fixture.backend.context()?.config().menubar.clone();
+        assert_eq!(config.rings, [MenubarRing::PerModel]);
+        assert_eq!(config.hidden_profiles, [work]);
+        assert!(
+            set_menubar_rings(
+                &fixture.backend,
+                &[MenubarRing::Weekly, MenubarRing::Weekly],
+                &[]
+            )
+            .is_err()
         );
         Ok(())
     }

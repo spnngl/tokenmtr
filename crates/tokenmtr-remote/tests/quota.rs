@@ -71,6 +71,47 @@ async fn ok_maps_every_reported_window() -> TestResult {
 }
 
 #[test]
+fn weekly_scoped_limits_become_one_window_per_model() -> TestResult {
+    let parsed = parse_quota_response(
+        &fixture("claude_usage_limits.json")?,
+        jiff::Timestamp::UNIX_EPOCH,
+    )?;
+    let windows: Vec<(&str, f64)> = parsed
+        .snapshot
+        .windows
+        .iter()
+        .map(|w| (w.id.as_str(), w.state.utilization.percent()))
+        .collect();
+    // `seven_day_opus` gives way to the `limits` entry of the same model; the malformed,
+    // nameless, negative and other-kind entries are skipped one by one.
+    assert_eq!(
+        windows,
+        [
+            ("five_hour", 12.0),
+            ("seven_day", 48.0),
+            ("weekly_scoped:fable", 42.0),
+            ("weekly_scoped:opus", 31.5),
+        ]
+    );
+    let fable = parsed
+        .snapshot
+        .window(&WindowId::weekly_scoped("Fable")?)
+        .ok_or("fable missing")?;
+    assert_eq!(fable.resets_at, Some("2026-05-16T08:00:00Z".parse()?));
+    Ok(())
+}
+
+#[test]
+fn limits_of_the_wrong_shape_keep_the_other_windows() -> TestResult {
+    for limits in [r#""none""#, "{}", "null", "[]", "[null, 4]"] {
+        let body = format!(r#"{{"five_hour": {{"utilization": 1.0}}, "limits": {limits}}}"#);
+        let parsed = parse_quota_response(body.as_bytes(), jiff::Timestamp::UNIX_EPOCH)?;
+        assert_eq!(parsed.snapshot.windows.len(), 1, "{limits}");
+    }
+    Ok(())
+}
+
+#[test]
 fn extra_usage_is_cents_and_only_when_enabled_and_valid() -> TestResult {
     let parse = |extra: &str| -> Result<_, Box<dyn std::error::Error>> {
         let body = format!(r#"{{"seven_day": {{"utilization": 12.0}}, "extra_usage": {extra}}}"#);

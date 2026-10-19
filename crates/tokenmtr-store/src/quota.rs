@@ -168,14 +168,7 @@ impl QuotaSample {
     /// The `window_label` column: a human name for the window id.
     #[must_use]
     pub fn window_label(&self) -> Option<String> {
-        self.window().map(|w| match w.id.as_str() {
-            WindowId::FIVE_HOUR => "5-hour".to_owned(),
-            WindowId::SEVEN_DAY => "7-day".to_owned(),
-            "seven_day_sonnet" => "7-day Sonnet".to_owned(),
-            "seven_day_opus" => "7-day Opus".to_owned(),
-            EXTRA_USAGE => "Extra usage".to_owned(),
-            other => other.replace('_', " "),
-        })
+        self.window().map(|w| w.id.label())
     }
 
     /// The `snapshot_id` of the export: stable per machine, agent, profile, window and poll time.

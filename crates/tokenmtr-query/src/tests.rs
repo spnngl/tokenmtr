@@ -1811,3 +1811,172 @@ fn session_analytics_rows_histogram_and_activity() {
     assert_eq!(other.events[0].cumulative_paid_micros, 10_000);
     assert!(other.tools.is_empty());
 }
+
+#[test]
+fn session_models_split_the_timeline_histogram_tools_and_signals() {
+    let seed = Seed::new();
+    let sid = |id: &str| SessionId::try_from(id.to_owned()).unwrap();
+    let ev = |key: &str, at: &str, micros: i64, name: &str, id: &str| UsageEvent {
+        session: sid(id),
+        ..model(reported(seed.ev(key, ts(at)), micros), name)
+    };
+    seed.put(&[
+        ev("a1", "2026-03-02T09:00:00Z", 30_000, "m1", "a"),
+        ev("a2", "2026-03-02T10:00:00Z", 50_000, "m2", "a"),
+        ev("a3", "2026-03-02T11:00:00Z", 10_000, "m1", "a"),
+        ev("b1", "2026-03-03T09:00:00Z", 60_000, "m1", "b"),
+    ]);
+    let call = |id: &str, session: &str, at: &str, err: bool| ProfiledToolCall {
+        profile: ProfileId::default_profile(),
+        call: ToolCall {
+            agent: AgentId::CLAUDE,
+            tool_use_id: id.to_owned(),
+            event: None,
+            session: sid(session),
+            at: ts(at),
+            tool_name: "Read".to_owned(),
+            mcp_server: None,
+            is_error: Some(err),
+        },
+    };
+    seed.store()
+        .upsert_tool_calls(&[
+            call("t1", "a", "2026-03-02T08:00:00Z", false),
+            call("t2", "a", "2026-03-02T09:30:00Z", false),
+            call("t3", "a", "2026-03-02T10:00:00Z", true),
+            call("t4", "z", "2026-03-02T10:00:00Z", false),
+        ])
+        .unwrap();
+    let signal = |session: &str, kind: SignalKind, at: &str| SessionSignal {
+        agent: AgentId::CLAUDE,
+        session: sid(session),
+        kind,
+        at: ts(at),
+    };
+    seed.store()
+        .record_signals(&[
+            signal("a", SignalKind::Compaction, "2026-03-02T10:15:00Z"),
+            signal("a", SignalKind::ApiError, "2026-03-02T10:20:00Z"),
+            signal("z", SignalKind::ApiError, "2026-03-02T10:00:00Z"),
+        ])
+        .unwrap();
+    let reader = seed.reader();
+    let ctx = usd_ctx("UTC", "2026-03-10T12:00:00Z");
+    let range = days(date(2026, 3, 1), date(2026, 3, 8));
+
+    let timeline = session_timeline(&reader, &ctx, AgentId::CLAUDE, &sid("a")).unwrap();
+    let models: Vec<(&str, u64, i64)> = timeline
+        .models
+        .iter()
+        .map(|m| (m.model.as_str(), m.events, m.api_value_micros))
+        .collect();
+    assert_eq!(models, [("m2", 1, 50_000), ("m1", 2, 40_000)]);
+
+    // Session a: m2 outweighs m1 (0.05 > 0.04), total 0.09; session b: m1, 0.06.
+    let charts = session_analytics(&reader, &ctx, &range).unwrap();
+    let bucket = charts
+        .histogram
+        .iter()
+        .find(|b| b.min_micros == 50_000)
+        .unwrap();
+    let split: Vec<(&str, u64)> = bucket
+        .models
+        .iter()
+        .map(|m| (m.model.as_str(), m.sessions))
+        .collect();
+    assert_eq!(split, [("m1", 1), ("m2", 1)], "ties by name");
+    assert!(
+        charts
+            .histogram
+            .iter()
+            .all(|b| b.models.iter().map(|m| m.sessions).sum::<u64>() == b.sessions)
+    );
+
+    // Before the first event: the first one after; at an event: that event; no events: none.
+    let report = tools(&reader, &ctx, &range).unwrap();
+    let calls: Vec<(Option<&str>, u64, u64)> = report
+        .by_model
+        .iter()
+        .map(|r| (r.model.as_deref(), r.calls, r.errors))
+        .collect();
+    assert_eq!(
+        calls,
+        [(Some("m1"), 2, 0), (None, 1, 0), (Some("m2"), 1, 1)]
+    );
+
+    let report = signals(&reader, &ctx, &range).unwrap();
+    let split: Vec<(Option<&str>, u64, u64)> = report
+        .models
+        .iter()
+        .map(|m| (m.model.as_deref(), m.api_errors, m.compactions))
+        .collect();
+    assert_eq!(split, [(Some("m2"), 1, 1), (None, 1, 0)]);
+}
+
+#[test]
+fn project_models_split_each_project_and_sum_to_the_projects_breakdown() {
+    let seed = Seed::new();
+    let at = ts("2026-04-10T10:00:00Z");
+    let in_project = |mut e: UsageEvent, key: &str| {
+        e.project = Some(ProjectKey::try_from(key.to_owned()).unwrap());
+        e
+    };
+    seed.put(&[
+        in_project(
+            provider(
+                model(reported(seed.ev("a", at), 3_000_000), "m1"),
+                "anthropic",
+            ),
+            "p1",
+        ),
+        in_project(
+            provider(
+                model(reported(seed.ev("b", at), 1_000_000), "m2"),
+                "anthropic",
+            ),
+            "p1",
+        ),
+        in_project(
+            provider(model(reported(seed.ev("c", at), 2_000_000), "m3"), "openai"),
+            "p2",
+        ),
+        provider(
+            model(reported(seed.ev("d", at), 500_000), "m1"),
+            "anthropic",
+        ),
+    ]);
+    let reader = seed.reader();
+    let c =
+        usd_ctx("UTC", "2026-04-10T18:00:00Z").with_subscriptions(vec![anthropic_subscription()]);
+    let f = days(date(2026, 4, 10), date(2026, 4, 11));
+
+    let split = project_models(&reader, &c, &f).unwrap();
+    assert_eq!(split.currency, Currency::Usd);
+    let keys: Vec<Option<&str>> = split.rows.iter().map(|r| r.project.as_deref()).collect();
+    assert_eq!(keys, [Some("p1"), Some("p2"), None]);
+    let p1: Vec<(&str, i64)> = split.rows[0]
+        .models
+        .iter()
+        .map(|m| (m.model.as_str(), m.usage.api_value_micros))
+        .collect();
+    assert_eq!(p1, [("m1", 3_000_000), ("m2", 1_000_000)]);
+    assert_eq!(split.rows[0].name, None);
+
+    let projects = projects(&reader, &c, &f).unwrap();
+    for row in &projects.rows {
+        let models = &split
+            .rows
+            .iter()
+            .find(|r| r.project == row.project)
+            .unwrap()
+            .models;
+        let api: i64 = models.iter().map(|m| m.usage.api_value_micros).sum();
+        let paid: i64 = models.iter().map(|m| m.usage.paid_micros).sum();
+        assert_eq!(
+            (api, paid),
+            (row.usage.api_value_micros, row.usage.paid_micros)
+        );
+    }
+    assert!(split.rows[0].models[0].usage.subscription_fee_micros > 0);
+    assert_eq!(json(&split)["rows"][0]["models"][0]["model"], "m1");
+}

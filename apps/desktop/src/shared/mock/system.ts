@@ -240,7 +240,7 @@ export function settingsOf(tenYearProfiles: ReadonlySet<string>): Settings {
     display: { currency: "USD", time_zone: MOCK_TIME_ZONE },
     fx: { fixed_eur_per_usd: null, latest: fxRatesOf().at(-1) ?? null, offline: false },
     pricing: { snapshot_date: "2026-06-01", models: 64 },
-    tray: { title: "paid_today", shortcut: "Cmd+Shift+T" },
+    tray: { rings: ["session", "weekly"], hidden_profiles: [], shortcut: "Cmd+Shift+T" },
     alerts: { quota_thresholds: [70, 90], budget_thresholds: [80, 100], quota_reset: true },
     launch_at_login: true,
     protected_folders: [

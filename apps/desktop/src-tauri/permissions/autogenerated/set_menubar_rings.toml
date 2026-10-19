@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-menubar-rings"
+description = "Enables the set_menubar_rings command without any pre-configured scope."
+commands.allow = ["set_menubar_rings"]
+
+[[permission]]
+identifier = "deny-set-menubar-rings"
+description = "Denies the set_menubar_rings command without any pre-configured scope."
+commands.deny = ["set_menubar_rings"]

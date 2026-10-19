@@ -3,6 +3,7 @@
     "agent": "claude",
     "profile": "default",
     "window": "five_hour",
+    "label": "5-hour",
     "points": [
       {
         "at": "2026-05-03T11:05:00Z",
@@ -26,6 +27,7 @@
     "agent": "claude",
     "profile": "default",
     "window": "seven_day",
+    "label": "7-day",
     "points": [
       {
         "at": "2026-04-30T09:00:00Z",

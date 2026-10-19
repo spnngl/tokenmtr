@@ -5,7 +5,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ids::IdError;
 
-/// Identifies a quota window kind, e.g. `five_hour` or `seven_day`. Never blank.
+/// Identifies a quota window kind, e.g. `five_hour`, `seven_day` or `weekly_scoped:fable`.
+/// Never blank.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WindowId(String);
 
@@ -14,6 +15,8 @@ impl WindowId {
     pub const FIVE_HOUR: &'static str = "five_hour";
     /// The rolling seven-day window.
     pub const SEVEN_DAY: &'static str = "seven_day";
+    /// Prefix of a weekly window scoped to one model, followed by the model's slug.
+    pub const WEEKLY_SCOPED_PREFIX: &'static str = "weekly_scoped:";
 
     /// Validates a window id.
     ///
@@ -46,11 +49,78 @@ impl WindowId {
         Self(crate::extra_usage::EXTRA_USAGE.to_owned())
     }
 
+    /// The weekly window scoped to the model the provider names `display_name` (`Fable` gives
+    /// `weekly_scoped:fable`). The slug keeps lowercase letters, digits and dots; any other run
+    /// of characters becomes one `-`. The model changes over time, so no name is hardcoded.
+    ///
+    /// # Errors
+    ///
+    /// [`IdError::Blank`] when the name has no letter, digit or dot.
+    pub fn weekly_scoped(display_name: &str) -> Result<Self, IdError> {
+        let slug = model_slug(display_name);
+        if slug.is_empty() {
+            return Err(IdError::Blank { kind: "window" });
+        }
+        Ok(Self(format!("{}{slug}", Self::WEEKLY_SCOPED_PREFIX)))
+    }
+
+    /// The model slug of a [`WindowId::weekly_scoped`] window, `None` for the other windows.
+    #[must_use]
+    pub fn scoped_model(&self) -> Option<&str> {
+        self.0.strip_prefix(Self::WEEKLY_SCOPED_PREFIX)
+    }
+
+    /// The human name of the window, the one source of every label (UI, alerts, exports):
+    /// `5-hour`, `7-day`, `7-day Sonnet`, `Weekly · Fable`, `Extra usage`; an unknown id reads
+    /// with spaces for underscores.
+    #[must_use]
+    pub fn label(&self) -> String {
+        if let Some(model) = self.scoped_model() {
+            return format!("Weekly · {}", title_words(model));
+        }
+        match self.0.as_str() {
+            Self::FIVE_HOUR => "5-hour".to_owned(),
+            Self::SEVEN_DAY => "7-day".to_owned(),
+            crate::extra_usage::EXTRA_USAGE => "Extra usage".to_owned(),
+            other => match other.strip_prefix("seven_day_") {
+                Some(model) => format!("7-day {}", title_words(model)),
+                None => other.replace('_', " "),
+            },
+        }
+    }
+
     /// The id as text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// `Claude Opus 4.5` → `claude-opus-4.5`.
+fn model_slug(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    for c in name.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() || c == '.' {
+            slug.push(c);
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    slug.trim_end_matches('-').to_owned()
+}
+
+/// `claude-opus-4.5` → `Claude Opus 4.5`, `sonnet` → `Sonnet`.
+fn title_words(slug: &str) -> String {
+    slug.split(['-', '_'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl std::fmt::Display for WindowId {
@@ -165,6 +235,32 @@ mod tests {
     fn window_ids_reject_blank() {
         assert!(WindowId::new("  ").is_err());
         assert_eq!(WindowId::five_hour().as_str(), "five_hour");
+    }
+
+    #[test]
+    fn weekly_scoped_ids_are_slugs_of_the_model_name() -> Result<(), IdError> {
+        let fable = WindowId::weekly_scoped("Fable")?;
+        assert_eq!(fable.as_str(), "weekly_scoped:fable");
+        assert_eq!(fable.scoped_model(), Some("fable"));
+        assert_eq!(fable.label(), "Weekly · Fable");
+        let opus = WindowId::weekly_scoped("  Claude Opus 4.5 (beta) ")?;
+        assert_eq!(opus.as_str(), "weekly_scoped:claude-opus-4.5-beta");
+        assert_eq!(opus.label(), "Weekly · Claude Opus 4.5 Beta");
+        assert!(WindowId::weekly_scoped(" -/ ").is_err());
+        assert_eq!(WindowId::five_hour().scoped_model(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn labels_name_every_window() -> Result<(), IdError> {
+        let label = |id: &str| WindowId::new(id).map(|id| id.label());
+        assert_eq!(label("five_hour")?, "5-hour");
+        assert_eq!(label("seven_day")?, "7-day");
+        assert_eq!(label("seven_day_sonnet")?, "7-day Sonnet");
+        assert_eq!(label("seven_day_opus")?, "7-day Opus");
+        assert_eq!(label("extra_usage")?, "Extra usage");
+        assert_eq!(label("monthly_thing")?, "monthly thing");
+        Ok(())
     }
 
     #[test]

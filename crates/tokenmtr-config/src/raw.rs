@@ -18,7 +18,7 @@ use tokenmtr_core::{
 };
 
 use crate::model::{
-    ClientName, Dataset, FileMode, LogFormat, LogLevel, MenubarTitle, Partition, Percent,
+    ClientName, Dataset, FileMode, LogFormat, LogLevel, MenubarRing, Partition, Percent,
     RedactColumn, RedactMode,
 };
 
@@ -202,7 +202,8 @@ pub struct RawFx {
 #[serde(deny_unknown_fields, default)]
 pub struct RawMenubar {
     pub agents: Option<Vec<AgentId>>,
-    pub title: Option<MenubarTitle>,
+    pub rings: Option<Vec<MenubarRing>>,
+    pub hidden_profiles: Option<Vec<ProfileId>>,
     pub shortcut: Option<String>,
     pub live_window: Option<RawDuration>,
 }

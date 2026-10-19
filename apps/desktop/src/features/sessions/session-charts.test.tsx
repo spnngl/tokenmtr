@@ -7,7 +7,7 @@ import { SESSIONS } from "../../shared/mock/seed";
 
 afterEach(cleanup);
 
-const FIGURES = ["Cost over time", "Token mix", "Tool calls"] as const;
+const FIGURES = ["Cost over time", "Usage per model", "Token mix", "Tool calls"] as const;
 
 /** The busiest seeded session: it has tool calls and a compaction. */
 const SEED = SESSIONS.toSorted((a, b) => b.toolCalls - a.toolCalls)[0];
@@ -47,6 +47,34 @@ describe("session detail charts", () => {
       expect(details?.open).toBe(true);
       expect(within(figure).getByRole("table")).toBeTruthy();
     }
+  });
+
+  it("switches usage per model between API value and tokens", async () => {
+    const user = userEvent.setup();
+    await openDetail();
+    const figure = await screen.findByRole("figure", { name: "Usage per model" });
+    const table = within(figure).getByRole("table", { hidden: true });
+    expect(within(table).getAllByRole("row").length).toBeGreaterThan(1);
+    expect(within(figure).getByText(/API value of the session per model/)).toBeTruthy();
+    await user.click(within(figure).getByRole("radio", { name: "Tokens" }));
+    expect(within(figure).getByText(/Tokens of the session per model/)).toBeTruthy();
+    expect(within(figure).getByRole("radio", { name: "Tokens" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("hides usage per model when the session has no model", async () => {
+    await openDetail({
+      wrap: (ds) => ({
+        ...ds,
+        sessionTimeline: async (agent, session, currency) => ({
+          ...(await ds.sessionTimeline(agent, session, currency)),
+          models: [],
+        }),
+      }),
+    });
+    await screen.findByRole("figure", { name: "Cost over time" });
+    expect(screen.queryByRole("figure", { name: "Usage per model" })).toBeNull();
   });
 
   it("says so when the session has no priced event or tool call", async () => {
