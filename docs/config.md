@@ -204,7 +204,7 @@ redact = { session_id = "hash", account = "drop" }
 
 ## Keys
 
-Types: `[x]` is a list of `x`. A default of "platform" means a path under `~/Library/Application Support/dev.tokenmtr.app/` (store `usage.db`, `backups/`, `exports/`).
+Types: `[x]` is a list of `x`. A default of "platform" means a path under the data directory (store `usage.db`, `backups/`, `exports/`): `~/Library/Application Support/dev.tokenmtr.app/` on macOS, `$XDG_DATA_HOME/dev.tokenmtr.app/` (else `~/.local/share/dev.tokenmtr.app/`) on Linux. The example above shows the macOS paths.
 
 ### Top level
 

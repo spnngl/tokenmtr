@@ -2,7 +2,7 @@
 
 A platform supplies the five OS services in the `Platform` trait. Everything else (ingest, store,
 export, UI) is platform-neutral. Work through the steps in order and finish each one, its **Done
-when** included, before the next. macOS (`MacOs`) is the reference: copy its shape.
+when** included, before the next. macOS (`MacOs`) is the reference: copy its shape. `Linux` is the second example: a systemd user unit and no secret store.
 
 All code lives in `crates/tokenmtr-platform/src/`. Read first: [`lib.rs`](../crates/tokenmtr-platform/src/lib.rs)
 (the `Platform` trait, `MacOs`, `PlatformKind`). The trait has five methods: `paths`, `service`,
@@ -10,10 +10,11 @@ All code lives in `crates/tokenmtr-platform/src/`. Read first: [`lib.rs`](../cra
 
 ## 1. Paths
 
-[`paths.rs`](../crates/tokenmtr-platform/src/paths.rs). `Paths::from_lookup` builds the macOS layout
-(`~/Library/Application Support/dev.tokenmtr.app`, `~/Library/Logs/tokenmtr`, ...). Give the new
-platform its own constructor that fills the same fields from its native conventions (XDG on Linux,
-`%APPDATA%` on Windows), and keep these rules:
+[`paths.rs`](../crates/tokenmtr-platform/src/paths.rs). The `Layout` enum names where each OS keeps data, logs and
+cache: macOS under `~/Library`, Linux under the XDG directories. Add a variant for the new platform,
+set `Layout::CURRENT` for its target, and fill the same fields from its native conventions
+(`%APPDATA%` on Windows). Both layouts compile on every OS, so the tests of each run everywhere.
+Keep these rules:
 
 - The config file is `$TOKENMTR_CONFIG` (absolute only), else `$XDG_CONFIG_HOME/tokenmtr/config.toml`
   when `XDG_CONFIG_HOME` is absolute, else `~/.config/tokenmtr/config.toml`.
@@ -45,7 +46,8 @@ after `shutdown` and when another instance already runs, and must stay down then
 priority, because priority is per thread (step 5).
 
 Take external commands through the `CommandRunner` trait instead of `std::process::Command`, so
-tests script the answers. `LaunchdService<R = SystemRunner>` is the example: `install` writes the
+tests script the answers. `LaunchdService<R = SystemRunner>` is the example (`SystemdUserService`
+in `systemd.rs` is the second): `install` writes the
 plist (`render_plist`, XML-escaped paths), boots out a loaded copy and polls until launchd drops
 it, then bootstraps the new one; `launchctl` and `id` are called by absolute path.
 
@@ -77,7 +79,8 @@ wire protocol is in [`control-protocol.md`](control-protocol.md).
 - The call may block: callers use a blocking context.
 - Return `secrecy::SecretString`.
 
-Gate the implementation and its dependency by target: `#[cfg(target_os = "...")]` on the module and
+An OS whose agents keep nothing in an OS store uses `NoSecrets`, whose every lookup is `Ok(None)` (Linux).
+Otherwise gate the implementation and its dependency by target: `#[cfg(target_os = "...")]` on the module and
 `[target.'cfg(target_os = "...")'.dependencies]` in `Cargo.toml`.
 
 **Done when:** the secrets test of step 7 reads back an item it created, and a missing item is `None`.
@@ -94,9 +97,9 @@ existing no-op `imp`.
 
 ## 6. Wire it up
 
-1. Add a cfg-gated variant to `PlatformKind` and a `<Name>` struct implementing `Platform`, next to `MacOs`.
+1. Add a cfg-gated variant to `PlatformKind` and a `<Name>` struct implementing `Platform`, next to `MacOs` and `Linux`. Services and the secret store compile on every OS, so only the platform struct, `PlatformKind::new` and the thread-priority code are gated.
 2. Add a match arm for the variant in every `Platform` method of `PlatformKind`.
-3. Add the target's `PlatformKind::detect()` that builds it over its `Paths` constructor.
+3. Add the target's `PlatformKind::new(paths)` that builds it; `detect()` calls it over `Paths::from_env()`.
 4. Write every file that matters through `replace_atomically` ([`fs.rs`](../crates/tokenmtr-platform/src/fs.rs)):
    temp file, `sync_all`, `rename`, parent directory sync. Port the directory sync if the OS needs
    a different call.
@@ -108,7 +111,7 @@ existing no-op `imp`.
 
 Every test below runs without touching the real system.
 
-- **Paths:** `from_lookup` with a fake environment: defaults, an absolute and a relative
+- **Paths:** `from_lookup_with` per layout with a fake environment: defaults, an absolute and a relative
   `XDG_CONFIG_HOME`, `TOKENMTR_CONFIG`, a missing `HOME`, and `is_protected` on nested and
   differently-cased paths.
 - **Service:** a fake `CommandRunner` records calls and scripts answers. Assert a golden unit file,
