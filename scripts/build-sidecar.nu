@@ -1,8 +1,8 @@
 # Builds the `tokenmtr` CLI and stages it as the Tauri sidecar.
 #
 # The app bundles it as `externalBin` "binaries/tokenmtr"; Tauri wants the file named with the
-# target triple and strips the suffix inside the bundle (`TokenMtr.app/Contents/MacOS/tokenmtr`),
-# where the daemon's launchd plist points. Runs from `beforeBuildCommand` in
+# target triple and strips the suffix inside the bundle (`TokenMtr.app/Contents/MacOS/tokenmtr` on
+# macOS, `/usr/bin/tokenmtr` in the Linux packages), where the daemon's service points. Runs from `beforeBuildCommand` in
 # `apps/desktop/src-tauri/tauri.release.conf.json`.
 #
 # The triple comes from `TAURI_ENV_TARGET_TRIPLE` (set by `tauri build --target <triple>`), else the

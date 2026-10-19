@@ -1,0 +1,29 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "tokenmtr",
+  "bundle": {
+    "targets": ["deb", "rpm"],
+    "publisher": "Lola Delannoy <lola.2lannoy@gmail.com>",
+    "homepage": "https://github.com/spnngl/tokenmtr",
+    "shortDescription": "Tracks what your coding agents cost",
+    "longDescription": "A background daemon reads the local session files of coding agents such as\nClaude Code and pi, prices every request at API rates, and compares that with\nwhat you actually pay. The result shows in a tray app, a CLI, and CSV, JSONL or\nSQLite exports. Session data stays on your machine.",
+    "linux": {
+      "deb": {
+        "section": "utils",
+        "depends": ["libc6 (>= 2.43)", "libayatana-appindicator3-1"],
+        "changelog": "../../../CHANGELOG.md",
+        "desktopTemplate": "linux/tokenmtr.desktop.hbs",
+        "files": {
+          "/usr/share/doc/tokenmtr/copyright": "linux/copyright"
+        }
+      },
+      "rpm": {
+        "depends": ["libc.so.6(GLIBC_2.43)(64bit)", "libayatana-appindicator3.so.1()(64bit)"],
+        "desktopTemplate": "linux/tokenmtr.desktop.hbs",
+        "files": {
+          "/usr/share/licenses/tokenmtr/LICENSE": "../../../LICENSE"
+        }
+      }
+    }
+  }
+}

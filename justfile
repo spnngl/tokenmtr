@@ -49,7 +49,7 @@ icons:
     for f in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico icon.png; do cp "$out/$f" {{ui}}/src-tauri/icons/; done
     python3 {{ui}}/src-tauri/tray-icon.py {{ui}}/src-tauri/icons
 
-# .app and .dmg (docs/release.md): gates, then sidecar and `tauri build`, signed with the local identity when it exists.
+# .app and .dmg on macOS, .deb and .rpm on Linux (docs/release.md): gates, then sidecar and `tauri build`; macOS signs with the local identity when it exists.
 # Extra flags pass through, e.g. `just release --target universal-apple-darwin` or `--unsigned`.
 release *FLAGS: check
     nu scripts/release.nu {{FLAGS}}
