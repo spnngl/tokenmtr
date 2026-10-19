@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use common::{
-    Env, TestResult, claude_line_for, eventually, eventually_async, fast_timing, seed_logs,
+    Env, TestResult, WAIT, claude_line_for, eventually, eventually_async, fast_timing, seed_logs,
 };
 use tokenmtr_core::ApiCost;
 use tokenmtr_daemon::Settings;
@@ -21,7 +21,6 @@ const PROFILE: &str = "/api/oauth/profile";
 const ECB_DAILY: &str = "/stats/eurofxref/eurofxref-daily.xml";
 const ECB_HIST: &str = "/stats/eurofxref/eurofxref-hist.xml";
 const CATALOG: &str = "/BerriAI/litellm/main/model_prices_and_context_window.json";
-const WAIT: Duration = Duration::from_secs(8);
 
 fn fixture(name: &str) -> Result<Vec<u8>, std::io::Error> {
     let path: PathBuf = [

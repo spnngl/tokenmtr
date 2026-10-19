@@ -18,6 +18,10 @@ use tokenmtr_store::{Dataset, Revision, StoreRead as _, StoreReader};
 
 pub type TestResult = Result<(), Box<dyn Error>>;
 
+/// Upper bound for something the daemon must eventually do. Generous: a passing wait returns as
+/// soon as it holds, and a shared CI runner can be ten times slower than a laptop.
+pub const WAIT: Duration = Duration::from_secs(30);
+
 /// No Keychain in tests: credentials come from files.
 pub struct NoSecrets;
 

@@ -91,6 +91,12 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
+# Optimised dependencies in dev and test builds: unoptimised JSON, SQLite and zstd made every
+# daemon start in a test parse the embedded price list slowly enough to time out on CI runners.
+# The workspace crates stay unoptimised and debuggable.
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
