@@ -22,15 +22,15 @@ use tokenmtr_query::{
     AdvisorReport, AgentRecap, AlertView, BackupView, BillingAmounts, BillingMonth, BillingPoint,
     BillingReport, BillingSeries, BranchRow, Breakdown, Bucket, BudgetState, BudgetView,
     COST_EDGES_MICROS, CostBucket, DaemonHealth, DaemonState, DateRange, FxRateView, Granularity,
-    GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, ModelRow,
-    ModelSessions, ModelSlice, NO_GROUP, ParseIssueView, Period, ProjectModelsRow, ProjectRemote,
-    ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA,
-    Series, SeriesPoint, SessionAnalytics, SessionCompactions, SessionDay, SessionDetail,
-    SessionEvent, SessionModel, SessionPage, SessionPoint, SessionRow, SessionStartCell,
-    SessionTimeline, SessionToolCall, SignalDay, SignalModel, SignalsReport, SinkHealth,
-    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent,
-    TimelineSignal, TimelineTool, ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd,
-    Usage,
+    GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, MetricsHealth,
+    MetricsKind, MetricsRunView, MetricsState, ModelRow, ModelSessions, ModelSlice, NO_GROUP,
+    ParseIssueView, Period, ProjectModelsRow, ProjectRemote, ProjectRow, QuotaHistory, QuotaMeter,
+    QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA, Series, SeriesPoint, SessionAnalytics,
+    SessionCompactions, SessionDay, SessionDetail, SessionEvent, SessionModel, SessionPage,
+    SessionPoint, SessionRow, SessionStartCell, SessionTimeline, SessionToolCall, SignalDay,
+    SignalModel, SignalsReport, SinkHealth, SinkRunView, SinkState, SparkPoint, Status,
+    SubscriptionLine, SystemHealth, TimelineEvent, TimelineSignal, TimelineTool, ToolModelCalls,
+    ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -1286,6 +1286,14 @@ fn alerts() -> Value {
             },
         ),
         alert(
+            "2026-05-02T08:30:00Z",
+            "metrics_failing:grafana",
+            AlertKind::MetricsFailing {
+                output: "grafana".parse().unwrap(),
+                since: at("2026-05-02T08:00:00Z"),
+            },
+        ),
+        alert(
             "2026-05-02T08:00:00Z",
             "sink_failing:warehouse",
             AlertKind::SinkFailing {
@@ -1541,11 +1549,48 @@ fn sinks() -> Vec<SinkHealth> {
     ]
 }
 
+fn metrics_outputs() -> Vec<MetricsHealth> {
+    let run = |started_at, finished_at, series, error: Option<&str>| MetricsRunView {
+        started_at: at(started_at),
+        finished_at: at(finished_at),
+        series,
+        error: error.map(str::to_owned),
+    };
+    vec![
+        MetricsHealth {
+            output: "local".parse().unwrap(),
+            kind: MetricsKind::Exporter,
+            state: MetricsState::Healthy,
+            last_success_at: Some(at("2026-05-03T09:00:01Z")),
+            recent_runs: vec![run("2026-05-03T09:00:00Z", "2026-05-03T09:00:01Z", 0, None)],
+        },
+        MetricsHealth {
+            output: "grafana".parse().unwrap(),
+            kind: MetricsKind::RemoteWrite,
+            state: MetricsState::Failing {
+                since: at("2026-05-03T13:40:00Z"),
+                last_error: "http status 429".to_owned(),
+            },
+            last_success_at: Some(at("2026-05-03T13:39:00Z")),
+            recent_runs: vec![
+                run(
+                    "2026-05-03T14:10:00Z",
+                    "2026-05-03T14:10:01Z",
+                    0,
+                    Some("http status 429"),
+                ),
+                run("2026-05-03T13:39:00Z", "2026-05-03T13:39:01Z", 1236, None),
+            ],
+        },
+    ]
+}
+
 fn system_health() -> Value {
     json(SystemHealth {
         level: HealthLevel::Warning,
         daemon: daemon_health(),
         sinks: sinks(),
+        metrics: metrics_outputs(),
     })
 }
 
@@ -1681,6 +1726,7 @@ fn recap() -> Value {
             level: HealthLevel::Error,
             daemon: daemon_health(),
             sinks: system_sinks,
+            metrics: Vec::new(),
         },
         agents: vec![claude, pi],
     };

@@ -55,6 +55,21 @@ fn a_seeded_status_validates() -> TestResult {
 }
 
 #[test]
+fn a_status_with_metrics_outputs_validates() -> TestResult {
+    let home = seeded(
+        "[[metrics.exporters]]\nid = \"local\"\n\n[[metrics.remote_write]]\nid = \"grafana\"\nurl = \"https://r.example/push\"\n",
+    )?;
+    let status = run_json(&home, &["status", "--json"])?;
+    assert_eq!(errors(&status)?, Vec::<String>::new());
+    let metrics = &status["system"]["metrics"];
+    assert_eq!(metrics[0]["output"], "local");
+    assert_eq!(metrics[0]["kind"], "exporter");
+    assert_eq!(metrics[0]["state"], "healthy");
+    assert_eq!(metrics[1]["kind"], "remote_write");
+    Ok(())
+}
+
+#[test]
 fn an_empty_status_validates() -> TestResult {
     let home = Home::new()?;
     let status = run_json(&home, &["status", "--json"])?;

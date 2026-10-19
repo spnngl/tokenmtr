@@ -142,6 +142,7 @@ export function systemHealthOf(): SystemHealth {
     level: "error",
     daemon: { state: "running", last_heartbeat: iso(NOW_MS - 5_000), age_secs: 5 },
     sinks: [...SINKS],
+    metrics: [],
   };
 }
 

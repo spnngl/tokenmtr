@@ -9,7 +9,7 @@ use rusqlite_migration::{HookResult, M, Migrations};
 use uuid::Uuid;
 
 /// The schema version this build reads and writes: the number of migrations in `migrations()`.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 /// All migrations, oldest first.
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -27,6 +27,7 @@ pub(crate) fn migrations() -> Migrations<'static> {
             "../migrations/0006_inferred_project_keychain_denied.sql"
         )),
         M::up(include_str!("../migrations/0007_project_remote.sql")),
+        M::up(include_str!("../migrations/0008_metrics_run.sql")),
     ])
 }
 

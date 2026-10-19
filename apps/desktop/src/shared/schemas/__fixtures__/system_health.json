@@ -78,5 +78,43 @@
       "last_success_at": null,
       "recent_runs": []
     }
+  ],
+  "metrics": [
+    {
+      "output": "local",
+      "kind": "exporter",
+      "state": "healthy",
+      "last_success_at": "2026-05-03T09:00:01Z",
+      "recent_runs": [
+        {
+          "started_at": "2026-05-03T09:00:00Z",
+          "finished_at": "2026-05-03T09:00:01Z",
+          "series": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "output": "grafana",
+      "kind": "remote_write",
+      "state": "failing",
+      "since": "2026-05-03T13:40:00Z",
+      "last_error": "http status 429",
+      "last_success_at": "2026-05-03T13:39:00Z",
+      "recent_runs": [
+        {
+          "started_at": "2026-05-03T14:10:00Z",
+          "finished_at": "2026-05-03T14:10:01Z",
+          "series": 0,
+          "error": "http status 429"
+        },
+        {
+          "started_at": "2026-05-03T13:39:00Z",
+          "finished_at": "2026-05-03T13:39:01Z",
+          "series": 1236,
+          "error": null
+        }
+      ]
+    }
   ]
 }

@@ -226,6 +226,7 @@ describe("golden command responses", () => {
       "quota_threshold",
       "quota_reset",
       "budget_threshold",
+      "metrics_failing",
       "sink_failing",
       "format_drift",
       "backup_failed",

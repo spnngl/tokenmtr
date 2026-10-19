@@ -31,10 +31,11 @@ Other `--json` outputs (`alerts`, `quota`, `fx`, `pricing`, `backup`, `doctor`, 
 | --- | --- | --- |
 | `status_schema` | `1` | Schema version. |
 | `generated_at` | timestamp | When the document was built. |
-| `system.level` | `ok` \| `warning` \| `error` | Worst of daemon and sinks. A never-started daemon and disabled sinks count as `ok`. |
+| `system.level` | `ok` \| `warning` \| `error` | Worst of daemon, sinks and metrics outputs (a failing output is a `warning`). A never-started daemon and disabled sinks count as `ok`. |
 | `system.daemon.state` | `running` \| `stale` \| `never_started` | From the daemon's heartbeat. |
 | `system.daemon.last_heartbeat`, `age_secs` | timestamp, integer or `null` | Latest heartbeat and its age. |
 | `system.sinks[]` | object | One entry per configured sink (below). |
+| `system.metrics[]` | object | One entry per configured metrics output, exporters first (below). Added within schema 1; absent from older documents. |
 | `agents[]` | recap | One recap per agent in `menubar.agents`. |
 
 A sink entry:
@@ -47,6 +48,17 @@ A sink entry:
 | `lag_rows`, `lag_secs` | integer, integer or `null` | Rows not yet exported and the age of the oldest. |
 | `last_success_at` | timestamp or `null` | |
 | `recent_runs[]` | object | Newest first, at most 10: `dataset`, `started_at`, `finished_at`, `rows`, `error`. |
+
+A metrics output entry:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `output` | string | Output id. |
+| `kind` | `exporter` \| `remote_write` | |
+| `state` | `healthy` \| `failing` | An output that never ran is `healthy`. |
+| `since`, `last_error` | timestamp, string | Present only when `state` is `failing`. |
+| `last_success_at` | timestamp or `null` | |
+| `recent_runs[]` | object | Newest first, at most 10: `started_at`, `finished_at`, `series` (pushed; `0` for a bind), `error`. |
 
 A recap (also the body of `recap --json`):
 
@@ -82,7 +94,8 @@ The window `extra_usage` is Claude's pay-as-you-go spend this month: `used_perce
   "system": {
     "level": "ok",
     "daemon": { "state": "running", "last_heartbeat": "2026-10-18T14:11:50Z", "age_secs": 9 },
-    "sinks": []
+    "sinks": [],
+    "metrics": []
   },
   "agents": [
     {
@@ -152,7 +165,7 @@ The example omits `totals` fields for brevity; real output carries all of them.
 {
   "status_schema": 1,
   "generated_at": "2026-10-18T14:11:59.892069Z",
-  "system": { "level": "ok", "daemon": { "state": "never_started", "last_heartbeat": null, "age_secs": null }, "sinks": [] },
+  "system": { "level": "ok", "daemon": { "state": "never_started", "last_heartbeat": null, "age_secs": null }, "sinks": [], "metrics": [] },
   "agent": "claude",
   "period": "today",
   "range": { "start": "2026-10-18", "end": "2026-10-19" },

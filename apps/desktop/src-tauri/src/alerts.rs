@@ -106,6 +106,11 @@ impl Notice {
                 format!("Sink {sink} has been failing for a while."),
                 Route::Settings,
             ),
+            AlertKind::MetricsFailing { output, .. } => (
+                "Metrics output failing".to_owned(),
+                format!("Metrics output {output} has been failing for a while."),
+                Route::Settings,
+            ),
             AlertKind::FormatDrift { agent } => (
                 "Log format changed".to_owned(),
                 format!("{agent} wrote lines {DISPLAY_NAME} does not recognise."),

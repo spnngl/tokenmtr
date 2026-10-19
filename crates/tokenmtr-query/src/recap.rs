@@ -17,6 +17,7 @@ use crate::engine::{Dim, Scope, fetch};
 use crate::error::{FilterError, QueryError};
 use crate::filters::{ClientName, Filters};
 use crate::health::{DaemonHealth, DaemonState, SinkHealth, SinkSpec, daemon_health, sink_health};
+use crate::metrics_health::{MetricsHealth, MetricsSpec, metrics_health};
 use crate::quota::{QuotaMeter, quota_latest};
 use crate::range::{Bucket, DateRange, Period};
 use crate::series::{GroupBy, series};
@@ -233,6 +234,8 @@ pub struct RecapConfig {
     pub budgets: Vec<BudgetSpec>,
     /// Sinks.
     pub sinks: Vec<SinkSpec>,
+    /// Metrics outputs.
+    pub metrics: Vec<MetricsSpec>,
     /// Window of the live rate.
     pub live_window: SignedDuration,
     /// Heartbeat age after which the daemon counts as stale.
@@ -299,19 +302,19 @@ pub struct AgentRecap {
     pub last_activity: Option<Timestamp>,
 }
 
-/// How bad things are: the worst of daemon and sinks (the menu-bar status dot).
+/// How bad things are: the worst of daemon, sinks and metrics outputs (the menu-bar status dot).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthLevel {
     /// All fine (disabled sinks and a never-started daemon count as fine).
     Ok,
-    /// Stale daemon or lagging sink.
+    /// Stale daemon, lagging sink or failing metrics output.
     Warning,
     /// A failing sink.
     Error,
 }
 
-/// Daemon and sink state.
+/// Daemon, sink and metrics output state.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SystemHealth {
     /// Worst of the below.
@@ -320,6 +323,8 @@ pub struct SystemHealth {
     pub daemon: DaemonHealth,
     /// Sinks.
     pub sinks: Vec<SinkHealth>,
+    /// Metrics outputs; empty when none is configured.
+    pub metrics: Vec<MetricsHealth>,
 }
 
 fn system_health(
@@ -329,10 +334,16 @@ fn system_health(
 ) -> Result<SystemHealth, QueryError> {
     let daemon = daemon_health(reader, ctx, cfg.daemon_stale_after)?;
     let sinks = sink_health(reader, ctx, &cfg.sinks)?;
+    let metrics = metrics_health(reader, &cfg.metrics)?;
     let sink_level = match sinks.iter().map(|s| s.state.severity()).max() {
         Some(2) => HealthLevel::Error,
         Some(1) => HealthLevel::Warning,
         _ => HealthLevel::Ok,
+    };
+    let metrics_level = if metrics.iter().any(|m| m.state.severity() > 0) {
+        HealthLevel::Warning
+    } else {
+        HealthLevel::Ok
     };
     let daemon_level = if daemon.state == DaemonState::Stale {
         HealthLevel::Warning
@@ -340,9 +351,10 @@ fn system_health(
         HealthLevel::Ok
     };
     Ok(SystemHealth {
-        level: sink_level.max(daemon_level),
+        level: sink_level.max(daemon_level).max(metrics_level),
         daemon,
         sinks,
+        metrics,
     })
 }
 

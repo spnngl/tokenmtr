@@ -25,6 +25,7 @@ use crate::fx::{self, FxRateRow, FxSource};
 use crate::ingest::{self, IngestWrite, IngestWriteReport};
 use crate::issue::{self, IssueKind, OpenParseIssue, ParseIssue};
 use crate::meta::{self, Identity};
+use crate::metrics_run::{self, MetricsRun};
 use crate::migrations::{SCHEMA_VERSION, migrations};
 use crate::pricing::{self, StoredPricingSnapshot};
 use crate::project::{self, GitRemote, ProjectResolution};
@@ -400,6 +401,14 @@ pub trait StoreRead: sealed::Sealed {
         runs::ingest_runs(self.connection(), agent, limit)
     }
 
+    /// The newest attempts of the metrics output `output`, newest first.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn metrics_runs(&self, output: &SinkId, limit: usize) -> Result<Vec<MetricsRun>, StoreError> {
+        metrics_run::runs(self.connection(), output, limit)
+    }
+
     /// The newest export attempts of `sink`, newest first.
     ///
     /// # Errors
@@ -714,6 +723,15 @@ impl Store {
     /// `SQLite` failures.
     pub fn record_sink_run(&mut self, run: &SinkRun) -> Result<(), StoreError> {
         self.in_transaction(|conn, _| sink::record_run(conn, run, sink::RUN_HISTORY))
+    }
+
+    /// Appends one attempt to the history of a metrics output (a push, a bind, or a start that
+    /// failed). The history keeps the newest 1000 runs per output.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    pub fn record_metrics_run(&mut self, run: &MetricsRun) -> Result<(), StoreError> {
+        self.in_transaction(|conn, _| metrics_run::record_run(conn, run, metrics_run::RUN_HISTORY))
     }
 
     /// Appends one backup attempt.

@@ -46,6 +46,8 @@ function alertText(alert: Alert): string {
       return `Budget ${alert.budget} reached ${alert.percent}%`;
     case "sink_failing":
       return `Sink ${alert.sink} is failing`;
+    case "metrics_failing":
+      return `Metrics output ${alert.output} is failing`;
     case "format_drift":
       return `${alert.agent} changed its log format`;
     case "backup_failed":
