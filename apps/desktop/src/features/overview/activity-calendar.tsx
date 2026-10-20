@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import { useFilters } from "../../app/use-filters";
 import { formatCount, formatTokens, LOCALE } from "../../shared/format";
 import { useActivityCalendar } from "../../shared/queries";
@@ -9,7 +9,7 @@ import { SegmentedControl } from "../../shared/segmented-control";
 import { ChartFrame, DataTable } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
 
-type CalendarMetric = "tokens" | "sessions";
+export type CalendarMetric = "tokens" | "sessions";
 
 const METRICS: readonly { readonly value: CalendarMetric; readonly label: string }[] = [
   { value: "tokens", label: "Tokens" },
@@ -150,16 +150,22 @@ export function streaksOf(days: readonly ActivityDay[], metric: CalendarMetric):
 
 /**
  * GitHub-style daily activity over the last two years, tokens or started sessions. Nothing when
- * every day is idle.
+ * every day is idle. The caller owns `metric`, so the choice survives a remount.
  */
-export function ActivityCalendarCard(): ReactNode {
+export function ActivityCalendarCard(props: {
+  readonly metric: CalendarMetric;
+  readonly onMetricChange: (metric: CalendarMetric) => void;
+}): ReactNode {
   const { filters } = useFilters();
-  const [metric, setMetric] = useState<CalendarMetric>("tokens");
   return (
     <CardRemote title="Daily activity" remote={toRemote(useActivityCalendar(filters))}>
       {(calendar) =>
         calendar.days.some((day) => day.total_tokens > 0 || day.sessions > 0) ? (
-          <CalendarFrame calendar={calendar} metric={metric} onMetricChange={setMetric} />
+          <CalendarFrame
+            calendar={calendar}
+            metric={props.metric}
+            onMetricChange={props.onMetricChange}
+          />
         ) : null
       }
     </CardRemote>
@@ -180,6 +186,7 @@ function CalendarFrame(props: {
     <ChartFrame
       title="Daily activity"
       description={`${formatValue(total, metric)} over the last two years, on ${formatCount(active)} active days. The grid shows as many recent weeks as fit.`}
+      // Plain rects, not Recharts: the ~400-point budget of `ChartFrame` does not apply.
       points={calendar.days.length}
       interactive
       actions={
@@ -286,10 +293,15 @@ function CalendarGrid(props: {
   const weeks = all.slice(all.length - weeksThatFit(props.width, all.length));
   const visible = weeks.flat();
   const today = visible.at(-1);
-  // The day under the pointer or the keyboard; the readout shows today without one.
-  const [active, setActive] = useState<string | null>(null);
-  const shown = visible.find((day) => day.day === active) ?? today;
+  // The day under the pointer or the keyboard; the readout shows today without one. Only
+  // keyboard moves are announced: a pointer sweep would read out every day it crosses.
+  const [active, setActive] = useState<{
+    readonly day: string;
+    readonly by: "pointer" | "keyboard";
+  } | null>(null);
+  const shown = visible.find((day) => day.day === active?.day) ?? today;
   const scroller = useRef<HTMLElement>(null);
+  const hintId = useId();
   const height = HEADER_HEIGHT + 7 * PITCH - GAP;
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
@@ -309,7 +321,7 @@ function CalendarGrid(props: {
     event.preventDefault();
     const day = visible[to];
     if (day !== undefined) {
-      setActive(day.day);
+      setActive({ day: day.day, by: "keyboard" });
       event.currentTarget
         .querySelector(`[data-day="${day.day}"]`)
         ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
@@ -337,11 +349,16 @@ function CalendarGrid(props: {
         {/* A reversed row scrolls from its end: it opens on today, a narrow window scrolls back. */}
         <section
           ref={scroller}
-          aria-label="Daily activity grid, arrow keys move between days"
+          aria-label="Daily activity grid"
+          aria-describedby={hintId}
           // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must be focusable (WCAG 2.1.1).
           tabIndex={0}
           onKeyDown={onKeyDown}
-          onFocus={() => setActive((day) => day ?? today?.day ?? null)}
+          onFocus={() =>
+            setActive((current) =>
+              today === undefined ? current : (current ?? { day: today.day, by: "keyboard" }),
+            )
+          }
           onBlur={() => setActive(null)}
           className="flex min-w-0 flex-1 flex-row-reverse overflow-x-auto rounded-xs focus-visible:outline-2 focus-visible:outline-ring"
         >
@@ -380,15 +397,22 @@ function CalendarGrid(props: {
                           ? "var(--fg-muted)"
                           : undefined,
                   }}
-                  onPointerEnter={() => setActive(day.day)}
+                  onPointerEnter={() => setActive({ day: day.day, by: "pointer" })}
                 />
               )),
             )}
           </svg>
         </section>
       </div>
+      <p id={hintId} hidden>
+        Arrow keys move between days, Home and End to the first and last.
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-fg-muted">
-        <p role="status" className="tabular-nums">
+        <p
+          role="status"
+          aria-live={active?.by === "keyboard" ? "polite" : "off"}
+          className="tabular-nums"
+        >
           {shown === undefined ? null : (
             <>
               {DAY_FORMAT.format(utc(shown.day))}
@@ -408,23 +432,27 @@ function CalendarGrid(props: {
 /** Columns a month label spans; closer labels, or one closer to the right edge, would overlap. */
 const LABEL_COLUMNS = 3;
 
-/** A label above each column holding a month's first day, unless it would overlap. */
+/**
+ * A label above each column whose top day starts a month, as on GitHub, unless it would overlap.
+ * Labels are placed from the right, so a month start wins over the partial month at the left edge.
+ */
 function monthLabels(
   weeks: readonly (readonly ActivityDay[])[],
 ): { readonly column: number; readonly label: string }[] {
   const labels: { column: number; label: string }[] = [];
-  weeks.forEach((week, column) => {
-    const first = week.find((day) => day.day.endsWith("-01"));
-    const previous = labels[labels.length - 1];
+  for (let column = weeks.length - LABEL_COLUMNS; column >= 0; column -= 1) {
+    const top = weeks[column]?.[0];
+    const month = top?.day.slice(0, 7);
+    const next = labels[labels.length - 1];
     if (
-      first !== undefined &&
-      column <= weeks.length - LABEL_COLUMNS &&
-      (previous === undefined || column - previous.column >= LABEL_COLUMNS)
+      top !== undefined &&
+      month !== weeks[column - 1]?.[0]?.day.slice(0, 7) &&
+      (next === undefined || next.column - column >= LABEL_COLUMNS)
     ) {
-      labels.push({ column, label: MONTH_FORMAT.format(utc(first.day)) });
+      labels.push({ column, label: MONTH_FORMAT.format(utc(top.day)) });
     }
-  });
-  return labels;
+  }
+  return labels.reverse();
 }
 
 function Legend(): ReactNode {

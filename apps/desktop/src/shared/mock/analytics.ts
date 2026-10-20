@@ -2,6 +2,7 @@ import type { Filters } from "../filters";
 import type { Currency } from "../format";
 import type {
   ActivityCalendar,
+  ActivityDay,
   BillingAmounts,
   BillingPoint,
   BillingSeries,
@@ -263,7 +264,7 @@ export function activityCalendarOf(
     sessions.filter((seed) => matches(seed, scoped)),
     (seed) => new Date(seed.startedAtMs + OFFSET_MS).toISOString().slice(0, 10),
   );
-  const days = [];
+  const days: ActivityDay[] = [];
   for (let day = start; day <= TODAY; day = addDays(day, 1)) {
     days.push({
       day,

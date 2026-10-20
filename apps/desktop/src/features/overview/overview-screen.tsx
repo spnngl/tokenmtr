@@ -34,7 +34,7 @@ import {
   PageHeader,
 } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
-import { ActivityCalendarCard } from "./activity-calendar";
+import { ActivityCalendarCard, type CalendarMetric } from "./activity-calendar";
 import { HeatmapGrid, summarizeWeekdays, type WeekdaySummary } from "./heatmap";
 
 const TOP_COUNT = 5;
@@ -312,6 +312,11 @@ export function OverviewScreen(): ReactNode {
   const overview = toRemote(useOverview(filters));
   // The calendar ignores the range: it still has a story to tell when the range is idle.
   const idleRange = overview.kind === "ready" && overview.data.events === 0;
+  // Here, not in the card: the card moves when the range turns idle.
+  const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>("tokens");
+  const calendar = (
+    <ActivityCalendarCard metric={calendarMetric} onMetricChange={setCalendarMetric} />
+  );
   return (
     <>
       <PageHeader to="/" />
@@ -328,12 +333,12 @@ export function OverviewScreen(): ReactNode {
               <TopModels />
               <TopProjects />
             </div>
-            <ActivityCalendarCard />
+            {calendar}
             <Activity />
           </>
         )}
       </RemoteView>
-      {idleRange ? <ActivityCalendarCard /> : null}
+      {idleRange ? calendar : null}
     </>
   );
 }
