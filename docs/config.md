@@ -129,7 +129,7 @@ id = "default"
 # [[agents.claude.profiles]]
 # id = "work"
 # config_dir = "~/.claude-work"    # roots, credentials and stats cache come from here
-# account = "me@acme.com"         # overrides [agents.claude] and top-level account
+# account = "me@acme.com"          # overrides [agents.claude] and top-level account
 
 [agents.pi]
 enabled = true
@@ -214,7 +214,7 @@ Types: `[x]` is a list of `x`. A default of "platform" means a path under the da
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `schema_version` | integer | `1` | Must equal `1`. |
-| `account` | string | none | Metrics `account` label of a profile whose agent reports no account: pi always, Claude without an account email or organization. Non-blank. `[agents.<agent>]` and its profiles override it. |
+| `account` | string | none | Metrics `account` label of a profile whose agent reports no account (an email or organization, which only Claude reports today). Non-blank. `[agents.<agent>]` and its profiles override it. |
 
 ### `[machine]`
 
@@ -403,9 +403,9 @@ When the database cannot be read as expected (a Superset update changed it), the
 | `enabled` | bool | `true` | Collect this agent. |
 | `account` | string | top-level `account` | Metrics `account` label of this agent's profiles; see the top-level `account`. Non-blank. |
 | `profiles[].id` | id | required | Unique within the agent. |
-| `profiles[].account` | string | the agent's `account` | Metrics `account` label of this profile; see the top-level `account`. Non-blank. |
 | `profiles[].roots` | `[path]` | discovery | Session roots; non-empty. |
 | `profiles[].config_dir` | path | discovery | Claude only. Roots, credentials and stats cache come from here. Exclusive with `roots`. |
+| `profiles[].account` | string | the agent's `account` | Metrics `account` label of this profile; see the top-level `account`. Non-blank. |
 
 The `default` pi profile reads `PI_CODING_AGENT_SESSION_DIR` when set; otherwise both the `sessionDir` of pi's `settings.json` and the `sessions` folder, each in pi's agent directory (`PI_CODING_AGENT_DIR`, default `~/.pi/agent`).
 

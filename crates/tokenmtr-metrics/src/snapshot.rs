@@ -401,14 +401,14 @@ impl<'a> Accounts<'a> {
         &mut self,
         agent: &str,
         profile: &str,
-        polled: Option<String>,
+        polled: Option<&str>,
     ) -> Result<String, MetricsError> {
         let key = (agent.to_owned(), profile.to_owned());
         if let Some(detected) = self.detected.get(&key) {
             return Ok(detected.clone());
         }
         if let Some(polled) = polled.filter(|p| !p.is_empty()) {
-            return Ok(polled);
+            return Ok(polled.to_owned());
         }
         if self.configured.is_empty() {
             return Ok(String::new());
@@ -860,7 +860,8 @@ fn quota(db: &Connection, accounts: &mut Accounts<'_>) -> Result<Vec<QuotaGauge>
     while let Some(row) = rows.next()? {
         let agent: String = row.get(0)?;
         let profile: String = row.get(1)?;
-        let account = accounts.label(&agent, &profile, Some(row.get(3)?))?;
+        let polled: String = row.get(3)?;
+        let account = accounts.label(&agent, &profile, Some(&polled))?;
         gauges.push(QuotaGauge {
             account,
             window: row.get(2)?,

@@ -726,37 +726,91 @@ fn the_account_falls_back_to_the_organization() {
     assert_eq!(label(of(&folded, Family::Events)[0], "account"), "Acme");
 }
 
-#[test]
-fn the_configured_account_fills_only_a_missing_one() {
-    let mut seed = Seed::new();
-    seed.put(&[seed.ev("e", "2026-02-28T00:00:00Z")]);
-    let configured = SnapshotContext::new(
+/// A context whose configured accounts name their level, for the default Claude profile.
+fn configured_accounts() -> SnapshotContext {
+    let name = |text: &str| AccountName::try_from(text.to_owned()).unwrap();
+    SnapshotContext::new(
         TimeZone::UTC,
         Vec::new(),
         SignedDuration::from_hours(48),
         AccountLabels {
-            global: Some(AccountName::try_from("configured".to_owned()).unwrap()),
-            ..AccountLabels::default()
+            global: Some(name("global")),
+            agents: [(AgentId::CLAUDE, name("agent"))].into(),
+            profiles: [(
+                (AgentId::CLAUDE, ProfileId::default_profile()),
+                name("profile"),
+            )]
+            .into(),
         },
-    );
+    )
+}
+
+#[test]
+fn the_configured_account_fills_only_a_missing_one() {
+    let mut seed = Seed::new();
+    seed.put(&[seed.ev("e", "2026-02-28T00:00:00Z")]);
     let account = |seed: &Seed| {
-        let taken = snapshot(&seed.reader(), &configured, now()).unwrap();
+        let taken = snapshot(&seed.reader(), &configured_accounts(), now()).unwrap();
         label(of(&everything(seed, &taken), Family::Events)[0], "account").to_owned()
     };
-    assert_eq!(account(&seed), "configured");
+    assert_eq!(account(&seed), "profile");
 
-    seed.store
-        .save_account(&AccountRecord {
-            agent: AgentId::CLAUDE,
-            profile: ProfileId::default_profile(),
-            email: Some("me@example.com".to_owned()),
-            organization: None,
-            detected_plan: None,
-            rate_limit_tier: None,
-            fetched_at: now(),
-        })
-        .unwrap();
+    let mut record = AccountRecord {
+        agent: AgentId::CLAUDE,
+        profile: ProfileId::default_profile(),
+        email: None,
+        organization: Some("Acme".to_owned()),
+        detected_plan: None,
+        rate_limit_tier: None,
+        fetched_at: now(),
+    };
+    seed.store.save_account(&record).unwrap();
+    assert_eq!(account(&seed), "Acme");
+
+    record.email = Some("me@example.com".to_owned());
+    seed.store.save_account(&record).unwrap();
     assert_eq!(account(&seed), "me@example.com");
+}
+
+#[test]
+fn the_configured_account_fills_a_quota_poll_without_one() {
+    let mut seed = Seed::new();
+    let poll = |account: Option<&str>, at: &str| QuotaPoll {
+        agent: AgentId::CLAUDE,
+        profile: ProfileId::default_profile(),
+        account: account.map(str::to_owned),
+        fetched_at: ts(at),
+        outcome: QuotaOutcome::Windows {
+            windows: vec![QuotaWindow {
+                id: WindowId::five_hour(),
+                state: QuotaWindowState {
+                    utilization: Utilization::new(20.0).unwrap(),
+                    resets_at: None,
+                },
+            }],
+            extra_usage: None,
+        },
+    };
+    let account = |seed: &mut Seed, polled: Option<&str>, at: &str| {
+        seed.store
+            .upsert_quota_snapshots(&[poll(polled, at)], &TimeZone::UTC)
+            .unwrap();
+        let taken = snapshot(&seed.reader(), &configured_accounts(), now()).unwrap();
+        label(
+            of(&everything(seed, &taken), Family::QuotaUsedRatio)[0],
+            "account",
+        )
+        .to_owned()
+    };
+    assert_eq!(account(&mut seed, None, "2026-02-28T10:00:00Z"), "profile");
+    assert_eq!(
+        account(
+            &mut seed,
+            Some("polled@example.com"),
+            "2026-02-28T11:00:00Z"
+        ),
+        "polled@example.com"
+    );
 }
 
 #[test]

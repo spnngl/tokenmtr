@@ -109,7 +109,7 @@ id = "default"
 # [[agents.claude.profiles]]
 # id = "work"
 # config_dir = "~/.claude-work"    # roots, credentials and stats cache come from here
-# account = "me@acme.com"         # overrides [agents.claude] and top-level account
+# account = "me@acme.com"          # overrides [agents.claude] and top-level account
 
 [agents.pi]
 enabled = true
