@@ -59,11 +59,11 @@ organization; on quota gauges, else the account the poll recorded), else the con
 `sidechain` is `true` for an event the agent marks as a sidechain (a subagent's call), else `false`.
 
 `machine_id` is the store's id, stable for the life of the store. `tokenmtr_machine_info` links it to
-the machine name and the operating system, read once when the daemon starts. On Linux, `os_id`,
+the machine name and the operating system, read once on first use. On Linux, `os_id`,
 `os_version`, `os_name` and `os_build` are `ID`, `VERSION_ID`, `PRETTY_NAME` and `BUILD_ID` of
 `/etc/os-release` (else `/usr/lib/os-release`), and `kernel_version` is the kernel release. On
-macOS they come from `SystemVersion.plist` (`os_build` is the build, such as `24F74`) and
-`uname -r`. `os` and `arch` are those of the TokenMtr build. The TokenMtr version is on
+macOS `os_id` is `macos`; the others come from `SystemVersion.plist` (`os_build` is the build,
+such as `24F74`) and `uname -r`. `os` and `arch` are those of the TokenMtr build. The TokenMtr version is on
 `tokenmtr_build_info`.
 
 A skill is counted when an agent loads it: Claude Code through its `Skill` tool, pi when it reads a

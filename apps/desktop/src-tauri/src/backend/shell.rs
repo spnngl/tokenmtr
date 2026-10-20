@@ -409,12 +409,8 @@ fn machine_name(config: &Config) -> String {
         .name
         .clone()
         .or_else(|| {
-            std::process::Command::new("hostname")
-                .output()
-                .ok()
-                .and_then(|out| String::from_utf8(out.stdout).ok())
-                .map(|name| name.trim().to_owned())
-                .filter(|name| !name.is_empty())
+            let host = &tokenmtr_platform::host_info().host_name;
+            (!host.is_empty()).then(|| host.clone())
         })
         .unwrap_or_else(|| "this Mac".to_owned())
 }

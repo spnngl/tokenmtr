@@ -16,7 +16,6 @@ use tempfile::TempDir;
 use tokenmtr_config::{
     AccountLabels, AccountName, GlobList, OutputFilter, RedactColumn, RedactMode,
 };
-
 use tokenmtr_core::event::{SignalKind, ToolCall};
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
@@ -1191,6 +1190,7 @@ fn the_session_queries_ride_the_session_and_time_indexes() {
     let signals = plan(&reader, SIGNALS_SQL);
     assert!(signals.contains("usage_event_session"), "{signals}");
     assert!(!signals.contains("SCAN usage_event"), "{signals}");
+    assert!(!signals.contains("TEMP B-TREE"), "{signals}");
 }
 
 #[test]

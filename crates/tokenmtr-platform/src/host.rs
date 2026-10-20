@@ -418,11 +418,7 @@ UNKNOWN=x
             "ID",
             "ID=\\",
         ] {
-            let release = parse_os_release(junk);
-            assert!(
-                release.name.is_empty() && release.version_id.is_empty(),
-                "{junk:?}"
-            );
+            assert_eq!(parse_os_release(junk), OsRelease::default(), "{junk:?}");
         }
     }
 

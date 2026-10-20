@@ -12,7 +12,7 @@
 //! - **No money (P3).** Tokens, event counts, tool-call counts and quota utilization only.
 //! - **Rows counted (P4).** `superseded = 0` and `kind NOT IN ('daily_aggregate',
 //!   'extra_usage')`.
-//! - **Labels (P5).** `agent`, `profile`, `provider`, `model`, `client`, `account`, `billing`
+//! - **Labels (P5).** `agent`, `profile`, `provider`, `model`, `client`, `account`, `billing`,
 //!   `project` (the complete normalized git remote, else the directory name; never the key,
 //!   which can be a path), `service_tier` and `sidechain` on every usage family. A session
 //!   family swaps `agent`, `profile` and `account` for `session_id` and `git_branch`;
