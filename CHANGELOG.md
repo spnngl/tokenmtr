@@ -9,6 +9,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - The metrics `account` label of a profile whose agent reports no account (pi; Claude without an email or organization) comes from the config: top-level `account`, `[agents.<agent>].account` or `profiles[].account`, the most specific winning ([docs/config.md](docs/config.md)).
 - **Edit config file** opens the config file (created when missing) in the default text editor, from Settings and the menu-bar recap; the recap also gets a **Quit TokenMtr** button.
+- Metrics: `tokenmtr_session_info` links a `session_id` to its agent, profile, account and `machine_id`; `tokenmtr_machine_info` describes the machine (name, OS from `/etc/os-release` or `SystemVersion.plist`, kernel, TokenMtr version). New families: session start and last-event timestamps, skill uses (total and per session), API errors and compactions (total and per session), account plan and rate-limit tier, open parse issues, and the last event per profile. Usage families gain `service_tier` and `sidechain` ([docs/metrics.md](docs/metrics.md)).
+- Tool calls record the skill they load (Claude's `Skill` tool, pi reading a `SKILL.md`); the `tool_calls` export gains a `skill` column (export schema 4) and the `skill` column and label can be redacted.
+
+### Changed
+
+- Metrics: `tokenmtr_session_*` families no longer carry `agent`, `profile` or `account`; join on `tokenmtr_session_info` instead.
 
 ### Changed
 

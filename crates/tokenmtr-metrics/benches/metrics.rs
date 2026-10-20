@@ -28,7 +28,7 @@ use tokenmtr_core::{
     Plan, ProfileId, ProjectKey, Subscription, SubscriptionId, SubscriptionSpec, TokenCounts,
     UsageEvent,
 };
-use tokenmtr_metrics::{OutputScope, Snapshot, SnapshotContext, snapshot};
+use tokenmtr_metrics::{Machine, OutputScope, Snapshot, SnapshotContext, snapshot};
 use tokenmtr_store::{
     IngestWrite, ProfiledToolCall, ProjectResolution, ProjectSource, Store, StoreRead as _,
     StoreReader,
@@ -172,6 +172,7 @@ fn build() -> Fixture {
                             .to_owned(),
                             mcp_server: None,
                             is_error: Some(false),
+                            skill: None,
                         },
                     });
                 }
@@ -242,6 +243,7 @@ fn context() -> SnapshotContext {
         vec![subscription],
         SignedDuration::from_hours(48),
         AccountLabels::default(),
+        Machine::default(),
     )
 }
 

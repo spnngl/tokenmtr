@@ -205,8 +205,12 @@ fn tool_calls_results_and_error_flags() -> TestResult {
             .find(|c| c["call"]["tool_use_id"] == id)
             .ok_or(format!("no call {id}"))
     };
-    assert_eq!(calls.len(), 4);
+    assert_eq!(calls.len(), 5);
     assert_eq!(by_id("call_t1")?["call"]["is_error"], false);
+    assert_eq!(by_id("call_t1")?["call"]["skill"], Value::Null);
+    let skill = by_id("call_t5")?;
+    assert_eq!(skill["call"]["skill"], "git-commit");
+    assert_eq!(skill["call"]["is_error"], false);
     assert_eq!(by_id("call_t2")?["call"]["is_error"], true);
     let mcp = by_id("call_t3")?;
     assert_eq!(mcp["call"]["tool_name"], "lookup");

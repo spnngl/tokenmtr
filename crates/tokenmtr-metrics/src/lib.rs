@@ -13,9 +13,11 @@
 //! - **Rows counted (P4).** `superseded = 0` and `kind NOT IN ('daily_aggregate',
 //!   'extra_usage')`.
 //! - **Labels (P5).** `agent`, `profile`, `provider`, `model`, `client`, `account`, `billing`
-//!   and `project` (the complete normalized git remote, else the directory name; never the key,
-//!   which can be a path) on every usage family. `session_id` and `git_branch` only on session
-//!   families. `cwd` is never a label.
+//!   `project` (the complete normalized git remote, else the directory name; never the key,
+//!   which can be a path), `service_tier` and `sidechain` on every usage family. A session
+//!   family swaps `agent`, `profile` and `account` for `session_id` and `git_branch`;
+//!   `tokenmtr_session_info` links a `session_id` back to them and to the `machine_id`, which
+//!   `tokenmtr_machine_info` describes. `cwd` is never a label.
 //! - **`billing` is the query engine's rule (P6).** [`tokenmtr_core::covering`], evaluated once
 //!   per subscription segment.
 //! - **Per-output exclusion and redaction (P7, P20).** [`Snapshot::fold`] applies an
@@ -38,4 +40,4 @@ pub use catalog::{Family, Kind};
 pub use error::MetricsError;
 pub use remote_write::{MAX_SERIES_PER_REQUEST, Request, Seen, WriteRequest, requests};
 pub use scope::{Folded, OutputScope, Series, Value};
-pub use snapshot::{Snapshot, SnapshotContext, snapshot};
+pub use snapshot::{Machine, Snapshot, SnapshotContext, snapshot};

@@ -13,11 +13,12 @@
 
 use std::borrow::Cow;
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use serde::Deserialize;
+use serde_json::value::RawValue;
 use tokenmtr_core::{
     AgentId, DedupKey, EventKind, ModelId, ParsedEvent, ProfileId, ProviderId, SessionId,
-    SignalKind, SourceFileId, TokenCounts, ToolCall, UsdMicros, split_mcp_tool_name,
+    SignalKind, SkillName, SourceFileId, TokenCounts, ToolCall, UsdMicros, split_mcp_tool_name,
 };
 
 use super::header::{self, SessionHeader};
@@ -30,6 +31,11 @@ use crate::source::SourceFile;
 /// The model of events whose entry carries no model: tool results, compactions and branch
 /// summaries (pi attributes their usage to a model internally but does not write it down).
 pub const UNATTRIBUTED_MODEL: &str = "unattributed";
+
+/// The tool pi loads a skill with: it reads the skill's [`SKILL_FILE`].
+const READ_TOOL: &str = "read";
+/// The file that defines a skill; its directory names the skill.
+const SKILL_FILE: &str = "SKILL.md";
 
 /// Per-file facts the line parser needs. Build one per source file with [`LineContext::new`].
 #[derive(Debug, Clone)]
@@ -70,7 +76,8 @@ impl LineContext {
 ///
 /// Pushes, as the line allows:
 /// - a usage event, for the usage-bearing entries in the module table;
-/// - tool calls, for `toolCall` blocks of assistant messages;
+/// - tool calls, for `toolCall` blocks of assistant messages, with the skill a `read` of a
+///   `SKILL.md` loads;
 /// - tool results, for toolResult messages;
 /// - a signal, for `compaction` entries.
 ///
@@ -228,6 +235,11 @@ fn push_tool_call(
     if id.is_empty() || name.is_empty() {
         return;
     }
+    let skill = if name == READ_TOOL {
+        block.arguments.and_then(skill_of)
+    } else {
+        None
+    };
     let name = split_mcp_tool_name(name);
     out.push_tool_call(ParsedToolCall {
         call: ToolCall {
@@ -239,9 +251,23 @@ fn push_tool_call(
             tool_name: name.tool_name.to_owned(),
             mcp_server: name.mcp_server.map(str::to_owned),
             is_error: None,
+            skill,
         },
         event_key: event_key.cloned(),
     });
+}
+
+/// The skill a `read` call loads: the directory name of an `arguments.path` whose file name is
+/// exactly [`SKILL_FILE`] (`/x/skills/foo/SKILL.md` is `foo`). The rest of the path is dropped.
+/// Any other shape of `arguments`, a path without a parent directory or an invalid name yields
+/// no skill.
+fn skill_of(arguments: &RawValue) -> Option<SkillName> {
+    let arguments: ReadArguments<'_> = serde_json::from_str(arguments.get()).ok()?;
+    let path = Utf8Path::new(arguments.path.as_deref()?);
+    if path.file_name() != Some(SKILL_FILE) {
+        return None;
+    }
+    SkillName::try_from(path.parent()?.file_name()?.trim()).ok()
 }
 
 /// Where the identity of one usage block comes from.
@@ -494,10 +520,104 @@ struct Block<'a> {
     id: Option<Cow<'a, str>>,
     #[serde(borrow)]
     name: Option<Cow<'a, str>>,
+    /// The tool arguments, kept as borrowed raw JSON (no copy); only [`skill_of`] reads them,
+    /// and only for a `read` call. Raw, so an odd shape never fails the line.
+    #[serde(borrow)]
+    arguments: Option<&'a RawValue>,
 }
 
 impl Block<'_> {
     fn is(&self, kind: &str) -> bool {
         self.kind.as_deref() == Some(kind)
+    }
+}
+
+/// The arguments of a `read` call; every field but `path` is skipped.
+#[derive(Deserialize)]
+struct ReadArguments<'a> {
+    #[serde(borrow)]
+    path: Option<Cow<'a, str>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+    /// Parses one assistant message with usage and a `toolCall` block of `name` and `arguments`.
+    fn parse_tool_call(name: &str, arguments: &Value) -> TestResult<(LineClass, Option<String>)> {
+        let file = SourceFile::new(
+            "/s/--p--/2026-01-01T00-00-00-000Z_sess.jsonl".into(),
+            ProfileId::default_profile(),
+        );
+        let line = json!({"type": "message", "timestamp": "2026-03-01T00:00:00Z",
+            "message": {"role": "assistant", "provider": "anthropic",
+                "model": "claude-sonnet-4-5", "responseId": "r",
+                "usage": {"input": 1, "output": 1},
+                "content": [{"type": "toolCall", "id": "toolu_1", "name": name,
+                    "arguments": arguments}]}})
+        .to_string();
+        let mut batch = ParseBatch::new();
+        let class = parse_line(&LineContext::new(&file, None)?, line.as_bytes(), &mut batch);
+        let [call] = batch.tool_calls() else {
+            return Err("expected one tool call".into());
+        };
+        let skill = call.call.skill.as_ref().map(|s| s.as_str().to_owned());
+        Ok((class, skill))
+    }
+
+    fn skill_of_read(path: &str) -> TestResult<Option<String>> {
+        Ok(parse_tool_call("read", &json!({ "path": path, "offset": 1 }))?.1)
+    }
+
+    #[test]
+    fn reading_a_skill_file_records_its_directory() -> TestResult {
+        assert_eq!(
+            skill_of_read("/Users/x/.agents/skills/add-dalec-image/SKILL.md")?.as_deref(),
+            Some("add-dalec-image")
+        );
+        assert_eq!(
+            skill_of_read(".agents/skills/foo/SKILL.md")?.as_deref(),
+            Some("foo")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn other_reads_and_tools_record_no_skill() -> TestResult {
+        for path in [
+            "SKILL.md",
+            "/SKILL.md",
+            "../SKILL.md",
+            "/x/foo/skill.md",
+            "/x/foo/SKILL.md.bak",
+            "/x/foo/README.md",
+            "",
+        ] {
+            assert_eq!(skill_of_read(path)?, None, "{path}");
+        }
+        let long = format!("/x/{}/SKILL.md", "a".repeat(129));
+        assert_eq!(skill_of_read(&long)?, None);
+        assert_eq!(skill_of_read("/x/a\u{1}b/SKILL.md")?, None);
+        assert_eq!(
+            parse_tool_call("edit", &json!({"path": "/x/foo/SKILL.md"}))?.1,
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn odd_arguments_record_no_skill_and_keep_the_line() -> TestResult {
+        for arguments in [json!("/x/foo/SKILL.md"), json!({"path": 3}), json!(null)] {
+            assert_eq!(
+                parse_tool_call("read", &arguments)?,
+                (LineClass::Event, None),
+                "{arguments}"
+            );
+        }
+        Ok(())
     }
 }

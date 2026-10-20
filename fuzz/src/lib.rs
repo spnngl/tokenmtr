@@ -9,6 +9,7 @@ use jiff::tz::{TimeZone, offset};
 use tokenmtr_agents::{ParseBatch, SourceFile, claude, pi};
 use tokenmtr_config::{ConfigFormat, Env, TomlCodec, load_str};
 use tokenmtr_core::ProfileId;
+use tokenmtr_platform::{HostInfo, parse_os_release, parse_system_version_plist};
 use tokenmtr_remote::{ClaudeCredentials, parse_profile_response};
 
 #[cfg(test)]
@@ -28,6 +29,7 @@ pub const TARGETS: &[(&str, Entry)] = &[
     ("ecb_xml", ecb_xml),
     ("config", config),
     ("accept_header", accept_header),
+    ("host_files", host_files),
 ];
 
 /// One Claude transcript line.
@@ -108,4 +110,12 @@ pub fn accept_header(data: &[u8]) {
     };
     let _ = tokenmtr_metrics::text::Format::negotiate(Some(text));
     let _ = tokenmtr_remote::scrape::accepts_gzip(Some(text));
+}
+
+/// An `os-release` file and a macOS `SystemVersion.plist`, decoded lossily as
+/// [`HostInfo::detect`] reads them, each turned into label values.
+pub fn host_files(data: &[u8]) {
+    let text = String::from_utf8_lossy(data);
+    let _ = HostInfo::linux(&parse_os_release(&text), &text, &text);
+    let _ = HostInfo::macos(&parse_system_version_plist(&text), &text, &text);
 }

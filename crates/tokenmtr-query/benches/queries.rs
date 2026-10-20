@@ -237,6 +237,7 @@ impl Batch {
                         },
                         mcp_server: mcp.then(|| "github".to_owned()),
                         is_error: Some(h.is_multiple_of(20)),
+                        skill: None,
                     },
                 });
             }

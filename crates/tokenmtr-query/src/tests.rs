@@ -848,6 +848,7 @@ fn sessions_tools_signals_and_daily_aggregates() {
                 tool_name: name.to_owned(),
                 mcp_server: server.map(str::to_owned),
                 is_error: err,
+                skill: None,
             },
         }
     };
@@ -1872,6 +1873,7 @@ fn session_analytics_rows_histogram_and_activity() {
             tool_name: name.to_owned(),
             mcp_server: None,
             is_error: err,
+            skill: None,
         },
     };
     seed.store()
@@ -2003,6 +2005,7 @@ fn session_models_split_the_timeline_histogram_tools_and_signals() {
             tool_name: "Read".to_owned(),
             mcp_server: None,
             is_error: Some(err),
+            skill: None,
         },
     };
     seed.store()

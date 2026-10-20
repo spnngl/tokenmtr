@@ -1,9 +1,10 @@
 //! OS integration: default locations, background service, control socket, secrets, thread
-//! priority and durable file writes. macOS and Linux are implemented.
+//! priority, durable file writes and the host description. macOS and Linux are implemented.
 
 pub mod control;
 pub mod framing;
 pub mod fs;
+pub mod host;
 pub mod paths;
 pub mod qos;
 pub mod secrets;
@@ -12,6 +13,9 @@ pub mod systemd;
 
 pub use control::{ControlError, ControlListener, ControlStream, ControlTransport};
 pub use framing::{FrameError, LineReader, LineWriter, MAX_LINE_BYTES};
+pub use host::{
+    HostInfo, OsRelease, SystemVersion, host_info, parse_os_release, parse_system_version_plist,
+};
 pub use paths::{Paths, PathsError};
 pub use qos::{ThreadPriority, set_thread_priority};
 #[cfg(target_os = "macos")]

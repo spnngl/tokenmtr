@@ -10,8 +10,8 @@ use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, DedupKey, Estimate, EurPerUsd, EventCost, EventId, EventKind,
     FxRate, MachineId, Money, Plan, PricingVersion, ProfileId, ProjectKey, ProviderId, QuotaWindow,
-    SessionId, Subscription, SubscriptionId, SubscriptionSpec, TokenCounts, ToolCall, UsageEvent,
-    UsdMicros, Utilization, WindowId,
+    SessionId, SkillName, Subscription, SubscriptionId, SubscriptionSpec, TokenCounts, ToolCall,
+    UsageEvent, UsdMicros, Utilization, WindowId,
 };
 use tokenmtr_store::{
     FxRateRow, FxSource, ProfiledToolCall, QuotaOutcome, QuotaPoll, QuotaReading, QuotaSample,
@@ -118,6 +118,7 @@ pub fn tool_call(session: &str, at: &str) -> TestResult<ProfiledToolCall> {
             tool_name: "search".to_owned(),
             mcp_server: Some("docs".to_owned()),
             is_error: Some(false),
+            skill: Some(SkillName::try_from("git-commit")?),
         },
     })
 }

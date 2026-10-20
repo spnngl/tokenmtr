@@ -108,12 +108,13 @@ fn exclude_paths_cannot_match_hashed_paths() {
 #[test]
 fn redact_names_labels_and_never_the_cwd() {
     let config = parse(&exporter(
-        "redact = { account = \"hash\", session_id = \"drop\" }",
+        "redact = { account = \"hash\", session_id = \"drop\", skill = \"hash\" }",
     ))
     .unwrap();
     let redact = &config.metrics.exporters[0].filter.redact;
     assert_eq!(redact[&RedactColumn::Account], RedactMode::Hash);
     assert_eq!(redact[&RedactColumn::SessionId], RedactMode::Drop);
+    assert_eq!(redact[&RedactColumn::Skill], RedactMode::Hash);
 
     let (path, violation) = invalid(&exporter("redact = { cwd = \"hash\" }"));
     assert_eq!(path, "metrics.exporters[0].redact.cwd");

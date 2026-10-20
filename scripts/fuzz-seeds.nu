@@ -47,6 +47,7 @@ def main [] {
     write-seeds $root quota_response (whole-files (do $http [claude_usage.json claude_usage_sparse.json claude_usage_limits.json claude_profile.json claude_credentials.json]))
     write-seeds $root ecb_xml (whole-files (do $http [ecb_daily.xml ecb_hist.xml]))
     write-seeds $root config (whole-files [($root | path join crates tokenmtr-config tests fixtures example.toml)])
+    write-seeds $root host_files (whole-files (glob ($root | path join crates tokenmtr-platform tests fixtures *)))
 
     write-seeds $root accept_header [
         {name: prometheus, body: 'application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1'}

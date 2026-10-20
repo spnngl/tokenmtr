@@ -22,19 +22,30 @@ as a counter reset).
 
 | Metric | Type | Labels | Source | Meaning |
 | --- | --- | --- | --- | --- |
+| `tokenmtr_account_info` | gauge | `account`, `agent`, `plan`, `profile`, `rate_limit_tier` | the `account` rows the agents report | Constant 1; the labels carry the plan and rate-limit tier the agent reports. |
 | `tokenmtr_build_info` | gauge | `version` | the workspace version | Constant 1; the label carries the TokenMtr version. |
-| `tokenmtr_events_total` | counter | `account`, `agent`, `billing`, `client`, `kind`, `model`, `profile`, `project`, `provider` | `usage_event` rows, all history | Usage events recorded, by kind. |
+| `tokenmtr_events_total` | counter | `account`, `agent`, `billing`, `client`, `kind`, `model`, `profile`, `project`, `provider`, `service_tier`, `sidechain` | `usage_event` rows, all history | Usage events recorded, by kind. |
+| `tokenmtr_last_event_timestamp_seconds` | gauge | `agent`, `profile` | `usage_event` rows, all history, per profile | When the newest usage event happened, in Unix seconds. |
+| `tokenmtr_machine_info` | gauge | `arch`, `kernel_version`, `machine_id`, `machine_name`, `os`, `os_build`, `os_id`, `os_name`, `os_version`, `version` | the store's machine id, `[machine].name` and the OS | Constant 1; the labels carry the machine, its operating system and the TokenMtr build. |
+| `tokenmtr_parse_issues` | gauge | `agent`, `kind` | unresolved `parse_issue` rows | Open parse issues: agent files TokenMtr could not read. |
 | `tokenmtr_quota_fetched_at_timestamp_seconds` | gauge | `account`, `agent`, `profile`, `window` | the newest successful quota poll of each profile | When the quota poll behind the quota gauges ran, in Unix seconds. |
 | `tokenmtr_quota_resets_at_timestamp_seconds` | gauge | `account`, `agent`, `profile`, `window` | the newest successful quota poll of each profile | When the quota window resets, in Unix seconds. |
 | `tokenmtr_quota_used_ratio` | gauge | `account`, `agent`, `profile`, `window` | the newest successful quota poll of each profile | Share of the quota window used, from 0 to 1. |
-| `tokenmtr_reasoning_tokens_total` | counter | `account`, `agent`, `billing`, `client`, `model`, `profile`, `project`, `provider` | `usage_event` rows, all history | Reasoning tokens, a part of the output tokens. |
+| `tokenmtr_reasoning_tokens_total` | counter | `account`, `agent`, `billing`, `client`, `model`, `profile`, `project`, `provider`, `service_tier`, `sidechain` | `usage_event` rows, all history | Reasoning tokens, a part of the output tokens. |
 | `tokenmtr_series` | gauge |  | this output | Series in this output, this one included. |
-| `tokenmtr_session_events_total` | counter | `account`, `agent`, `billing`, `client`, `git_branch`, `kind`, `model`, `profile`, `project`, `provider`, `session_id` | sessions with an event inside `[metrics].session_window` | Usage events of a session active in the session window. |
-| `tokenmtr_session_reasoning_tokens_total` | counter | `account`, `agent`, `billing`, `client`, `git_branch`, `model`, `profile`, `project`, `provider`, `session_id` | sessions with an event inside `[metrics].session_window` | Reasoning tokens of a session active in the session window. |
-| `tokenmtr_session_tokens_total` | counter | `account`, `agent`, `billing`, `client`, `git_branch`, `model`, `profile`, `project`, `provider`, `session_id`, `type` | sessions with an event inside `[metrics].session_window` | Tokens of a session active in the session window, by type. |
-| `tokenmtr_session_tool_calls_total` | counter | `agent`, `error`, `mcp_server`, `profile`, `session_id`, `tool` | sessions with an event inside `[metrics].session_window` | Tool calls of a session active in the session window. |
+| `tokenmtr_session_events_total` | counter | `billing`, `client`, `git_branch`, `kind`, `model`, `project`, `provider`, `service_tier`, `session_id`, `sidechain` | sessions with an event inside `[metrics].session_window` | Usage events of a session active in the session window. |
+| `tokenmtr_session_info` | gauge | `account`, `agent`, `machine_id`, `profile`, `session_id` | sessions with an event inside `[metrics].session_window` | Constant 1; links an active session to its agent, profile, account and machine. |
+| `tokenmtr_session_last_event_timestamp_seconds` | gauge | `session_id` | sessions with an event inside `[metrics].session_window` | When the newest usage event of an active session happened, in Unix seconds. |
+| `tokenmtr_session_reasoning_tokens_total` | counter | `billing`, `client`, `git_branch`, `model`, `project`, `provider`, `service_tier`, `session_id`, `sidechain` | sessions with an event inside `[metrics].session_window` | Reasoning tokens of a session active in the session window. |
+| `tokenmtr_session_signals_total` | counter | `kind`, `session_id` | sessions with an event inside `[metrics].session_window` | API errors and context compactions of a session active in the session window. |
+| `tokenmtr_session_skill_uses_total` | counter | `session_id`, `skill` | sessions with an event inside `[metrics].session_window` | Skills loaded by a session active in the session window. |
+| `tokenmtr_session_start_timestamp_seconds` | gauge | `session_id` | sessions with an event inside `[metrics].session_window` | When the first usage event of an active session happened, in Unix seconds. |
+| `tokenmtr_session_tokens_total` | counter | `billing`, `client`, `git_branch`, `model`, `project`, `provider`, `service_tier`, `session_id`, `sidechain`, `type` | sessions with an event inside `[metrics].session_window` | Tokens of a session active in the session window, by type. |
+| `tokenmtr_session_tool_calls_total` | counter | `error`, `mcp_server`, `session_id`, `tool` | sessions with an event inside `[metrics].session_window` | Tool calls of a session active in the session window. |
+| `tokenmtr_signals_total` | counter | `agent`, `kind`, `profile` | `session_signal` rows, all history | API errors and context compactions, by kind. |
+| `tokenmtr_skill_uses_total` | counter | `agent`, `profile`, `skill` | `tool_call` rows that loaded a skill, all history | Skills loaded, by skill. |
 | `tokenmtr_snapshot_timestamp_seconds` | gauge |  | this output | When this snapshot of the store was computed, in Unix seconds. |
-| `tokenmtr_tokens_total` | counter | `account`, `agent`, `billing`, `client`, `model`, `profile`, `project`, `provider`, `type` | `usage_event` rows, all history | Tokens used, by type. |
+| `tokenmtr_tokens_total` | counter | `account`, `agent`, `billing`, `client`, `model`, `profile`, `project`, `provider`, `service_tier`, `sidechain`, `type` | `usage_event` rows, all history | Tokens used, by type. |
 | `tokenmtr_tool_calls_total` | counter | `agent`, `error`, `mcp_server`, `profile`, `tool` | `tool_call` rows, all history | Tool calls, by tool. |
 <!-- metrics:end -->
 
@@ -44,6 +55,16 @@ day (the same rule as the CLI's reports), else `api`. `project` is the normalise
 with no project has an empty `project`. `account` is the account the agent reports (email, else
 organization; on quota gauges, else the account the poll recorded), else the configured `account`
 (the profile's, else the agent's, else the top-level key in `docs/config.md`), else empty.
+`service_tier` is the tier the agent reports (for example `priority` or `flex`), else empty.
+`sidechain` is `true` for an event the agent marks as a sidechain (a subagent's call), else `false`.
+
+`machine_id` is the store's id, stable for the life of the store. `tokenmtr_machine_info` links it to
+the machine name, the operating system (`os_id`, `os_version`, `os_name` from `/etc/os-release` on
+Linux, from `SystemVersion.plist` on macOS; `os_build` on macOS only), the kernel version and the
+TokenMtr version.
+
+A skill is counted when an agent loads it: Claude Code through its `Skill` tool, Pi when it reads a
+`SKILL.md`. Slash commands are not skills. Only tool calls ingested by this version carry a skill.
 
 Tool calls take the working directory and project of the usage event they belong to, or of the
 earliest event of their session that has one.
@@ -57,13 +78,25 @@ A total family has no `session_id`, so its series live as long as the project do
 sum by (project) (increase(tokenmtr_tokens_total[1d]))
 ```
 
-A `tokenmtr_session_*` family adds `session_id` (and `git_branch` where it applies) but only for
-sessions with an event inside `[metrics].session_window` (default `2d`). An expired session's
-series disappears, and Prometheus marks it stale. Read one session with:
+A `tokenmtr_session_*` family exists only for sessions with an event inside
+`[metrics].session_window` (default `2d`). An expired session's series disappears, and Prometheus
+marks it stale. It carries `session_id` (and `git_branch` on usage families) but not `agent`,
+`profile` or `account`: `tokenmtr_session_info` links each `session_id` to those and to the
+`machine_id`. Read one session with:
 
 ```promql
 max by (session_id) (last_over_time(tokenmtr_session_tokens_total[2d]))
 ```
+
+Join a session family to its agent and account with:
+
+```promql
+sum by (session_id) (tokenmtr_session_tokens_total)
+  * on (session_id) group_left (agent, profile, account) tokenmtr_session_info
+```
+
+A session's duration is
+`tokenmtr_session_last_event_timestamp_seconds - tokenmtr_session_start_timestamp_seconds`.
 
 Never wrap `increase()` around a `sum` of a session family: the sum drops when a session expires.
 
@@ -120,7 +153,7 @@ shows less.
 `redact = { label = "hash" | "drop" }` rewrites a label of that output: `hash` is the keyed hash
 that sinks use (stable on this machine, different on another one, not reversible without the
 key), `drop` leaves the label empty and merges the series it makes equal. Labels that can be
-redacted: `project`, `client`, `git_branch`, `account`, `session_id`. `profile`, `model`,
+redacted: `project`, `client`, `git_branch`, `account`, `session_id`, `skill`. `profile`, `model`,
 `provider`, `tool` and `mcp_server` cannot be redacted: exclude the project instead when an MCP
 server name is private. The default `machine` external label is the host name; set
 `external_labels` to send something else. Before pushing to a hosted

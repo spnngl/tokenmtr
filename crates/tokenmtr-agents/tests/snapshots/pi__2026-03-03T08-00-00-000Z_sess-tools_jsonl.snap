@@ -34,7 +34,7 @@ expression: value
     }
   ],
   "issues": [],
-  "new_offset": 2475,
+  "new_offset": 2859,
   "orphan_tool_results": [
     {
       "agent": "pi",
@@ -52,6 +52,7 @@ expression: value
         "is_error": false,
         "mcp_server": null,
         "session": "sess-tools",
+        "skill": null,
         "tool_name": "read",
         "tool_use_id": "call_t1"
       },
@@ -65,6 +66,7 @@ expression: value
         "is_error": true,
         "mcp_server": null,
         "session": "sess-tools",
+        "skill": null,
         "tool_name": "bash",
         "tool_use_id": "call_t2"
       },
@@ -78,8 +80,23 @@ expression: value
         "is_error": false,
         "mcp_server": "demo-server",
         "session": "sess-tools",
+        "skill": null,
         "tool_name": "lookup",
         "tool_use_id": "call_t3"
+      },
+      "event_key": "msg_tools_1"
+    },
+    {
+      "call": {
+        "agent": "pi",
+        "at": "2026-03-03T08:00:05Z",
+        "event": null,
+        "is_error": false,
+        "mcp_server": null,
+        "session": "sess-tools",
+        "skill": "git-commit",
+        "tool_name": "read",
+        "tool_use_id": "call_t5"
       },
       "event_key": "msg_tools_1"
     },
@@ -91,6 +108,7 @@ expression: value
         "is_error": null,
         "mcp_server": null,
         "session": "sess-tools",
+        "skill": null,
         "tool_name": "edit",
         "tool_use_id": "call_t4"
       },

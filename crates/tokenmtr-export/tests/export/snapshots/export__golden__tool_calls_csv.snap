@@ -2,5 +2,5 @@
 source: crates/tokenmtr-export/tests/export/golden.rs
 expression: text
 ---
-tool_call_id,revision,machine_id,agent,profile,session_id,event_id,at_utc,tool_name,mcp_server,is_error
-942b132edc576f56c7bd3b17ea8a601a,7,00000000-0000-0000-0000-000000000001,claude,default,s1,,2026-05-01T10:00:00Z,search,docs,false
+tool_call_id,revision,machine_id,agent,profile,session_id,event_id,at_utc,tool_name,mcp_server,is_error,skill
+942b132edc576f56c7bd3b17ea8a601a,7,00000000-0000-0000-0000-000000000001,claude,default,s1,,2026-05-01T10:00:00Z,search,docs,false,git-commit

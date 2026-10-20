@@ -4,6 +4,8 @@
     reason = "timestamps and counts in tests are small"
 )]
 
+use std::num::NonZeroU64;
+
 use camino::Utf8PathBuf;
 use jiff::civil::{Date, date};
 use jiff::tz::TimeZone;
@@ -14,23 +16,24 @@ use tempfile::TempDir;
 use tokenmtr_config::{
     AccountLabels, AccountName, GlobList, OutputFilter, RedactColumn, RedactMode,
 };
-use tokenmtr_core::event::ToolCall;
+
+use tokenmtr_core::event::{SignalKind, ToolCall};
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, DedupKey, EventCost, EventId, EventKind, MachineId, ModelId,
-    Money, Plan, ProfileId, ProjectKey, ProviderId, QuotaWindow, SessionId, Subscription,
-    SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, Utilization, WindowId,
+    Money, Plan, ProfileId, ProjectKey, ProviderId, QuotaWindow, SessionId, SkillName,
+    Subscription, SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, Utilization, WindowId,
 };
 use tokenmtr_query::{
     BillingFilter, DateRange, Filters, FxPolicy, QueryContext, WeekStart, overview,
 };
 use tokenmtr_store::{
-    AccountRecord, ProfiledToolCall, ProjectResolution, ProjectSource, QuotaOutcome, QuotaPoll,
-    Store, StoreRead, StoreReader,
+    AccountRecord, IssueKind, ParseIssue, ProfiledToolCall, ProjectResolution, ProjectSource,
+    QuotaOutcome, QuotaPoll, SessionSignal, Store, StoreRead, StoreReader,
 };
 
 use crate::snapshot::{FALLBACK_SQL, QUOTA_SQL, Segments, tools_sql, usage_sql};
-use crate::{Family, Folded, OutputScope, Snapshot, SnapshotContext, Value, snapshot};
+use crate::{Family, Folded, Machine, OutputScope, Snapshot, SnapshotContext, Value, snapshot};
 
 fn ts(text: &str) -> Timestamp {
     text.parse().unwrap()
@@ -122,6 +125,17 @@ impl Seed {
     }
 
     fn call(&mut self, id: &str, event: Option<&UsageEvent>, session: &str, tool: &str) {
+        self.call_skill(id, event, session, tool, None);
+    }
+
+    fn call_skill(
+        &mut self,
+        id: &str,
+        event: Option<&UsageEvent>,
+        session: &str,
+        tool: &str,
+        skill: Option<&str>,
+    ) {
         self.store
             .upsert_tool_calls(&[ProfiledToolCall {
                 profile: ProfileId::default_profile(),
@@ -134,6 +148,7 @@ impl Seed {
                     tool_name: tool.to_owned(),
                     mcp_server: None,
                     is_error: Some(false),
+                    skill: skill.map(|s| SkillName::try_from(s).unwrap()),
                 },
             }])
             .unwrap();
@@ -150,7 +165,19 @@ fn context(subscriptions: Vec<Subscription>, zone: &str) -> SnapshotContext {
         subscriptions,
         SignedDuration::from_hours(48),
         AccountLabels::default(),
+        machine(),
     )
+}
+
+fn machine() -> Machine {
+    Machine {
+        name: "box".to_owned(),
+        os_id: "ubuntu".to_owned(),
+        os_version: "24.04".to_owned(),
+        os_name: "Ubuntu 24.04 LTS".to_owned(),
+        os_build: String::new(),
+        kernel_version: "6.8.0".to_owned(),
+    }
 }
 
 fn take(seed: &Seed) -> Snapshot {
@@ -223,9 +250,25 @@ fn an_empty_store_has_only_the_meta_series() {
     let families: Vec<_> = folded.series.iter().map(|s| s.family).collect();
     assert_eq!(
         families,
-        [Family::BuildInfo, Family::Series, Family::SnapshotTimestamp]
+        [
+            Family::BuildInfo,
+            Family::MachineInfo,
+            Family::Series,
+            Family::SnapshotTimestamp
+        ]
     );
-    assert_eq!(gauge(of(&folded, Family::Series)[0]), 3.0);
+    assert_eq!(gauge(of(&folded, Family::Series)[0]), 4.0);
+    let machine = of(&folded, Family::MachineInfo)[0];
+    assert_eq!(label(machine, "machine_id"), seed.machine.to_string());
+    assert_eq!(label(machine, "machine_name"), "box");
+    assert_eq!(label(machine, "os"), std::env::consts::OS);
+    assert_eq!(label(machine, "arch"), std::env::consts::ARCH);
+    assert_eq!(label(machine, "os_id"), "ubuntu");
+    assert_eq!(label(machine, "os_version"), "24.04");
+    assert_eq!(label(machine, "os_name"), "Ubuntu 24.04 LTS");
+    assert_eq!(label(machine, "os_build"), "");
+    assert_eq!(label(machine, "kernel_version"), "6.8.0");
+    assert_eq!(label(machine, "version"), env!("CARGO_PKG_VERSION"));
     assert_eq!(
         gauge(of(&folded, Family::SnapshotTimestamp)[0]),
         now().as_second() as f64
@@ -668,6 +711,8 @@ fn labels_come_from_the_event_and_the_account() {
     let mut e = seed.ev("e", "2026-02-28T00:00:00Z");
     e.client = Some("acme".to_owned());
     e.git_branch = Some("feature/x".to_owned());
+    e.service_tier = Some("priority".to_owned());
+    e.is_sidechain = true;
     seed.put(&[e]);
     seed.store
         .save_account(&AccountRecord {
@@ -675,8 +720,8 @@ fn labels_come_from_the_event_and_the_account() {
             profile: ProfileId::default_profile(),
             email: Some("me@example.com".to_owned()),
             organization: Some("Acme".to_owned()),
-            detected_plan: None,
-            rate_limit_tier: None,
+            detected_plan: Some(Plan::Max20x),
+            rate_limit_tier: Some("default_claude_max_20x".to_owned()),
             fetched_at: now(),
         })
         .unwrap();
@@ -694,11 +739,34 @@ fn labels_come_from_the_event_and_the_account() {
             ("profile", "default".to_owned()),
             ("project", String::new()),
             ("provider", "anthropic".to_owned()),
+            ("service_tier", "priority".to_owned()),
+            ("sidechain", "true".to_owned()),
         ]
     );
     let session = of(&folded, Family::SessionEvents)[0];
     assert_eq!(label(session, "git_branch"), "feature/x");
     assert_eq!(label(session, "session_id"), "s1");
+    assert_eq!(label(session, "sidechain"), "true");
+    assert_eq!(
+        of(&folded, Family::SessionInfo)[0].labels,
+        [
+            ("account", "me@example.com".to_owned()),
+            ("agent", "claude".to_owned()),
+            ("machine_id", seed.machine.to_string()),
+            ("profile", "default".to_owned()),
+            ("session_id", "s1".to_owned()),
+        ]
+    );
+    assert_eq!(
+        of(&folded, Family::AccountInfo)[0].labels,
+        [
+            ("account", "me@example.com".to_owned()),
+            ("agent", "claude".to_owned()),
+            ("plan", "max_20x".to_owned()),
+            ("profile", "default".to_owned()),
+            ("rate_limit_tier", "default_claude_max_20x".to_owned()),
+        ]
+    );
     assert!(
         totals
             .labels
@@ -742,6 +810,7 @@ fn configured_accounts() -> SnapshotContext {
             )]
             .into(),
         },
+        Machine::default(),
     )
 }
 
@@ -858,10 +927,14 @@ fn hash_matches_what_sinks_write_and_drop_merges_series() {
     let mut expected = vec![key.hash("github.com/acme/a"), key.hash("github.com/acme/b")];
     expected.sort();
     assert_eq!(projects, expected);
-    assert_eq!(
-        label(of(&folded, Family::SessionEvents)[0], "session_id"),
-        key.hash("s1")
-    );
+    for family in [
+        Family::SessionEvents,
+        Family::SessionInfo,
+        Family::SessionStartAt,
+        Family::SessionLastEventAt,
+    ] {
+        assert_eq!(label(of(&folded, family)[0], "session_id"), key.hash("s1"));
+    }
 
     let mut dropped = filter(&[], &[]);
     dropped
@@ -1089,5 +1162,205 @@ fn segments_bind_their_bounds_and_never_inline_them() {
             .unwrap()
             .expression("u.at_us"),
         "CAST(0 AS INTEGER)"
+    );
+}
+
+#[test]
+fn session_families_carry_the_session_and_its_bounds() {
+    let mut seed = Seed::new();
+    let mut other = seed.ev("o", "2026-02-20T00:00:00Z");
+    other.profile = ProfileId::try_from("work".to_owned()).unwrap();
+    other.session = SessionId::try_from("old".to_owned()).unwrap();
+    seed.put(&[
+        seed.ev("first", "2026-02-27T01:00:00Z"),
+        seed.ev("last", "2026-02-28T10:00:00Z"),
+        other,
+    ]);
+    let folded = everything(&seed, &take(&seed));
+
+    for family in [
+        Family::SessionTokens,
+        Family::SessionReasoningTokens,
+        Family::SessionEvents,
+    ] {
+        for name in family.labels() {
+            assert!(
+                !["agent", "profile", "account"].contains(name),
+                "{family:?} has {name}: tokenmtr_session_info carries it"
+            );
+        }
+    }
+    let info = of(&folded, Family::SessionInfo);
+    assert_eq!(info.len(), 1, "only the active session");
+    assert_eq!(gauge(info[0]), 1.0);
+    let start = of(&folded, Family::SessionStartAt);
+    assert_eq!(start[0].labels, [("session_id", "s1".to_owned())]);
+    assert_eq!(
+        gauge(start[0]),
+        ts("2026-02-27T01:00:00Z").as_second() as f64
+    );
+    let last = of(&folded, Family::SessionLastEventAt);
+    assert_eq!(
+        gauge(last[0]),
+        ts("2026-02-28T10:00:00Z").as_second() as f64
+    );
+
+    let last_at = |profile| {
+        of(&folded, Family::LastEventAt)
+            .into_iter()
+            .find(|s| label(s, "profile") == profile)
+            .map(gauge)
+            .unwrap()
+    };
+    assert_eq!(
+        last_at("default"),
+        ts("2026-02-28T10:00:00Z").as_second() as f64
+    );
+    assert_eq!(
+        last_at("work"),
+        ts("2026-02-20T00:00:00Z").as_second() as f64
+    );
+}
+
+#[test]
+fn skills_count_in_totals_and_in_active_sessions() {
+    let mut seed = Seed::new();
+    let active = seed.ev("a", "2026-02-28T00:00:00Z");
+    let mut old = seed.ev("o", "2026-01-01T00:00:00Z");
+    old.session = SessionId::try_from("old".to_owned()).unwrap();
+    seed.put(&[active.clone(), old.clone()]);
+    seed.call_skill("t1", Some(&active), "s1", "Skill", Some("git-commit"));
+    seed.call_skill("t2", Some(&active), "s1", "Skill", Some("git-commit"));
+    seed.call_skill("t3", Some(&old), "old", "Skill", Some("rs-coding"));
+    seed.call("t4", Some(&active), "s1", "Read");
+    let folded = everything(&seed, &take(&seed));
+
+    assert_eq!(sum(&folded, Family::SkillUses, &[]), 3);
+    assert_eq!(
+        sum(&folded, Family::SkillUses, &[("skill", "git-commit")]),
+        2
+    );
+    assert_eq!(
+        of(&folded, Family::SkillUses)[0].labels,
+        [
+            ("agent", "claude".to_owned()),
+            ("profile", "default".to_owned()),
+            ("skill", "git-commit".to_owned()),
+        ]
+    );
+    assert_eq!(
+        of(&folded, Family::SessionSkillUses)
+            .iter()
+            .map(|s| (s.labels.clone(), s.value))
+            .collect::<Vec<_>>(),
+        [(
+            vec![
+                ("session_id", "s1".to_owned()),
+                ("skill", "git-commit".to_owned())
+            ],
+            Value::Count(2)
+        )]
+    );
+    assert_eq!(sum(&folded, Family::ToolCalls, &[("tool", "Skill")]), 3);
+    assert_eq!(sum(&folded, Family::SessionToolCalls, &[]), 3);
+
+    let mut hashed = filter(&[], &[]);
+    hashed.redact.insert(RedactColumn::Skill, RedactMode::Hash);
+    let key = seed.reader().redaction_key().clone();
+    let folded = fold(&seed, &take(&seed), &hashed);
+    assert_eq!(
+        sum(
+            &folded,
+            Family::SkillUses,
+            &[("skill", &key.hash("git-commit"))]
+        ),
+        2
+    );
+}
+
+#[test]
+fn signals_take_the_profile_of_their_session() {
+    let mut seed = Seed::new();
+    let mut work = seed.ev("w", "2026-02-28T00:00:00Z");
+    work.profile = ProfileId::try_from("work".to_owned()).unwrap();
+    let mut old = seed.ev("o", "2026-01-01T00:00:00Z");
+    old.session = SessionId::try_from("old".to_owned()).unwrap();
+    seed.put(&[work, old]);
+    let signal = |session: &str, kind, at| SessionSignal {
+        agent: AgentId::CLAUDE,
+        session: SessionId::try_from(session.to_owned()).unwrap(),
+        kind,
+        at: ts(at),
+    };
+    seed.store
+        .record_signals(&[
+            signal("s1", SignalKind::Compaction, "2026-02-28T00:10:00Z"),
+            signal("s1", SignalKind::Compaction, "2026-02-28T00:20:00Z"),
+            signal("s1", SignalKind::ApiError, "2026-02-28T00:30:00Z"),
+            signal("old", SignalKind::ApiError, "2026-01-01T00:10:00Z"),
+        ])
+        .unwrap();
+    let folded = everything(&seed, &take(&seed));
+
+    assert_eq!(
+        sum(
+            &folded,
+            Family::Signals,
+            &[("kind", "compaction"), ("profile", "work")]
+        ),
+        2
+    );
+    assert_eq!(
+        sum(
+            &folded,
+            Family::Signals,
+            &[("kind", "api_error"), ("profile", "default")]
+        ),
+        1
+    );
+    let session = of(&folded, Family::SessionSignals);
+    assert_eq!(session.len(), 2, "the old session is not active");
+    assert!(session.iter().all(|s| label(s, "session_id") == "s1"));
+    assert_eq!(
+        sum(&folded, Family::SessionSignals, &[("kind", "compaction")]),
+        2
+    );
+    assert_eq!(
+        of(&folded, Family::Signals)[0].created,
+        Some(ts("2026-01-01T00:10:00Z"))
+    );
+}
+
+#[test]
+fn open_parse_issues_are_counted_per_kind() {
+    let mut seed = Seed::new();
+    let issue = |kind, subject: &str| ParseIssue {
+        agent: AgentId::CLAUDE,
+        kind,
+        subject: subject.to_owned(),
+        count: NonZeroU64::new(5).unwrap(),
+        sample: None,
+        at: now(),
+    };
+    for (kind, subject) in [
+        (IssueKind::FormatDrift, "a"),
+        (IssueKind::FormatDrift, "b"),
+        (IssueKind::MissingCwd, "c"),
+    ] {
+        seed.store
+            .record_parse_issue(&issue(kind, subject))
+            .unwrap();
+    }
+    let folded = everything(&seed, &take(&seed));
+    let issues: Vec<_> = of(&folded, Family::ParseIssues)
+        .iter()
+        .map(|s| (label(s, "kind").to_owned(), gauge(s)))
+        .collect();
+    assert_eq!(
+        issues,
+        [
+            ("format_drift".to_owned(), 2.0),
+            ("missing_cwd".to_owned(), 1.0)
+        ]
     );
 }

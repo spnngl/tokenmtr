@@ -6,9 +6,10 @@ use std::borrow::Cow;
 
 use camino::Utf8PathBuf;
 use serde::Deserialize;
+use serde_json::value::RawValue;
 use tokenmtr_core::{
     AgentId, DedupKey, EventKind, ModelId, ParsedEvent, PriceModifiers, ProfileId, ProviderId,
-    SessionId, SignalKind, SourceFileId, TokenCounts, ToolCall, split_mcp_tool_name,
+    SessionId, SignalKind, SkillName, SourceFileId, TokenCounts, ToolCall, split_mcp_tool_name,
 };
 
 use crate::batch::{ParseBatch, ParsedSignal, ParsedToolCall, ParsedToolResult};
@@ -19,6 +20,9 @@ use crate::source::SourceFile;
 
 /// The model Claude Code writes on lines it generated itself (API errors, interrupts).
 const SYNTHETIC_MODEL: &str = "<synthetic>";
+
+/// The tool that loads a skill; its `input.skill` names it.
+const SKILL_TOOL: &str = "Skill";
 
 /// Per-file facts the line parser needs. Build one per source file with [`LineContext::new`].
 #[derive(Debug, Clone)]
@@ -70,7 +74,7 @@ pub struct LineReport<'a> {
 ///
 /// Pushes, as the line allows:
 /// - a usage event, for `type == "assistant"` lines with `message.usage` (not `<synthetic>`);
-/// - tool calls, for `tool_use` blocks of assistant lines;
+/// - tool calls, for `tool_use` blocks of assistant lines, with the skill a `Skill` call loads;
 /// - tool results, for `tool_result` blocks of user lines;
 /// - a signal, for `isApiErrorMessage` and `isCompactSummary` lines.
 pub fn parse_line<'a>(ctx: &LineContext, line: &'a [u8], out: &mut ParseBatch) -> LineReport<'a> {
@@ -166,6 +170,11 @@ fn push_tool_call(
     if id.is_empty() || name.is_empty() {
         return;
     }
+    let skill = if name == SKILL_TOOL {
+        block.input.and_then(skill_of)
+    } else {
+        None
+    };
     let name = split_mcp_tool_name(name);
     out.push_tool_call(ParsedToolCall {
         call: ToolCall {
@@ -177,9 +186,17 @@ fn push_tool_call(
             tool_name: name.tool_name.to_owned(),
             mcp_server: name.mcp_server.map(str::to_owned),
             is_error: None,
+            skill,
         },
         event_key: event_key.cloned(),
     });
+}
+
+/// `input.skill` of a `Skill` call, the one tool argument read. Any other shape of `input` (not an
+/// object, no string `skill`) or an invalid name yields no skill.
+fn skill_of(input: &RawValue) -> Option<SkillName> {
+    let input: SkillInput<'_> = serde_json::from_str(input.get()).ok()?;
+    SkillName::try_from(input.skill?.trim()).ok()
 }
 
 /// Maps an assistant line with usage to an event. `None` when a required field is missing or
@@ -389,8 +406,8 @@ struct CacheCreation {
     ephemeral_1h: Option<u64>,
 }
 
-/// One content block. Every other field (`input`, `content`, `text`, …) is skipped. A struct
-/// with optional fields, not a tagged enum: serde buffers the whole value of a tagged enum.
+/// One content block. Every other field (`content`, `text`, …) is skipped. A struct with
+/// optional fields, not a tagged enum: serde buffers the whole value of a tagged enum.
 #[derive(Deserialize)]
 struct Block<'a> {
     #[serde(rename = "type", borrow)]
@@ -399,6 +416,10 @@ struct Block<'a> {
     id: Option<Cow<'a, str>>,
     #[serde(borrow)]
     name: Option<Cow<'a, str>>,
+    /// The tool arguments, kept as borrowed raw JSON (no copy); only [`skill_of`] reads them,
+    /// and only for a `Skill` call. Raw, so an odd shape never fails the line.
+    #[serde(borrow)]
+    input: Option<&'a RawValue>,
     #[serde(borrow)]
     tool_use_id: Option<Cow<'a, str>>,
     is_error: Option<bool>,
@@ -407,5 +428,95 @@ struct Block<'a> {
 impl Block<'_> {
     fn is(&self, kind: &str) -> bool {
         self.kind.as_deref() == Some(kind)
+    }
+}
+
+/// The input of a `Skill` call; every field but `skill` is skipped.
+#[derive(Deserialize)]
+struct SkillInput<'a> {
+    #[serde(borrow)]
+    skill: Option<Cow<'a, str>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+    /// Parses one assistant line with usage and a `tool_use` block of `name` and `input`.
+    fn parse_tool_use(name: &str, input: &Value) -> TestResult<(LineClass, Option<String>)> {
+        let file = SourceFile::new("/c/projects/p/s.jsonl".into(), ProfileId::default_profile());
+        let line = json!({"type": "assistant", "sessionId": "s", "requestId": "r",
+            "timestamp": "2026-03-01T00:00:00Z",
+            "message": {"id": "m", "model": "claude-sonnet-4-5",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "content": [{"type": "tool_use", "id": "toolu_1", "name": name, "input": input}]}})
+        .to_string();
+        let mut batch = ParseBatch::new();
+        let report = parse_line(&LineContext::new(&file)?, line.as_bytes(), &mut batch);
+        let [call] = batch.tool_calls() else {
+            return Err("expected one tool call".into());
+        };
+        let skill = call.call.skill.as_ref().map(|s| s.as_str().to_owned());
+        Ok((report.class, skill))
+    }
+
+    fn skill_of_tool(name: &str, input: &Value) -> TestResult<Option<String>> {
+        Ok(parse_tool_use(name, input)?.1)
+    }
+
+    #[test]
+    fn a_skill_call_records_its_skill() -> TestResult {
+        let skill = |name: &str| skill_of_tool("Skill", &json!({"skill": name, "args": "x"}));
+        assert_eq!(skill("git-commit")?.as_deref(), Some("git-commit"));
+        assert_eq!(skill("plugin:skill")?.as_deref(), Some("plugin:skill"));
+        assert_eq!(skill(" spaced ")?.as_deref(), Some("spaced"));
+        Ok(())
+    }
+
+    #[test]
+    fn other_tools_record_no_skill() -> TestResult {
+        assert_eq!(
+            skill_of_tool("Read", &json!({"skill": "git-commit"}))?,
+            None
+        );
+        assert_eq!(
+            skill_of_tool("mcp__x__Skill", &json!({"skill": "git-commit"}))?,
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_names_record_no_skill() -> TestResult {
+        for name in [
+            String::new(),
+            "  ".to_owned(),
+            "a\u{1}b".to_owned(),
+            "a".repeat(129),
+        ] {
+            assert_eq!(skill_of_tool("Skill", &json!({ "skill": name }))?, None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn odd_inputs_record_no_skill_and_keep_the_line() -> TestResult {
+        for input in [
+            json!("git-commit"),
+            json!({"skill": 3}),
+            json!(null),
+            json!([1]),
+        ] {
+            assert_eq!(
+                parse_tool_use("Skill", &input)?,
+                (LineClass::Event, None),
+                "{input}"
+            );
+        }
+        Ok(())
     }
 }

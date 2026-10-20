@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{
     AgentId, DedupKey, EventId, MachineId, ModelId, ProfileId, ProjectKey, ProviderId, SessionId,
-    SourceFileId,
+    SkillName, SourceFileId,
 };
 use crate::money::UsdMicros;
 use crate::pricing::PricingVersion;
@@ -201,7 +201,7 @@ pub struct Capabilities {
     pub subscription: bool,
 }
 
-/// One tool invocation: name and error flag, never arguments or results.
+/// One tool invocation: name, error flag and loaded skill, never arguments or results.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
     /// Agent that invoked the tool.
@@ -220,6 +220,9 @@ pub struct ToolCall {
     pub mcp_server: Option<String>,
     /// Set by the tool result; `None` until one is seen.
     pub is_error: Option<bool>,
+    /// The agent skill this call loaded, the one value read from tool arguments; `None`
+    /// for every other call and for calls ingested before skills were recorded.
+    pub skill: Option<SkillName>,
 }
 
 /// A session-level signal.

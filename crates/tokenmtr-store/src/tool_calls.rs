@@ -1,4 +1,4 @@
-//! The `tool_call` table: tool name and error flag per invocation, never arguments.
+//! The `tool_call` table: tool name, error flag and loaded skill per invocation, never arguments.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use jiff::Timestamp;
 use rusqlite::{Connection, OptionalExtension as _, Row, named_params, params};
 use tokenmtr_core::{
-    AgentId, DedupKey, EventId, IdError, MachineId, ProfileId, SessionId, ToolCall,
+    AgentId, DedupKey, EventId, IdError, MachineId, ProfileId, SessionId, SkillName, ToolCall,
 };
 
 use crate::codec::{RowExt, to_limit, to_us};
@@ -36,8 +36,9 @@ impl ProfiledToolCall {
 }
 
 /// `event_id` and `is_error` are learned later (the tool result sets the flag), so a re-read of the
-/// earlier line must not erase them.
-const VALUES: [(&str, Merge); 7] = [
+/// earlier line must not erase them. `skill` keeps a stored name the same way: a re-read sets a
+/// missing one, never clears it.
+const VALUES: [(&str, Merge); 8] = [
     ("profile", Merge::Replace),
     ("event_id", Merge::KeepStored),
     ("session", Merge::Replace),
@@ -45,6 +46,7 @@ const VALUES: [(&str, Merge); 7] = [
     ("tool_name", Merge::Replace),
     ("mcp_server", Merge::Replace),
     ("is_error", Merge::KeepStored),
+    ("skill", Merge::KeepStored),
 ];
 
 static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
@@ -57,11 +59,11 @@ static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
 });
 
 const AFTER: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
-    tool_name, mcp_server, is_error \
+    tool_name, mcp_server, is_error, skill \
     FROM tool_call WHERE revision > ?1 ORDER BY revision LIMIT ?2";
 
 const BY_KEY: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
-    tool_name, mcp_server, is_error \
+    tool_name, mcp_server, is_error, skill \
     FROM tool_call WHERE agent = ?1 AND tool_use_id = ?2";
 
 /// What [`apply_result`] did to the stored call.
@@ -86,6 +88,9 @@ fn merge_duplicates(calls: &[ProfiledToolCall]) -> Vec<ProfiledToolCall> {
             let mut next = incoming.clone();
             next.call.event = incoming.call.event.or(earlier.call.event);
             next.call.is_error = incoming.call.is_error.or(earlier.call.is_error);
+            if next.call.skill.is_none() {
+                next.call.skill.clone_from(&earlier.call.skill);
+            }
             merged[at] = next;
         } else {
             index.insert(key, merged.len());
@@ -122,6 +127,7 @@ pub(crate) fn upsert(
                         ":tool_name": call.tool_name,
                         ":mcp_server": call.mcp_server,
                         ":is_error": call.is_error,
+                        ":skill": call.skill.as_ref().map(SkillName::as_str),
             })
         },
     )
@@ -206,6 +212,7 @@ fn decode(row: &Row<'_>) -> Result<Versioned<ProfiledToolCall>, StoreError> {
                 tool_name: row.get("tool_name")?,
                 mcp_server: row.get("mcp_server")?,
                 is_error: row.flag_opt("is_error")?,
+                skill: row.id_opt::<SkillName>("skill")?,
             },
         },
     })

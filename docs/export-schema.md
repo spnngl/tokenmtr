@@ -3,7 +3,7 @@
 Every sink (CSV, JSONL, SQLite) carries the same five datasets with the same columns and the same
 values. The columns are defined once in `tokenmtr_export::schema`; the CSV header, the JSONL keys,
 the SQLite DDL and the table below all come from that definition.
-`EXPORT_SCHEMA_VERSION` (currently `3`) changes whenever a column is added, removed, renamed or
+`EXPORT_SCHEMA_VERSION` (currently `4`) changes whenever a column is added, removed, renamed or
 re-typed. A SQLite sink records it in its `_schema` table and refuses a file of another version.
 
 ## Row identity and revisions
@@ -55,7 +55,7 @@ USD amount by its `eur_per_usd` (EUR for 1 USD). Subscription fees are in `fee_c
 ## Redaction
 
 A sink can redact these columns: `cwd`, `project`, `client`, `git_branch`, `account`, `session_id`
-(`parent_session_id` follows `session_id`). Per column, `redact` is one of:
+(`parent_session_id` follows `session_id`), `skill`. Per column, `redact` is one of:
 
 - `hash`: the value becomes 16 lowercase hex characters, the first 8 bytes of a BLAKE3 hash keyed
   with the store's redaction key. The same value always gives the same hash on one machine;
@@ -130,6 +130,7 @@ Primary key: `tool_call_id`. Partitioned by: `at_utc`.
 | `tool_name` | text | no |  | Tool name; for MCP tools the part after the server. |
 | `mcp_server` | text | yes |  | MCP server name for MCP tools. |
 | `is_error` | boolean | yes |  | Whether the result was an error; empty until a result is seen. |
+| `skill` | text | yes | `skill` | Agent skill the call loaded (Claude Code `Skill`, pi `read` of a `SKILL.md`); empty for other calls and calls ingested before skills were recorded. |
 
 ### `subscriptions`
 

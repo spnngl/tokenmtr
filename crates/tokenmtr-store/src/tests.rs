@@ -12,7 +12,7 @@ use tokenmtr_core::quota::{QuotaWindowState, Utilization};
 use tokenmtr_core::{
     AgentId, Alert, AlertKind, DedupKey, Estimate, EurPerUsd, EventCost, EventId, ExtraUsage,
     FxRate, MachineId, ModelId, PricingVersion, ProfileId, QuotaWindow, SessionId, SinkId,
-    SourceFileId, TokenCounts, UsageEvent, UsdMicros, WindowId,
+    SkillName, SourceFileId, TokenCounts, UsageEvent, UsdMicros, WindowId,
 };
 use tokenmtr_core::{BillingPeriod, Currency, Money, Plan, Subscription, SubscriptionSpec};
 
@@ -412,6 +412,7 @@ fn tool_calls_keep_event_link_and_error_flag() {
             tool_name: name.to_owned(),
             mcp_server: Some("srv".to_owned()),
             is_error,
+            skill: None,
         },
     };
     f.store.upsert_events(&[event(&machine, "e", 1)]).unwrap();
@@ -435,6 +436,47 @@ fn tool_calls_keep_event_link_and_error_flag() {
         .unwrap();
     assert_eq!(stats.changed(), 0);
     assert!(rows[0].row.export_id(&machine).is_ok());
+}
+
+#[test]
+fn tool_call_skill_round_trips_and_is_never_cleared() {
+    let mut f = fixture();
+    let call = |skill: Option<&str>| ProfiledToolCall {
+        profile: ProfileId::default_profile(),
+        call: ToolCall {
+            agent: AgentId::CLAUDE,
+            tool_use_id: "toolu_skill".to_owned(),
+            event: None,
+            session: SessionId::try_from("s").unwrap(),
+            at: at(1_700_000_000),
+            tool_name: "Skill".to_owned(),
+            mcp_server: None,
+            is_error: None,
+            skill: skill.map(|s| SkillName::try_from(s).unwrap()),
+        },
+    };
+    let skill_of = |f: &Fixture| {
+        let rows = f.store.tool_calls_after(Revision::ZERO, 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        (rows[0].revision, rows[0].row.call.skill.clone())
+    };
+    // A call ingested before skills were recorded gains its skill on a re-read.
+    f.store.upsert_tool_calls(&[call(None)]).unwrap();
+    let (first, skill) = skill_of(&f);
+    assert_eq!(skill, None);
+    let stats = f
+        .store
+        .upsert_tool_calls(&[call(Some("git-commit"))])
+        .unwrap();
+    assert_eq!(stats.updated, 1);
+    let (second, skill) = skill_of(&f);
+    assert!(second > first);
+    assert_eq!(skill.as_ref().map(SkillName::as_str), Some("git-commit"));
+    // Neither the same skill nor a copy without one changes the row.
+    for again in [call(Some("git-commit")), call(None)] {
+        assert_eq!(f.store.upsert_tool_calls(&[again]).unwrap().changed(), 0);
+    }
+    assert_eq!(skill_of(&f), (second, skill));
 }
 
 fn window(id: &str, percent: f64) -> QuotaWindow {

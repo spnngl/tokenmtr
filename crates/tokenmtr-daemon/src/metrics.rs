@@ -24,7 +24,7 @@ use tokenmtr_config::{
 };
 use tokenmtr_core::SinkId;
 use tokenmtr_metrics::text::Rendered;
-use tokenmtr_metrics::{Folded, OutputScope, Seen, SnapshotContext, requests, snapshot};
+use tokenmtr_metrics::{Folded, Machine, OutputScope, Seen, SnapshotContext, requests, snapshot};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_query::{METRICS_HEALTH_RUNS, MetricsState, metrics_state};
 use tokenmtr_remote::remote_write::{Target, push};
@@ -348,6 +348,7 @@ impl Ctx {
             config.subscriptions.clone(),
             config.metrics.session_window,
             config.accounts.clone(),
+            machine(config),
         );
         let taken = {
             let reader = lock(&self.metrics.reader);
@@ -783,6 +784,19 @@ fn prepare(ctx: &Ctx, config: &RemoteWriteConfig) -> Result<Prepared, String> {
     Ok(Prepared { target, external })
 }
 
+/// This machine as `tokenmtr_machine_info` describes it.
+fn machine(config: &Config) -> Machine {
+    let host = tokenmtr_platform::host_info();
+    Machine {
+        name: machine_name(config),
+        os_id: host.os_id.clone(),
+        os_version: host.os_version.clone(),
+        os_name: host.os_name.clone(),
+        os_build: host.os_build.clone(),
+        kernel_version: host.kernel_version.clone(),
+    }
+}
+
 /// The machine name: the configured one, else the host name.
 fn machine_name(config: &Config) -> String {
     config
@@ -790,12 +804,8 @@ fn machine_name(config: &Config) -> String {
         .name
         .clone()
         .or_else(|| {
-            std::process::Command::new("hostname")
-                .output()
-                .ok()
-                .and_then(|out| String::from_utf8(out.stdout).ok())
-                .map(|name| name.trim().to_owned())
-                .filter(|name| !name.is_empty())
+            let host = &tokenmtr_platform::host_info().host_name;
+            (!host.is_empty()).then(|| host.clone())
         })
         .unwrap_or_else(|| "unknown".to_owned())
 }

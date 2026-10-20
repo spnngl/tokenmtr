@@ -50,6 +50,7 @@ expression: value
         "is_error": false,
         "mcp_server": "github",
         "session": "sess-mcp",
+        "skill": null,
         "tool_name": "list_issues",
         "tool_use_id": "toolu_m1"
       },
@@ -63,6 +64,7 @@ expression: value
         "is_error": true,
         "mcp_server": "tracker",
         "session": "sess-mcp",
+        "skill": null,
         "tool_name": "save__issue",
         "tool_use_id": "toolu_m2"
       },

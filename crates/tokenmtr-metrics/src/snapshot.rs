@@ -20,7 +20,7 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, Row, params_from_iter};
 use tokenmtr_config::AccountLabels;
 use tokenmtr_core::{AgentId, ProfileId, ProviderId, Subscription, covering};
-use tokenmtr_store::StoreReader;
+use tokenmtr_store::{StoreRead as _, StoreReader};
 
 use crate::catalog::TOKEN_TYPES;
 use crate::error::MetricsError;
@@ -37,26 +37,48 @@ pub struct SnapshotContext {
     subscriptions: Vec<Subscription>,
     session_window: SignedDuration,
     accounts: AccountLabels,
+    machine: Machine,
 }
 
 impl SnapshotContext {
     /// `zone` is `display.timezone`: the calendar the `billing` label follows.
     /// `session_window` is `[metrics].session_window`.
     /// `accounts` is the configured `account` label of profiles whose agent reports none.
+    /// `machine` describes the host, for `tokenmtr_machine_info`.
     #[must_use]
     pub const fn new(
         zone: TimeZone,
         subscriptions: Vec<Subscription>,
         session_window: SignedDuration,
         accounts: AccountLabels,
+        machine: Machine,
     ) -> Self {
         Self {
             zone,
             subscriptions,
             session_window,
             accounts,
+            machine,
         }
     }
+}
+
+/// The host, as `tokenmtr_machine_info` labels. The caller reads it (this crate does no IO
+/// besides the store); every field is a label value, empty when unknown.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Machine {
+    /// `[machine].name`, else the host name.
+    pub name: String,
+    /// The OS distribution id: `ID` of `os-release`, `macos` on macOS.
+    pub os_id: String,
+    /// The OS release: `VERSION_ID` of `os-release`, the product version on macOS.
+    pub os_version: String,
+    /// The OS's own display name: `PRETTY_NAME` of `os-release`, `macOS <version>` on macOS.
+    pub os_name: String,
+    /// The OS build, when it has one.
+    pub os_build: String,
+    /// The kernel release.
+    pub kernel_version: String,
 }
 
 /// Where a group of rows came from: what exclusions match. All `None` is never excluded.
@@ -81,6 +103,9 @@ pub(crate) struct UsageGroup {
     pub account: String,
     pub billing: &'static str,
     pub kind: String,
+    pub service_tier: String,
+    /// `true` for a subagent's or a side chain's events.
+    pub sidechain: &'static str,
     /// `session_id` and `git_branch`, in session families only.
     pub session: Option<(String, String)>,
     /// In the order of [`TOKEN_TYPES`].
@@ -88,6 +113,7 @@ pub(crate) struct UsageGroup {
     pub reasoning: u64,
     pub events: u64,
     pub created_us: i64,
+    pub last_us: i64,
 }
 
 /// Tool calls of one tool, origin and (for session families) session.
@@ -99,9 +125,44 @@ pub(crate) struct ToolGroup {
     pub tool: String,
     pub mcp_server: String,
     pub error: &'static str,
+    /// The skill the call loaded.
+    pub skill: Option<String>,
     pub session: Option<String>,
     pub calls: u64,
     pub created_us: i64,
+}
+
+/// Signals of one kind and session, all history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SignalGroup {
+    pub origin: usize,
+    pub agent: String,
+    /// The profile of the session's events; empty when none is stored.
+    pub profile: String,
+    pub kind: String,
+    pub session: String,
+    /// The session is inside the session window.
+    pub active: bool,
+    pub signals: u64,
+    pub created_us: i64,
+}
+
+/// The plan and tier an agent reports for one profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AccountInfo {
+    pub agent: String,
+    pub profile: String,
+    pub account: String,
+    pub plan: String,
+    pub rate_limit_tier: String,
+}
+
+/// Unresolved parse issues of one agent and kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IssueCount {
+    pub agent: String,
+    pub kind: String,
+    pub open: u64,
 }
 
 /// The newest successful poll of one quota window.
@@ -120,12 +181,17 @@ pub(crate) struct QuotaGauge {
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     pub(crate) taken_at: Timestamp,
+    pub(crate) machine_id: String,
+    pub(crate) machine: Machine,
     pub(crate) origins: Vec<Origin>,
     pub(crate) usage: Vec<UsageGroup>,
     pub(crate) session_usage: Vec<UsageGroup>,
     pub(crate) tools: Vec<ToolGroup>,
     pub(crate) session_tools: Vec<ToolGroup>,
+    pub(crate) signals: Vec<SignalGroup>,
     pub(crate) quota: Vec<QuotaGauge>,
+    pub(crate) accounts: Vec<AccountInfo>,
+    pub(crate) issues: Vec<IssueCount>,
     next_expiry: Option<Timestamp>,
 }
 
@@ -156,10 +222,15 @@ pub fn snapshot(
     now: Timestamp,
 ) -> Result<Snapshot, MetricsError> {
     let transaction = reader.connection().unchecked_transaction()?;
-    read(&transaction, ctx, now)
+    read(&transaction, ctx, now, reader.machine_id().to_string())
 }
 
-fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapshot, MetricsError> {
+fn read(
+    db: &Connection,
+    ctx: &SnapshotContext,
+    now: Timestamp,
+    machine_id: String,
+) -> Result<Snapshot, MetricsError> {
     let segments = Segments::new(&ctx.zone, &ctx.subscriptions)?;
     let mut accounts = Accounts::read(db, &ctx.accounts)?;
     let since = now.checked_sub(ctx.session_window)?.as_microsecond();
@@ -173,10 +244,7 @@ fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapsh
         &mut billing,
         &mut origins,
         None,
-    )?
-    .into_iter()
-    .map(|(group, _)| group)
-    .collect();
+    )?;
     let (session_usage, active, next_expiry) = {
         let groups = usage_rows(
             db,
@@ -187,12 +255,12 @@ fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapsh
             Some(since),
         )?;
         let mut last: HashMap<(&str, &str), i64> = HashMap::new();
-        for (group, last_at) in &groups {
+        for group in &groups {
             if let Some((id, _)) = &group.session {
                 let slot = last
                     .entry((group.agent.as_str(), id.as_str()))
                     .or_insert(i64::MIN);
-                *slot = (*slot).max(*last_at);
+                *slot = (*slot).max(group.last_us);
             }
         }
         let live: HashSet<(String, String)> = last
@@ -208,7 +276,6 @@ fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapsh
             .transpose()?;
         let kept = groups
             .into_iter()
-            .map(|(group, _)| group)
             .filter(|g| {
                 g.session
                     .as_ref()
@@ -226,16 +293,24 @@ fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapsh
             .as_ref()
             .is_some_and(|id| active.contains(&(t.agent.clone(), id.clone())))
     });
+    let signals = signals(db, &mut origins, &mut resolver, &active)?;
     let quota = quota(db, &mut accounts)?;
+    let account_infos = account_infos(db, &mut accounts)?;
+    let issues = issues(db)?;
 
     Ok(Snapshot {
         taken_at: now,
+        machine_id,
+        machine: ctx.machine.clone(),
         origins: origins.list,
         usage,
         session_usage,
         tools: totals,
         session_tools,
+        signals,
         quota,
+        accounts: account_infos,
+        issues,
         next_expiry,
     })
 }
@@ -451,6 +526,7 @@ pub(crate) fn usage_sql(segments: &Segments, sessions: bool) -> String {
     };
     format!(
         "SELECT u.agent, u.profile, u.provider, u.model, u.client, u.kind, u.cwd, u.project, \
+         COALESCE(u.service_tier, ''), CASE WHEN u.is_sidechain = 0 THEN 'false' ELSE 'true' END, \
          {columns}, {segment}, u.at_us, u.input_uncached, u.cache_read, u.cache_write_5m, \
          u.cache_write_1h, u.output, u.reasoning \
          FROM usage_event u \
@@ -459,8 +535,8 @@ pub(crate) fn usage_sql(segments: &Segments, sessions: bool) -> String {
 }
 
 /// Columns of a usage row that make a group: agent, profile, provider, model, client, kind, cwd,
-/// project, session, git branch.
-const USAGE_DIMENSIONS: usize = 10;
+/// project, service tier, sidechain flag, session, git branch.
+const USAGE_DIMENSIONS: usize = 12;
 
 /// The numbers of one row, after its `N` text dimensions.
 #[derive(Clone, Copy)]
@@ -563,7 +639,6 @@ fn directory(db: &Connection) -> Result<HashMap<String, (String, Option<String>)
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// Groups with the instant of their newest row.
 fn usage_rows(
     db: &Connection,
     segments: &Segments,
@@ -571,7 +646,7 @@ fn usage_rows(
     billing: &mut Billing<'_>,
     origins: &mut Origins,
     since: Option<i64>,
-) -> Result<Vec<(UsageGroup, i64)>, MetricsError> {
+) -> Result<Vec<UsageGroup>, MetricsError> {
     let mut params = segments.params();
     params.extend(since.map(Value::Integer));
     let mut grouping = Grouping::<USAGE_DIMENSIONS>::default();
@@ -580,16 +655,19 @@ fn usage_rows(
         let mut rows = statement.query(params_from_iter(params))?;
         while let Some(row) = rows.next()? {
             let mut tokens = [0; TOKEN_TYPES.len()];
-            for (slot, column) in tokens.iter_mut().zip(12..) {
+            for (slot, column) in tokens.iter_mut().zip(USAGE_DIMENSIONS + 2..) {
                 *slot = count(row.get(column)?, "tokens")?;
             }
             grouping.add(
                 row,
                 &Measures {
-                    segment: count(row.get(10)?, "segment")?,
-                    at_us: row.get(11)?,
+                    segment: count(row.get(USAGE_DIMENSIONS)?, "segment")?,
+                    at_us: row.get(USAGE_DIMENSIONS + 1)?,
                     tokens,
-                    reasoning: count(row.get(17)?, "reasoning")?,
+                    reasoning: count(
+                        row.get(USAGE_DIMENSIONS + 2 + TOKEN_TYPES.len())?,
+                        "reasoning",
+                    )?,
                 },
             )?;
         }
@@ -608,7 +686,7 @@ fn usage_group(
     accounts: &mut Accounts<'_>,
     billing: &mut Billing<'_>,
     origins: &mut Origins,
-) -> Result<(UsageGroup, i64), MetricsError> {
+) -> Result<UsageGroup, MetricsError> {
     let Sums {
         dimensions:
             [
@@ -620,6 +698,8 @@ fn usage_group(
                 kind,
                 cwd,
                 project,
+                service_tier,
+                sidechain,
                 session,
                 branch,
             ],
@@ -645,16 +725,23 @@ fn usage_group(
         model: required(model, "model")?,
         client: client.unwrap_or_default(),
         kind: required(kind, "kind")?,
+        service_tier: service_tier.unwrap_or_default(),
+        sidechain: if sidechain.as_deref() == Some("true") {
+            "true"
+        } else {
+            "false"
+        },
         session: session.map(|id| (id, branch.unwrap_or_default())),
         tokens,
         reasoning,
         events,
         created_us: first_us,
+        last_us,
         agent,
         profile,
         provider,
     };
-    Ok((group, last_us))
+    Ok(group)
 }
 
 /// The `project` label: the complete git remote (`host/owner/repo`), else the directory name,
@@ -675,11 +762,11 @@ fn project_label(origin: &Origin) -> String {
 }
 
 /// Columns of a tool-call row that make a group: agent, profile, tool, MCP server, error flag,
-/// event cwd, event project, the session of a call without a stored event, session.
-const TOOL_DIMENSIONS: usize = 9;
+/// skill, event cwd, event project, the session of a call without a stored event, session.
+const TOOL_DIMENSIONS: usize = 10;
 
 /// Tool calls. Totals take the origin from the call's usage event; a call whose event is not
-/// stored yet carries its session in column 7, to be resolved by [`Fallback`]. Grouped in Rust,
+/// stored yet carries its session in column 8, to be resolved by [`Fallback`]. Grouped in Rust,
 /// like [`usage_sql`].
 pub(crate) fn tools_sql(sessions: bool) -> String {
     let (column, filter) = if sessions {
@@ -697,7 +784,7 @@ pub(crate) fn tools_sql(sessions: bool) -> String {
         "SELECT t.agent, t.profile, t.tool_name, COALESCE(t.mcp_server, ''), \
          CASE WHEN t.is_error IS NULL THEN 'unknown' WHEN t.is_error = 0 THEN 'false' \
               ELSE 'true' END, \
-         e.cwd, e.project, CASE WHEN e.cwd IS NULL AND e.project IS NULL THEN t.session END, {column}, t.at_us \
+         t.skill, e.cwd, e.project, CASE WHEN e.cwd IS NULL AND e.project IS NULL THEN t.session END, {column}, t.at_us \
          FROM tool_call t LEFT JOIN usage_event e ON e.event_id = t.event_id{filter}"
     )
 }
@@ -747,6 +834,7 @@ fn tool_group(
                 tool,
                 mcp_server,
                 error,
+                skill,
                 cwd,
                 project,
                 unresolved,
@@ -771,6 +859,7 @@ fn tool_group(
             Some("true") => "true",
             _ => "unknown",
         },
+        skill,
         session,
         calls: events,
         created_us: first_us,
@@ -873,6 +962,100 @@ fn quota(db: &Connection, accounts: &mut Accounts<'_>) -> Result<Vec<QuotaGauge>
         });
     }
     Ok(gauges)
+}
+
+/// Signals per agent, session and kind. The profile is the one of the session's earliest event:
+/// a signal row has none. Rides `usage_event_session (session, at_us)`.
+pub(crate) const SIGNALS_SQL: &str = "SELECT s.agent, s.session, s.kind, COUNT(*), MIN(s.at_us), \
+     (SELECT u.profile FROM usage_event u WHERE u.session = s.session AND u.agent = s.agent \
+      ORDER BY u.at_us LIMIT 1) \
+     FROM session_signal s GROUP BY s.agent, s.session, s.kind";
+
+/// Signals, all history; `active` marks the sessions of the session families. The origin is the
+/// session's, as for a tool call without a stored event.
+fn signals(
+    db: &Connection,
+    origins: &mut Origins,
+    fallback: &mut Fallback,
+    active: &HashSet<(String, String)>,
+) -> Result<Vec<SignalGroup>, MetricsError> {
+    let rows: Vec<(String, String, String, i64, i64, Option<String>)> = {
+        let mut statement = db.prepare_cached(SIGNALS_SQL)?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })?;
+        rows.collect::<Result<_, _>>()?
+    };
+    rows.into_iter()
+        .map(|(agent, session, kind, signals, created_us, profile)| {
+            let origin = fallback.resolve(db, &agent, &session)?;
+            Ok(SignalGroup {
+                origin: origins.intern(origin),
+                active: active.contains(&(agent.clone(), session.clone())),
+                profile: profile.unwrap_or_default(),
+                signals: count(signals, "signals")?,
+                created_us,
+                agent,
+                kind,
+                session,
+            })
+        })
+        .collect()
+}
+
+/// The plan and rate-limit tier of every profile that reports one.
+pub(crate) const ACCOUNTS_SQL: &str = "SELECT agent, profile, COALESCE(detected_plan, ''), \
+     COALESCE(rate_limit_tier, '') FROM account \
+     WHERE COALESCE(detected_plan, '') <> '' OR COALESCE(rate_limit_tier, '') <> '' \
+     ORDER BY agent, profile";
+
+fn account_infos(
+    db: &Connection,
+    accounts: &mut Accounts<'_>,
+) -> Result<Vec<AccountInfo>, MetricsError> {
+    let rows: Vec<(String, String, String, String)> = {
+        let mut statement = db.prepare_cached(ACCOUNTS_SQL)?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        rows.collect::<Result<_, _>>()?
+    };
+    rows.into_iter()
+        .map(|(agent, profile, plan, rate_limit_tier)| {
+            Ok(AccountInfo {
+                account: accounts.label(&agent, &profile, None)?,
+                agent,
+                profile,
+                plan,
+                rate_limit_tier,
+            })
+        })
+        .collect()
+}
+
+/// Unresolved parse issues per agent and kind.
+pub(crate) const ISSUES_SQL: &str = "SELECT agent, kind, COUNT(*) FROM parse_issue \
+     WHERE resolved_at_us IS NULL GROUP BY agent, kind ORDER BY agent, kind";
+
+fn issues(db: &Connection) -> Result<Vec<IssueCount>, MetricsError> {
+    let mut statement = db.prepare_cached(ISSUES_SQL)?;
+    let mut rows = statement.query([])?;
+    let mut issues = Vec::new();
+    while let Some(row) = rows.next()? {
+        issues.push(IssueCount {
+            agent: row.get(0)?,
+            kind: row.get(1)?,
+            open: count(row.get(2)?, "issues")?,
+        });
+    }
+    Ok(issues)
 }
 
 /// A SQL count or sum as an unsigned number; a negative value means a corrupt store.

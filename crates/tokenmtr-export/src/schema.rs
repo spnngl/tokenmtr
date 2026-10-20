@@ -24,7 +24,7 @@ use tokenmtr_store::{Dataset, Revision};
 
 /// Version of the export schema; written to the `SQLite` sink's `_schema` table and bumped on any
 /// column change.
-pub const EXPORT_SCHEMA_VERSION: u32 = 3;
+pub const EXPORT_SCHEMA_VERSION: u32 = 4;
 
 /// The fixed number of fractional digits of a [`ColumnType::Decimal`] column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,7 +297,7 @@ static USAGE_EVENTS: [Column; 29] = [
     ),
 ];
 
-static TOOL_CALLS: [Column; 11] = [
+static TOOL_CALLS: [Column; 12] = [
     col(
         "tool_call_id",
         ColumnType::Text,
@@ -343,6 +343,14 @@ static TOOL_CALLS: [Column; 11] = [
         "is_error",
         ColumnType::Boolean,
         "Whether the result was an error; empty until a result is seen.",
+    ),
+    redactable(
+        opt(
+            "skill",
+            ColumnType::Text,
+            "Agent skill the call loaded (Claude Code `Skill`, pi `read` of a `SKILL.md`); empty for other calls and calls ingested before skills were recorded.",
+        ),
+        RedactColumn::Skill,
     ),
 ];
 
@@ -650,6 +658,7 @@ pub const fn redact_name(column: RedactColumn) -> &'static str {
         RedactColumn::GitBranch => "git_branch",
         RedactColumn::Account => "account",
         RedactColumn::SessionId => "session_id",
+        RedactColumn::Skill => "skill",
     }
 }
 

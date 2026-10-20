@@ -6707,6 +6707,7 @@ version = "0.2.0"
 dependencies = [
  "camino",
  "libc",
+ "quick-xml",
  "secrecy",
  "security-framework",
  "tempfile",
