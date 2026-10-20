@@ -237,7 +237,7 @@ export function settingsOf(tenYearProfiles: ReadonlySet<string>): Settings {
     exports_dir: "/Users/dev/Documents/TokenMtr",
     machine: "dev-macbook",
     agents: agentInfos(tenYearProfiles),
-    daemon: { ...systemHealthOf().daemon, version: "0.1.0" },
+    daemon: { ...systemHealthOf().daemon, version: "0.2.0" },
     display: { currency: "USD", time_zone: MOCK_TIME_ZONE },
     fx: { fixed_eur_per_usd: null, latest: fxRatesOf().at(-1) ?? null, offline: false },
     pricing: { snapshot_date: "2026-06-01", models: 64 },

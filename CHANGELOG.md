@@ -5,12 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-First release candidate: macOS app (universal, Apple Silicon and Intel) and Linux packages (deb and rpm for amd64 and arm64), plus the `tokenmtr` CLI and background daemon.
+## [0.2.0] - 2026-10-20
+
+Linux packages (deb and rpm for amd64 and arm64) join the macOS app.
 
 ### Added
 
 - Linux support: XDG data, log and cache directories, a systemd user unit for the daemon (`tokenmtr service install`), a tray icon with a **Show recap** menu item, and `.deb` and `.rpm` packages for Ubuntu 26.04+, Fedora 44+, Debian testing and openSUSE Tumbleweed. Claude quota reads `~/.claude/.credentials.json` only. The app opens its main window when launched by the user and starts in the tray at login (`--background`), on macOS too.
 - Releases carry an SPDX SBOM, `SHA256SUMS` signed with keyless cosign (`SHA256SUMS.sigstore.json`) and GitHub build-provenance and SBOM attestations for every package and the dmg ([docs/install.md](docs/install.md#verify-a-download)).
+
+## [0.1.0] - 2026-10-19
+
+First release: macOS app (universal, Apple Silicon and Intel) plus the `tokenmtr` CLI and background daemon.
+
+### Added
+
 - Menu-bar recap sizes itself to its content (up to the screen height) and has its actions and health line in a header; quota donuts of a profile share one row.
 - TokenMtr logo: app and menu-bar icons, sidebar and welcome screen, README; sources in `assets/brand/`, icons rebuilt with `just icons`.
 - Collectors for Claude Code and pi transcripts, with incremental checkpoints, streaming and fork deduplication, tool calls, session signals, and Claude's `stats-cache.json` daily totals for days before the first transcript.

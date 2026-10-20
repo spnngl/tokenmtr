@@ -2743,7 +2743,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokenmtr-agents"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "camino",
  "gix",
@@ -2765,11 +2765,11 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-brand"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "tokenmtr-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "camino",
  "globset",
@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "camino",
@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-metrics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "flate2",
  "jiff",
@@ -2831,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-platform"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "camino",
  "libc",
@@ -2846,7 +2846,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-remote"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2873,7 +2873,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "camino",
