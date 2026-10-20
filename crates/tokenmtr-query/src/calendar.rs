@@ -71,8 +71,8 @@ pub fn activity_calendar(
             day.total_tokens += cell.total_tokens();
         }
     }
-    for start in session_starts(reader, ctx, &filters)? {
-        if let Some(day) = days.get_mut(&ctx.zone().to_datetime(start).date()) {
+    for started in session_starts(reader, ctx, &filters)? {
+        if let Some(day) = days.get_mut(&ctx.zone().to_datetime(started).date()) {
             day.sessions += 1;
         }
     }

@@ -568,6 +568,7 @@ mod read {
 
     #[divan::bench]
     fn activity_calendar_2y(bencher: Bencher<'_, '_>) {
+        // The calendar ignores the range: it always reads two years.
         run(bencher, |r, c| {
             activity_calendar(r, c, &last_days(30)).expect("q")
         });

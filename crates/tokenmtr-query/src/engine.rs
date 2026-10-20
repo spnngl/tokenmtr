@@ -573,46 +573,81 @@ pub(crate) fn session_starts(
     );
     let mut statement = reader.connection().prepare_cached(&sql)?;
     let mut rows = statement.query(rusqlite::params_from_iter(params))?;
-    // Keyed by the four columns joined with NUL, which no id holds: one allocation per group.
-    let mut earliest: HashMap<String, i64> = HashMap::new();
-    let mut key = String::new();
+    // The billing mode depends on the local day, as `fetch` decides it per cell: under a billing
+    // filter each group keeps its earliest instant per day, so a session starts at its first
+    // passing day.
+    let by_day = !matches!(filters.billing_filter(), BillingFilter::Any);
+    let local_day = |at: i64| micros_ts(at).map(|at| ctx.zone().to_datetime(at).date());
+    // One allocation per group: the key is reused across rows.
+    let mut earliest: HashMap<Vec<u8>, HashMap<Option<Date>, i64>> = HashMap::new();
+    let mut key = Vec::new();
     while let Some(row) = rows.next()? {
         key.clear();
         for i in 0..4 {
-            key.push_str(text(row, i)?.unwrap_or_default());
-            key.push('\0');
+            push_part(&mut key, text(row, i)?.unwrap_or_default());
         }
         let at: i64 = row.get(4)?;
-        match earliest.get_mut(key.as_str()) {
-            Some(first) => *first = (*first).min(at),
+        let day = by_day.then(|| local_day(at)).transpose()?;
+        match earliest.get_mut(key.as_slice()) {
+            Some(days) => {
+                days.entry(day)
+                    .and_modify(|first| *first = (*first).min(at))
+                    .or_insert(at);
+            }
             None => {
-                earliest.insert(key.clone(), at);
+                earliest.insert(key.clone(), HashMap::from([(day, at)]));
             }
         }
     }
     let subs = ctx.subscriptions();
     let mut starts: HashMap<(AgentId, &str), Timestamp> = HashMap::new();
-    for (key, at) in &earliest {
-        let mut parts = key.split('\0');
-        let mut next = || parts.next().unwrap_or_default();
-        let (agent, session, profile, provider) = (next(), next(), next(), next());
-        let agent: AgentId = parse("agent", agent)?;
-        let profile: ProfileId = parse("profile", profile)?;
+    for (key, days) in &earliest {
+        let mut parts = key.as_slice();
+        let agent: AgentId = parse("agent", take_part(&mut parts)?)?;
+        let session = take_part(&mut parts)?;
+        let profile: ProfileId = parse("profile", take_part(&mut parts)?)?;
+        let provider = take_part(&mut parts)?;
         let provider: Option<ProviderId> = (!provider.is_empty())
             .then(|| parse("provider", provider))
             .transpose()?;
-        let at = micros_ts(*at)?;
-        let local = ctx.zone().to_datetime(at).date();
-        let mode = covering(subs, agent, &profile, provider.as_ref(), local)
-            .map_or(Mode::Api, Mode::Subscription);
-        if passes(filters, subs, mode) {
-            starts
-                .entry((agent, session))
-                .and_modify(|start| *start = (*start).min(at))
-                .or_insert(at);
+        for (day, at) in days {
+            let local = match day {
+                Some(day) => *day,
+                None => local_day(*at)?,
+            };
+            let mode = covering(subs, agent, &profile, provider.as_ref(), local)
+                .map_or(Mode::Api, Mode::Subscription);
+            if passes(filters, subs, mode) {
+                let at = micros_ts(*at)?;
+                starts
+                    .entry((agent, session))
+                    .and_modify(|start| *start = (*start).min(at))
+                    .or_insert(at);
+            }
         }
     }
     Ok(starts.into_values().collect())
+}
+
+/// Appends `value` to `key` behind its byte length, so no value can run into the next.
+fn push_part(key: &mut Vec<u8>, value: &str) {
+    key.extend_from_slice(&value.len().to_le_bytes());
+    key.extend_from_slice(value.as_bytes());
+}
+
+/// Splits off the front of `key` the next value [`push_part`] wrote.
+fn take_part<'k>(key: &mut &'k [u8]) -> Result<&'k str, QueryError> {
+    let bytes: &'k [u8] = key;
+    let broken = || QueryError::decode("session key", String::from_utf8_lossy(bytes));
+    let (len, rest) = bytes
+        .split_first_chunk::<{ size_of::<usize>() }>()
+        .ok_or_else(broken)?;
+    let (value, rest) = rest
+        .split_at_checked(usize::from_le_bytes(*len))
+        .ok_or_else(broken)?;
+    let value = std::str::from_utf8(value).map_err(|_| broken())?;
+    *key = rest;
+    Ok(value)
 }
 
 /// Whether `mode` passes the billing filter of `filters`.
