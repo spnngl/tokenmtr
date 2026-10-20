@@ -17,12 +17,12 @@ use tokenmtr_core::{
 use crate::env::Env;
 use crate::error::{ConfigPath, Rejection, Violation};
 use crate::model::{
-    AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry, BudgetScope,
-    CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset, DisplayConfig,
-    FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig, IntegrationsConfig,
-    LoggingConfig, MachineConfig, MenubarConfig, MenubarRing, Percent, PricingConfig,
-    PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig, SinkConfig,
-    SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting, path_glob,
+    AccountLabels, AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry,
+    BudgetScope, CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset,
+    DisplayConfig, FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig,
+    IntegrationsConfig, LoggingConfig, MachineConfig, MenubarConfig, MenubarRing, Percent,
+    PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig,
+    SinkConfig, SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting, path_glob,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
@@ -132,6 +132,7 @@ impl Config {
             },
             sinks: build_sinks(&raw.sinks, env)?,
             metrics: metrics::build_metrics(raw, env)?,
+            accounts: build_accounts(raw),
             display,
             agents,
         })
@@ -606,6 +607,34 @@ fn build_subscriptions(
 }
 
 // -- agents ------------------------------------------------------------------------------------
+
+fn build_accounts(raw: &RawConfig) -> AccountLabels {
+    let agents = &raw.agents;
+    let claude = agents
+        .claude
+        .profiles
+        .iter()
+        .map(|p| (AgentId::CLAUDE, &p.id, &p.account));
+    let pi = agents
+        .pi
+        .profiles
+        .iter()
+        .map(|p| (AgentId::PI, &p.id, &p.account));
+    AccountLabels {
+        global: raw.account.clone(),
+        agents: [
+            (AgentId::CLAUDE, &agents.claude.account),
+            (AgentId::PI, &agents.pi.account),
+        ]
+        .into_iter()
+        .filter_map(|(agent, account)| Some((agent, account.clone()?)))
+        .collect(),
+        profiles: claude
+            .chain(pi)
+            .filter_map(|(agent, id, account)| Some(((agent, id.clone()), account.clone()?)))
+            .collect(),
+    }
+}
 
 /// A profile as written, whatever the agent.
 struct ProfileSource<'a> {

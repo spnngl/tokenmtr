@@ -21,7 +21,7 @@ use jiff::civil::date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use tempfile::TempDir;
-use tokenmtr_config::{GlobList, OutputFilter};
+use tokenmtr_config::{AccountLabels, GlobList, OutputFilter};
 use tokenmtr_core::event::ToolCall;
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, DedupKey, EventCost, EventId, EventKind, MachineId, Money,
@@ -241,6 +241,7 @@ fn context() -> SnapshotContext {
         TimeZone::get("Europe/Paris").expect("zone"),
         vec![subscription],
         SignedDuration::from_hours(48),
+        AccountLabels::default(),
     )
 }
 

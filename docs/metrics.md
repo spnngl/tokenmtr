@@ -41,7 +41,9 @@ as a counter reset).
 `billing` is `subscription` when a configured subscription covers the profile on the event's local
 day (the same rule as the CLI's reports), else `api`. `project` is the normalised git remote
 (`github.com/acme/app`), else the project name, else the last segment of the project key. An event
-with no project has an empty `project`.
+with no project has an empty `project`. `account` is the account the agent reports (email, else
+organization; on quota gauges, else the account the poll recorded), else the configured `account`
+(the profile's, else the agent's, else the top-level key in `docs/config.md`), else empty.
 
 Tool calls take the working directory and project of the usage event they belong to, or of the
 earliest event of their session that has one.

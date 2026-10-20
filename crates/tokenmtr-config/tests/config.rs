@@ -641,6 +641,40 @@ fn git_names_must_be_non_blank_words() {
 }
 
 #[test]
+fn the_most_specific_account_wins() {
+    let config = parse(
+        "account = \"me\"\n\
+         [agents.pi]\naccount = \"pi-team\"\n\
+         [[agents.pi.profiles]]\nid = \"default\"\n\
+         [[agents.pi.profiles]]\nid = \"work\"\nroots = [\"/w\"]\naccount = \"work@acme\"\n",
+    )
+    .unwrap();
+    let account = |agent, profile: &str| {
+        config
+            .accounts
+            .get(agent, &ProfileId::try_from(profile).unwrap())
+            .map(|a| a.as_str().to_owned())
+    };
+
+    assert_eq!(account(AgentId::PI, "work").as_deref(), Some("work@acme"));
+    assert_eq!(account(AgentId::PI, "default").as_deref(), Some("pi-team"));
+    assert_eq!(account(AgentId::PI, "gone").as_deref(), Some("pi-team"));
+    assert_eq!(account(AgentId::CLAUDE, "default").as_deref(), Some("me"));
+    assert!(parse("").unwrap().accounts.is_empty());
+}
+
+#[test]
+fn a_blank_account_is_rejected() {
+    for source in [
+        "account = \" \"\n",
+        "[agents.claude]\naccount = \"\"\n",
+        "[[agents.pi.profiles]]\nid = \"default\"\naccount = \"\"\n",
+    ] {
+        assert!(parse(source).is_err(), "{source:?} accepted");
+    }
+}
+
+#[test]
 fn setting_git_defaults_keeps_comments() {
     let mut document = ConfigDocument::new(EXAMPLE, toml());
     let upstream = GitName::try_from("upstream".to_owned()).unwrap();

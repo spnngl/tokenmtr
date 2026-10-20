@@ -19,8 +19,8 @@ use tokenmtr_core::{
 };
 
 use crate::model::{
-    ClientName, Dataset, FileMode, GitName, LogFormat, LogLevel, MenubarRing, Partition, Percent,
-    RedactColumn, RedactMode,
+    AccountName, ClientName, Dataset, FileMode, GitName, LogFormat, LogLevel, MenubarRing,
+    Partition, Percent, RedactColumn, RedactMode,
 };
 
 /// Why a duration string is rejected.
@@ -150,6 +150,7 @@ impl Serialize for Amount {
 #[serde(deny_unknown_fields, default)]
 pub struct RawConfig {
     pub schema_version: Option<u32>,
+    pub account: Option<AccountName>,
     pub machine: RawMachine,
     pub display: RawDisplay,
     pub quota: RawQuota,
@@ -389,6 +390,7 @@ pub struct RawAgents {
 )]
 pub struct RawAgent<P> {
     pub enabled: Option<bool>,
+    pub account: Option<AccountName>,
     pub profiles: Vec<P>,
 }
 
@@ -396,6 +398,7 @@ impl<P> Default for RawAgent<P> {
     fn default() -> Self {
         Self {
             enabled: None,
+            account: None,
             profiles: Vec::new(),
         }
     }
@@ -407,6 +410,7 @@ pub struct RawClaudeProfile {
     pub id: ProfileId,
     pub roots: Option<Vec<String>>,
     pub config_dir: Option<String>,
+    pub account: Option<AccountName>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -414,6 +418,7 @@ pub struct RawClaudeProfile {
 pub struct RawPiProfile {
     pub id: ProfileId,
     pub roots: Option<Vec<String>>,
+    pub account: Option<AccountName>,
 }
 
 /// The `kind` of a sink. `csv` and `jsonl` both map to a file sink.

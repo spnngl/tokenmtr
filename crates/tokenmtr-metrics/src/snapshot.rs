@@ -18,6 +18,7 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use rusqlite::types::Value;
 use rusqlite::{Connection, Row, params_from_iter};
+use tokenmtr_config::AccountLabels;
 use tokenmtr_core::{AgentId, ProfileId, ProviderId, Subscription, covering};
 use tokenmtr_store::StoreReader;
 
@@ -35,21 +36,25 @@ pub struct SnapshotContext {
     zone: TimeZone,
     subscriptions: Vec<Subscription>,
     session_window: SignedDuration,
+    accounts: AccountLabels,
 }
 
 impl SnapshotContext {
     /// `zone` is `display.timezone`: the calendar the `billing` label follows.
     /// `session_window` is `[metrics].session_window`.
+    /// `accounts` is the configured `account` label of profiles whose agent reports none.
     #[must_use]
     pub const fn new(
         zone: TimeZone,
         subscriptions: Vec<Subscription>,
         session_window: SignedDuration,
+        accounts: AccountLabels,
     ) -> Self {
         Self {
             zone,
             subscriptions,
             session_window,
+            accounts,
         }
     }
 }
@@ -156,20 +161,27 @@ pub fn snapshot(
 
 fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapshot, MetricsError> {
     let segments = Segments::new(&ctx.zone, &ctx.subscriptions)?;
-    let accounts = accounts(db)?;
+    let mut accounts = Accounts::read(db, &ctx.accounts)?;
     let since = now.checked_sub(ctx.session_window)?.as_microsecond();
     let mut origins = Origins::default();
     let mut billing = Billing::new(&ctx.subscriptions, &segments);
 
-    let usage = usage_rows(db, &segments, &accounts, &mut billing, &mut origins, None)?
-        .into_iter()
-        .map(|(group, _)| group)
-        .collect();
+    let usage = usage_rows(
+        db,
+        &segments,
+        &mut accounts,
+        &mut billing,
+        &mut origins,
+        None,
+    )?
+    .into_iter()
+    .map(|(group, _)| group)
+    .collect();
     let (session_usage, active, next_expiry) = {
         let groups = usage_rows(
             db,
             &segments,
-            &accounts,
+            &mut accounts,
             &mut billing,
             &mut origins,
             Some(since),
@@ -214,7 +226,7 @@ fn read(db: &Connection, ctx: &SnapshotContext, now: Timestamp) -> Result<Snapsh
             .as_ref()
             .is_some_and(|id| active.contains(&(t.agent.clone(), id.clone())))
     });
-    let quota = quota(db, &accounts)?;
+    let quota = quota(db, &mut accounts)?;
 
     Ok(Snapshot {
         taken_at: now,
@@ -360,14 +372,62 @@ impl<'a> Billing<'a> {
     }
 }
 
-/// `(agent, profile)` to the account label: email, else organization, else empty.
-fn accounts(db: &Connection) -> Result<HashMap<(String, String), String>, MetricsError> {
-    let mut statement = db.prepare_cached(
-        "SELECT agent, profile, COALESCE(NULLIF(email, ''), NULLIF(organization, ''), '') \
-         FROM account",
-    )?;
-    let rows = statement.query_map([], |row| Ok(((row.get(0)?, row.get(1)?), row.get(2)?)))?;
-    Ok(rows.collect::<Result<_, _>>()?)
+/// The `account` label sources of each `(agent, profile)`.
+struct Accounts<'a> {
+    /// The account the agent reports: email, else organization. Never empty.
+    detected: HashMap<(String, String), String>,
+    configured: &'a AccountLabels,
+    /// `configured` resolved per profile; empty when none applies.
+    resolved: HashMap<(String, String), String>,
+}
+
+impl<'a> Accounts<'a> {
+    fn read(db: &Connection, configured: &'a AccountLabels) -> Result<Self, MetricsError> {
+        let mut statement = db.prepare_cached(
+            "SELECT agent, profile, COALESCE(NULLIF(email, ''), organization) FROM account \
+             WHERE COALESCE(NULLIF(email, ''), organization, '') <> ''",
+        )?;
+        let rows = statement.query_map([], |row| Ok(((row.get(0)?, row.get(1)?), row.get(2)?)))?;
+        Ok(Self {
+            detected: rows.collect::<Result<_, _>>()?,
+            configured,
+            resolved: HashMap::new(),
+        })
+    }
+
+    /// The detected account, else `polled` (the account a quota poll recorded), else the
+    /// configured one, else empty.
+    fn label(
+        &mut self,
+        agent: &str,
+        profile: &str,
+        polled: Option<String>,
+    ) -> Result<String, MetricsError> {
+        let key = (agent.to_owned(), profile.to_owned());
+        if let Some(detected) = self.detected.get(&key) {
+            return Ok(detected.clone());
+        }
+        if let Some(polled) = polled.filter(|p| !p.is_empty()) {
+            return Ok(polled);
+        }
+        if self.configured.is_empty() {
+            return Ok(String::new());
+        }
+        if let Some(resolved) = self.resolved.get(&key) {
+            return Ok(resolved.clone());
+        }
+        let agent_id =
+            AgentId::from_str(agent).map_err(|_| MetricsError::decode("agent", agent))?;
+        let profile_id = ProfileId::try_from(profile.to_owned())
+            .map_err(|_| MetricsError::decode("profile", profile))?;
+        let resolved = self
+            .configured
+            .get(agent_id, &profile_id)
+            .map(|a| a.as_str().to_owned())
+            .unwrap_or_default();
+        self.resolved.insert(key, resolved.clone());
+        Ok(resolved)
+    }
 }
 
 /// The usage rows, one per event. `sessions` selects the session and its branch and keeps only
@@ -507,7 +567,7 @@ fn directory(db: &Connection) -> Result<HashMap<String, (String, Option<String>)
 fn usage_rows(
     db: &Connection,
     segments: &Segments,
-    accounts: &HashMap<(String, String), String>,
+    accounts: &mut Accounts<'_>,
     billing: &mut Billing<'_>,
     origins: &mut Origins,
     since: Option<i64>,
@@ -545,7 +605,7 @@ fn usage_rows(
 fn usage_group(
     sums: Sums<USAGE_DIMENSIONS>,
     projects: &HashMap<String, (String, Option<String>)>,
-    accounts: &HashMap<(String, String), String>,
+    accounts: &mut Accounts<'_>,
     billing: &mut Billing<'_>,
     origins: &mut Origins,
 ) -> Result<(UsageGroup, i64), MetricsError> {
@@ -576,10 +636,7 @@ fn usage_group(
     let profile = required(profile, "profile")?;
     let provider = provider.unwrap_or_default();
     let origin = origin_of(cwd, project, projects);
-    let account = accounts
-        .get(&(agent.clone(), profile.clone()))
-        .cloned()
-        .unwrap_or_default();
+    let account = accounts.label(&agent, &profile, None)?;
     let group = UsageGroup {
         billing: billing.label(&agent, &profile, &provider, segment)?,
         project: project_label(&origin),
@@ -796,22 +853,14 @@ pub(crate) const QUOTA_SQL: &str = "SELECT q.agent, q.profile, q.window_id, \
                               WHERE agent = p.agent AND profile = p.profile AND status = 'ok') \
      ORDER BY q.agent, q.profile, q.window_id";
 
-fn quota(
-    db: &Connection,
-    accounts: &HashMap<(String, String), String>,
-) -> Result<Vec<QuotaGauge>, MetricsError> {
+fn quota(db: &Connection, accounts: &mut Accounts<'_>) -> Result<Vec<QuotaGauge>, MetricsError> {
     let mut statement = db.prepare_cached(QUOTA_SQL)?;
     let mut rows = statement.query([])?;
     let mut gauges = Vec::new();
     while let Some(row) = rows.next()? {
         let agent: String = row.get(0)?;
         let profile: String = row.get(1)?;
-        let polled: String = row.get(3)?;
-        let account = accounts
-            .get(&(agent.clone(), profile.clone()))
-            .filter(|a| !a.is_empty())
-            .cloned()
-            .unwrap_or(polled);
+        let account = accounts.label(&agent, &profile, Some(row.get(3)?))?;
         gauges.push(QuotaGauge {
             account,
             window: row.get(2)?,
