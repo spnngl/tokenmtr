@@ -348,7 +348,7 @@ static TOOL_CALLS: [Column; 12] = [
         opt(
             "skill",
             ColumnType::Text,
-            "Agent skill the call loaded (Claude Code `Skill`, pi `read` of a `SKILL.md`); empty for other calls and calls ingested before skills were recorded.",
+            "Agent skill the call loaded (Claude Code `Skill`, pi `read` of a `SKILL.md` under a `skills` directory); empty for other calls and calls ingested before skills were recorded.",
         ),
         RedactColumn::Skill,
     ),

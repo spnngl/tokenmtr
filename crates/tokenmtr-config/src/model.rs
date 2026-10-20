@@ -534,9 +534,13 @@ impl AccountLabels {
 /// `[machine]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachineConfig {
-    /// Display label; `None` is the host name.
+    /// Display label, trimmed, printable, at most [`MAX_MACHINE_NAME_BYTES`]; `None` is the host
+    /// name.
     pub name: Option<String>,
 }
+
+/// The longest `[machine].name`, in bytes: the cap of every detected machine label.
+pub const MAX_MACHINE_NAME_BYTES: usize = 128;
 
 /// The time zone that buckets days.
 #[derive(Debug, Clone)]

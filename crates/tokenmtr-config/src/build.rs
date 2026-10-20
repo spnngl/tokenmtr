@@ -20,9 +20,10 @@ use crate::model::{
     AccountLabels, AccountName, AdvisorConfig, AgentConfig, AlertSettings, BackupConfig,
     BudgetEntry, BudgetScope, CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig,
     Dataset, DisplayConfig, FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig,
-    IntegrationsConfig, LoggingConfig, MachineConfig, MenubarConfig, MenubarRing, Percent,
-    PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig,
-    SinkConfig, SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting, path_glob,
+    IntegrationsConfig, LoggingConfig, MAX_MACHINE_NAME_BYTES, MachineConfig, MenubarConfig,
+    MenubarRing, Percent, PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation,
+    ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig, SupersetConfig,
+    TimeZoneSetting, path_glob,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
@@ -71,14 +72,7 @@ impl Config {
             .collect();
         let display = build_display(raw)?;
         Ok(Self {
-            machine: MachineConfig {
-                name: raw
-                    .machine
-                    .name
-                    .as_ref()
-                    .filter(|name| !name.trim().is_empty())
-                    .cloned(),
-            },
+            machine: build_machine(raw, &root)?,
             quota: build_quota(raw)?,
             fx: build_fx(raw)?,
             menubar: build_menubar(raw, &enabled)?,
@@ -271,6 +265,29 @@ fn money(currency: Currency, amount: Amount, at: &ConfigPath) -> Checked<Money> 
 }
 
 // -- tables ------------------------------------------------------------------------------------
+
+/// `[machine]`: a blank `name` is the default; any other is trimmed and must be a printable
+/// label value of at most [`MAX_MACHINE_NAME_BYTES`].
+fn build_machine(raw: &RawConfig, root: &ConfigPath) -> Checked<MachineConfig> {
+    let at = root.key("machine").key("name");
+    let name = raw.machine.name.as_deref().map(str::trim);
+    let name = match name {
+        None | Some("") => None,
+        Some(name) if name.chars().any(char::is_control) => {
+            return Err(reject(&at, Violation::NotPrintable));
+        }
+        Some(name) if name.len() > MAX_MACHINE_NAME_BYTES => {
+            return Err(reject(
+                &at,
+                Violation::TooLong {
+                    max_bytes: MAX_MACHINE_NAME_BYTES,
+                },
+            ));
+        }
+        Some(name) => Some(name.to_owned()),
+    };
+    Ok(MachineConfig { name })
+}
 
 fn build_display(raw: &RawConfig) -> Checked<DisplayConfig> {
     let at = ConfigPath::root().key("display").key("timezone");

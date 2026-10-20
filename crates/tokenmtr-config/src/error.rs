@@ -235,6 +235,12 @@ pub enum Violation {
     /// A value contains a control character or, for a header, a newline.
     #[error("value must be printable text on one line")]
     NotPrintable,
+    /// A text value is longer than its cap.
+    #[error("value must be at most {max_bytes} bytes")]
+    TooLong {
+        /// The cap, in bytes.
+        max_bytes: usize,
+    },
     /// An `external_labels` key is not a Prometheus label name.
     #[error("{0:?} is not a valid label name: use [a-zA-Z_][a-zA-Z0-9_]* and no `__` prefix")]
     InvalidLabelName(String),
