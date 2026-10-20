@@ -2326,3 +2326,50 @@ fn activity_calendar_counts_tokens_and_started_sessions_per_local_day() {
         "a session counts on its first local day; daily aggregates add tokens, not sessions"
     );
 }
+
+#[test]
+fn activity_calendar_counts_a_session_on_its_first_day_passing_the_billing_filter() {
+    let seed = Seed::new();
+    let anthropic = ProviderId::try_from("anthropic".to_owned()).unwrap();
+    let event = |key: &str, id: &str, at: &str, provider: Option<&ProviderId>| UsageEvent {
+        session: SessionId::try_from(id.to_owned()).unwrap(),
+        provider: provider.cloned(),
+        ..seed.ev(key, ts(at))
+    };
+    seed.put(&[
+        // Session x starts the day before the subscription and continues into it.
+        event("x1", "x", "2026-02-28T23:00:00Z", Some(&anthropic)),
+        event("x2", "x", "2026-03-01T10:00:00Z", Some(&anthropic)),
+        // Session y moves from pay-as-you-go to the subscription provider.
+        event("y1", "y", "2026-03-02T10:00:00Z", None),
+        event("y2", "y", "2026-03-03T10:00:00Z", Some(&anthropic)),
+        // A NUL inside an id must not shift the other columns.
+        event("z1", "z\0Not A Profile", "2026-03-04T10:00:00Z", None),
+    ]);
+    let reader = seed.reader();
+    let ctx = usd_ctx("UTC", "2026-03-10T12:00:00Z").with_subscriptions(vec![march_subscription()]);
+    let starts = |billing: BillingFilter| -> Vec<Date> {
+        let f = days(date(2026, 3, 9), date(2026, 3, 10)).billing(billing);
+        activity_calendar(&reader, &ctx, &f)
+            .unwrap()
+            .days
+            .iter()
+            .filter(|d| d.sessions > 0)
+            .map(|d| d.day)
+            .collect()
+    };
+
+    assert_eq!(
+        starts(BillingFilter::Any),
+        [date(2026, 2, 28), date(2026, 3, 2), date(2026, 3, 4)]
+    );
+    assert_eq!(
+        starts(BillingFilter::Api),
+        [date(2026, 2, 28), date(2026, 3, 2), date(2026, 3, 4)]
+    );
+    assert_eq!(
+        starts(BillingFilter::Subscription(None)),
+        [date(2026, 3, 1), date(2026, 3, 3)],
+        "a session counts on its first covered day"
+    );
+}
