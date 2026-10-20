@@ -7,7 +7,8 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use tokenmtr_core::CostSource;
 use tokenmtr_core::{
-    BillingPeriod, Currency, EventId, EventKind, MachineId, Plan, UsdMicros, fx::utc_date,
+    BillingPeriod, Currency, EventId, EventKind, MachineId, Plan, SkillName, UsdMicros,
+    fx::utc_date,
 };
 use tokenmtr_store::{
     Dataset, FxRateRow, FxSource, ProfiledToolCall, QuotaSample, QuotaStatus, Revision, StoreRead,
@@ -222,6 +223,7 @@ pub fn tool_call(
         text(call.tool_name.as_str()),
         opt_text(call.mcp_server.as_deref()),
         call.is_error.map_or(Value::Null, Value::Boolean),
+        opt_text(call.skill.as_ref().map(SkillName::as_str)),
     ];
     Ok(checked(
         Dataset::ToolCalls,

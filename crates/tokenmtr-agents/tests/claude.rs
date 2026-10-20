@@ -222,10 +222,22 @@ fn tool_uses_of_a_multi_line_message_are_kept_once_with_their_error_flag() -> Te
             (&json!("toolu_t1"), &json!("Read"), &json!(false)),
             (&json!("toolu_t2"), &json!("Bash"), &json!(true)),
             (&json!("toolu_t3"), &json!("Edit"), &json!(false)),
+            (&json!("toolu_t4"), &json!("Skill"), &json!(false)),
         ]
     );
     assert_eq!(calls[0]["event_key"], "msg_t1|req_t1");
     assert_eq!(calls[1]["event_key"], "msg_t1|req_t1");
+    assert_eq!(calls[3]["event_key"], "msg_t2|req_t2");
+    let skills: Vec<&Value> = (0..4).map(|i| &calls[i]["call"]["skill"]).collect();
+    assert_eq!(
+        skills,
+        [
+            &Value::Null,
+            &Value::Null,
+            &Value::Null,
+            &json!("git-commit")
+        ]
+    );
     let orphans: Vec<_> = batch.orphan_tool_results().collect();
     assert_eq!(orphans.len(), 1);
     assert_eq!(orphans[0].tool_use_id, "toolu_earlier");

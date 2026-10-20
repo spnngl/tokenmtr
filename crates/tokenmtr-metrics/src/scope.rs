@@ -13,7 +13,9 @@ use tokenmtr_config::{GlobList, OutputFilter, RedactColumn, RedactMode};
 use tokenmtr_store::RedactionKey;
 
 use crate::catalog::{Family, TOKEN_TYPES};
-use crate::snapshot::{Origin, QuotaGauge, Snapshot, ToolGroup, UsageGroup};
+use crate::snapshot::{
+    AccountInfo, IssueCount, Origin, QuotaGauge, SignalGroup, Snapshot, ToolGroup, UsageGroup,
+};
 
 /// The workspace version, the value of `tokenmtr_build_info{version}`.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -58,6 +60,7 @@ impl OutputScope {
             "git_branch" => RedactColumn::GitBranch,
             "account" => RedactColumn::Account,
             "session_id" => RedactColumn::SessionId,
+            "skill" => RedactColumn::Skill,
             _ => return value.to_owned(),
         };
         match self.redact.get(&column) {
@@ -118,7 +121,9 @@ impl Labelled for UsageGroup {
             "profile" => &self.profile,
             "project" => &self.project,
             "provider" => &self.provider,
+            "service_tier" => &self.service_tier,
             "session_id" => self.session.as_ref().map_or("", |(id, _)| id),
+            "sidechain" => self.sidechain,
             _ => "",
         }
     }
@@ -132,7 +137,77 @@ impl Labelled for ToolGroup {
             "mcp_server" => &self.mcp_server,
             "profile" => &self.profile,
             "session_id" => self.session.as_deref().unwrap_or(""),
+            "skill" => self.skill.as_deref().unwrap_or(""),
             "tool" => &self.tool,
+            _ => "",
+        }
+    }
+}
+
+impl Labelled for SignalGroup {
+    fn label(&self, name: &str) -> &str {
+        match name {
+            "agent" => &self.agent,
+            "kind" => &self.kind,
+            "profile" => &self.profile,
+            "session_id" => &self.session,
+            _ => "",
+        }
+    }
+}
+
+impl Labelled for AccountInfo {
+    fn label(&self, name: &str) -> &str {
+        match name {
+            "account" => &self.account,
+            "agent" => &self.agent,
+            "plan" => &self.plan,
+            "profile" => &self.profile,
+            "rate_limit_tier" => &self.rate_limit_tier,
+            _ => "",
+        }
+    }
+}
+
+impl Labelled for IssueCount {
+    fn label(&self, name: &str) -> &str {
+        match name {
+            "agent" => &self.agent,
+            "kind" => &self.kind,
+            _ => "",
+        }
+    }
+}
+
+/// The labels of `tokenmtr_session_info`: a session group plus the machine it ran on.
+struct SessionLink<'a>(&'a Snapshot, &'a UsageGroup);
+
+impl Labelled for SessionLink<'_> {
+    fn label(&self, name: &str) -> &str {
+        match name {
+            "machine_id" => &self.0.machine_id,
+            _ => self.1.label(name),
+        }
+    }
+}
+
+/// The machine labels of `tokenmtr_machine_info`.
+struct MachineLabels<'a>(&'a Snapshot);
+
+impl Labelled for MachineLabels<'_> {
+    fn label(&self, name: &str) -> &str {
+        let machine = &self.0.machine;
+        match name {
+            "arch" => std::env::consts::ARCH,
+            "kernel_version" => &machine.kernel_version,
+            "machine_id" => &self.0.machine_id,
+            "machine_name" => &machine.name,
+            "os" => std::env::consts::OS,
+            "os_build" => &machine.os_build,
+            "os_id" => &machine.os_id,
+            "os_name" => &machine.os_name,
+            "os_version" => &machine.os_version,
+            "version" => VERSION,
             _ => "",
         }
     }
@@ -173,92 +248,177 @@ impl Accumulator {
     fn gauge(&mut self, key: Key, value: f64) {
         self.series.insert(key, (Value::Gauge(value), None));
     }
+
+    /// A gauge that keeps the smallest (`pick` = `f64::min`) or largest value it is given.
+    fn gauge_by(&mut self, key: Key, value: f64, pick: fn(f64, f64) -> f64) {
+        let slot = self
+            .series
+            .entry(key)
+            .or_insert((Value::Gauge(value), None));
+        if let Value::Gauge(kept) = &mut slot.0 {
+            *kept = pick(*kept, value);
+        }
+    }
+}
+
+/// One output's fold in progress: its scope, which origins it excludes, and the series so far.
+struct Folding<'a> {
+    scope: &'a OutputScope,
+    excluded: Vec<bool>,
+    acc: Accumulator,
+}
+
+impl Folding<'_> {
+    /// The series key of `source` in `family`; `extra` is the `type` or `kind` label value.
+    fn key(&self, family: Family, source: &dyn Labelled, extra: Option<&str>) -> Key {
+        let values = family
+            .labels()
+            .iter()
+            .map(|name| {
+                let value = match (*name, extra) {
+                    ("type" | "kind", Some(extra)) => extra,
+                    _ => source.label(name),
+                };
+                self.scope.redacted(name, value)
+            })
+            .collect();
+        (family, values)
+    }
+
+    fn usage(&mut self, groups: &[UsageGroup], families: [Family; 3]) {
+        let [tokens, reasoning, events] = families;
+        let excluded = &self.excluded;
+        for group in groups.iter().filter(|g| !excluded[g.origin]) {
+            for (count, name) in group.tokens.iter().zip(TOKEN_TYPES) {
+                if *count > 0 {
+                    let key = self.key(tokens, group, Some(name));
+                    self.acc.count(key, *count, group.created_us);
+                }
+            }
+            if group.reasoning > 0 {
+                let key = self.key(reasoning, group, None);
+                self.acc.count(key, group.reasoning, group.created_us);
+            }
+            let key = self.key(events, group, Some(&group.kind));
+            self.acc.count(key, group.events, group.created_us);
+        }
+    }
+
+    fn last_events(&mut self, groups: &[UsageGroup]) {
+        let excluded = &self.excluded;
+        for group in groups.iter().filter(|g| !excluded[g.origin]) {
+            let key = self.key(Family::LastEventAt, group, None);
+            self.acc.gauge_by(key, seconds(group.last_us), f64::max);
+        }
+    }
+
+    fn sessions(&mut self, snapshot: &Snapshot) {
+        let excluded = &self.excluded;
+        for group in snapshot
+            .session_usage
+            .iter()
+            .filter(|g| !excluded[g.origin])
+        {
+            let key = self.key(Family::SessionInfo, &SessionLink(snapshot, group), None);
+            self.acc.gauge(key, 1.0);
+            let key = self.key(Family::SessionStartAt, group, None);
+            self.acc.gauge_by(key, seconds(group.created_us), f64::min);
+            let key = self.key(Family::SessionLastEventAt, group, None);
+            self.acc.gauge_by(key, seconds(group.last_us), f64::max);
+        }
+    }
+
+    fn tools(&mut self, groups: &[ToolGroup], calls: Family, skills: Family) {
+        let excluded = &self.excluded;
+        for group in groups.iter().filter(|g| !excluded[g.origin]) {
+            let key = self.key(calls, group, None);
+            self.acc.count(key, group.calls, group.created_us);
+            if group.skill.is_some() {
+                let key = self.key(skills, group, None);
+                self.acc.count(key, group.calls, group.created_us);
+            }
+        }
+    }
+
+    fn signals(&mut self, groups: &[SignalGroup]) {
+        let excluded = &self.excluded;
+        for group in groups.iter().filter(|g| !excluded[g.origin]) {
+            let key = self.key(Family::Signals, group, None);
+            self.acc.count(key, group.signals, group.created_us);
+            if group.active {
+                let key = self.key(Family::SessionSignals, group, None);
+                self.acc.count(key, group.signals, group.created_us);
+            }
+        }
+    }
+
+    fn gauges(&mut self, snapshot: &Snapshot) {
+        for account in &snapshot.accounts {
+            let key = self.key(Family::AccountInfo, account, None);
+            self.acc.gauge(key, 1.0);
+        }
+        for issues in &snapshot.issues {
+            let key = self.key(Family::ParseIssues, issues, None);
+            self.acc.gauge(key, u64_gauge(issues.open));
+        }
+        for gauge in &snapshot.quota {
+            if let Some(ratio) = gauge.used_ratio {
+                let key = self.key(Family::QuotaUsedRatio, gauge, None);
+                self.acc.gauge(key, ratio);
+            }
+            if let Some(us) = gauge.resets_at_us {
+                let key = self.key(Family::QuotaResetsAt, gauge, None);
+                self.acc.gauge(key, seconds(us));
+            }
+            let key = self.key(Family::QuotaFetchedAt, gauge, None);
+            self.acc.gauge(key, seconds(gauge.fetched_at_us));
+        }
+    }
 }
 
 impl Snapshot {
     /// This snapshot as `scope`'s output sees it, plus the meta series (`tokenmtr_series`,
-    /// `tokenmtr_snapshot_timestamp_seconds`, `tokenmtr_build_info`).
+    /// `tokenmtr_snapshot_timestamp_seconds`, `tokenmtr_build_info`, `tokenmtr_machine_info`).
     #[must_use]
     pub fn fold(&self, scope: &OutputScope) -> Folded {
-        let excluded: Vec<bool> = self.origins.iter().map(|o| scope.excludes(o)).collect();
-        let mut acc = Accumulator::default();
-        let key = |family: Family, source: &dyn Labelled, extra: Option<&str>| -> Key {
-            let values = family
-                .labels()
-                .iter()
-                .map(|name| {
-                    let value = match (*name, extra) {
-                        ("type" | "kind", Some(extra)) => extra,
-                        _ => source.label(name),
-                    };
-                    scope.redacted(name, value)
-                })
-                .collect();
-            (family, values)
+        let mut folding = Folding {
+            scope,
+            excluded: self.origins.iter().map(|o| scope.excludes(o)).collect(),
+            acc: Accumulator::default(),
         };
-
-        for (groups, tokens, reasoning, events) in [
-            (
-                &self.usage,
-                Family::Tokens,
-                Family::ReasoningTokens,
-                Family::Events,
-            ),
-            (
-                &self.session_usage,
+        folding.usage(
+            &self.usage,
+            [Family::Tokens, Family::ReasoningTokens, Family::Events],
+        );
+        folding.usage(
+            &self.session_usage,
+            [
                 Family::SessionTokens,
                 Family::SessionReasoningTokens,
                 Family::SessionEvents,
-            ),
-        ] {
-            for group in groups.iter().filter(|g| !excluded[g.origin]) {
-                for (count, name) in group.tokens.iter().zip(TOKEN_TYPES) {
-                    if *count > 0 {
-                        acc.count(key(tokens, group, Some(name)), *count, group.created_us);
-                    }
-                }
-                if group.reasoning > 0 {
-                    acc.count(
-                        key(reasoning, group, None),
-                        group.reasoning,
-                        group.created_us,
-                    );
-                }
-                acc.count(
-                    key(events, group, Some(&group.kind)),
-                    group.events,
-                    group.created_us,
-                );
-            }
-        }
-        for (groups, family) in [
-            (&self.tools, Family::ToolCalls),
-            (&self.session_tools, Family::SessionToolCalls),
-        ] {
-            for group in groups.iter().filter(|g| !excluded[g.origin]) {
-                acc.count(key(family, group, None), group.calls, group.created_us);
-            }
-        }
-        for gauge in &self.quota {
-            if let Some(ratio) = gauge.used_ratio {
-                acc.gauge(key(Family::QuotaUsedRatio, gauge, None), ratio);
-            }
-            if let Some(us) = gauge.resets_at_us {
-                acc.gauge(key(Family::QuotaResetsAt, gauge, None), seconds(us));
-            }
-            acc.gauge(
-                key(Family::QuotaFetchedAt, gauge, Some("")),
-                seconds(gauge.fetched_at_us),
-            );
-        }
+            ],
+        );
+        folding.last_events(&self.usage);
+        folding.sessions(self);
+        folding.tools(&self.tools, Family::ToolCalls, Family::SkillUses);
+        folding.tools(
+            &self.session_tools,
+            Family::SessionToolCalls,
+            Family::SessionSkillUses,
+        );
+        folding.signals(&self.signals);
+        folding.gauges(self);
+        let machine = folding.key(Family::MachineInfo, &MachineLabels(self), None);
+        let mut acc = folding.acc;
 
-        let series = acc.series.len() + 3;
+        let series = acc.series.len() + 4;
         acc.gauge((Family::Series, Vec::new()), usize_gauge(series));
         acc.gauge(
             (Family::SnapshotTimestamp, Vec::new()),
             seconds(self.taken_at.as_microsecond()),
         );
         acc.gauge((Family::BuildInfo, vec![VERSION.to_owned()]), 1.0);
+        acc.gauge(machine, 1.0);
 
         Folded {
             taken_at: self.taken_at,
@@ -290,5 +450,13 @@ const fn seconds(us: i64) -> f64 {
     reason = "a series count is far below 2^53"
 )]
 const fn usize_gauge(n: usize) -> f64 {
+    n as f64
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "an issue count is far below 2^53"
+)]
+const fn u64_gauge(n: u64) -> f64 {
     n as f64
 }

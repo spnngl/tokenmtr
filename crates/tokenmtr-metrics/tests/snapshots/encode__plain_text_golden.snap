@@ -16,5 +16,5 @@ tokenmtr_series 5
 tokenmtr_snapshot_timestamp_seconds 1772323200
 # HELP tokenmtr_tokens_total Tokens used, by type.
 # TYPE tokenmtr_tokens_total counter
-tokenmtr_tokens_total{account="me@example.com",agent="claude",billing="subscription",client="cli",model="opus",profile="default",project="github.com/acme/app",provider="anthropic",type="output"} 1500
-tokenmtr_tokens_total{account="me@example.com",agent="claude",billing="subscription",client="cli",model="opus",profile="default",project="we\"ird\\path\nx",provider="anthropic",type="input_uncached"} 7
+tokenmtr_tokens_total{account="me@example.com",agent="claude",billing="subscription",client="cli",model="opus",profile="default",project="github.com/acme/app",provider="anthropic",service_tier="",sidechain="false",type="output"} 1500
+tokenmtr_tokens_total{account="me@example.com",agent="claude",billing="subscription",client="cli",model="opus",profile="default",project="we\"ird\\path\nx",provider="anthropic",service_tier="",sidechain="false",type="input_uncached"} 7

@@ -19,6 +19,7 @@ fn call(id: &str, is_error: Option<bool>) -> ProfiledToolCall {
             tool_name: "Bash".to_owned(),
             mcp_server: None,
             is_error,
+            skill: None,
         },
     }
 }

@@ -221,6 +221,7 @@ expression: value
         "is_error": false,
         "mcp_server": null,
         "session": "sess-main",
+        "skill": null,
         "tool_name": "read",
         "tool_use_id": "call_main_1"
       },

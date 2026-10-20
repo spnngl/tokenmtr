@@ -283,6 +283,27 @@ fn session_redaction_covers_parent_session_and_tool_calls() -> TestResult {
 }
 
 #[test]
+fn skill_redaction_applies_to_tool_calls() -> TestResult {
+    let key = RedactionKey::new([1; 32]);
+    let tools = || -> TestResult<ExportBatch> {
+        Ok(ExportBatch {
+            dataset: Dataset::ToolCalls,
+            rows: sample_rows(Dataset::ToolCalls)?,
+        })
+    };
+    let mut hashed = tools()?;
+    Redactor::new(&key, &rules(&[(RedactColumn::Skill, RedactMode::Hash)])).apply(&mut hashed);
+    assert_eq!(
+        cell(&hashed, 0, "skill")?,
+        &Value::Text(hash_value(&key, "git-commit"))
+    );
+    let mut dropped = tools()?;
+    Redactor::new(&key, &rules(&[(RedactColumn::Skill, RedactMode::Drop)])).apply(&mut dropped);
+    assert_eq!(cell(&dropped, 0, "skill")?, &Value::Null);
+    Ok(())
+}
+
+#[test]
 fn account_redaction_applies_to_quota_snapshots() -> TestResult {
     let key = RedactionKey::new([1; 32]);
     let rules = rules(&[(RedactColumn::Account, RedactMode::Hash)]);

@@ -65,7 +65,8 @@ fn fold(mut series: Vec<Series>) -> Folded {
     }
 }
 
-/// A token counter by account, agent, billing, client, model, profile, project, provider, type.
+/// A token counter by account, agent, billing, client, model, profile, project, provider,
+/// service tier, sidechain, type.
 fn tokens(project: &str, kind: &str, n: u64, created: Timestamp) -> Series {
     count(
         Family::Tokens,
@@ -78,6 +79,8 @@ fn tokens(project: &str, kind: &str, n: u64, created: Timestamp) -> Series {
             "default",
             project,
             "anthropic",
+            "",
+            "false",
             kind,
         ],
         n,

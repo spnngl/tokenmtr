@@ -35,6 +35,10 @@ pub enum IdError {
     /// The text is not a UUID.
     #[error("invalid machine id {0:?}")]
     BadMachineId(String),
+    /// The skill name is untrimmed, longer than 128 bytes or holds a control character.
+    /// The value is left out: it comes from tool arguments, which stay out of logs.
+    #[error("invalid skill name")]
+    BadSkillName,
 }
 
 fn non_blank(kind: &'static str, value: &str) -> Result<(), IdError> {
@@ -58,6 +62,16 @@ fn slug(kind: &'static str, value: &str) -> Result<(), IdError> {
             kind,
             value: value.to_owned(),
         })
+    }
+}
+
+fn skill_name(kind: &'static str, value: &str) -> Result<(), IdError> {
+    non_blank(kind, value)?;
+    let ok = value.len() <= 128 && value.trim() == value && !value.chars().any(char::is_control);
+    if ok {
+        Ok(())
+    } else {
+        Err(IdError::BadSkillName)
     }
 }
 
@@ -153,6 +167,12 @@ string_id!(
 string_id!(
     /// A subscription id from config (slug).
     SubscriptionId, slug
+);
+string_id!(
+    /// The name of an agent skill a tool call loaded, e.g. `git-commit` or `plugin:skill`:
+    /// trimmed, non-blank, at most 128 bytes, no control characters. The only value the
+    /// store keeps from tool arguments.
+    SkillName, skill_name
 );
 
 impl ProfileId {
@@ -370,6 +390,29 @@ mod tests {
         assert!(ProfileId::try_from("has space").is_err());
         assert!(SinkId::try_from("a".repeat(65)).is_err());
         assert!(BudgetId::try_from("").is_err());
+    }
+
+    #[test]
+    fn skill_names_are_trimmed_short_and_printable() {
+        assert!(SkillName::try_from("git-commit").is_ok());
+        assert!(SkillName::try_from("plugin:skill name").is_ok());
+        assert!(SkillName::try_from("a".repeat(128)).is_ok());
+        assert_eq!(
+            SkillName::try_from("a".repeat(129)),
+            Err(IdError::BadSkillName)
+        );
+        assert_eq!(
+            SkillName::try_from(" git-commit"),
+            Err(IdError::BadSkillName)
+        );
+        assert_eq!(
+            SkillName::try_from("git\ncommit"),
+            Err(IdError::BadSkillName)
+        );
+        assert_eq!(
+            SkillName::try_from(" \t"),
+            Err(IdError::Blank { kind: "SkillName" })
+        );
     }
 
     #[test]

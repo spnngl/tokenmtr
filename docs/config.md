@@ -419,7 +419,7 @@ Every agent has a `default` profile, added with discovery paths when the file om
 | `kind` | `csv`, `jsonl`, `sqlite` | required | Sink kind. `csv` and `jsonl` write files. |
 | `interval` | duration | `"5m"` | Minimum time between export runs; a run starts only after a write to one of the sink's datasets. |
 | `datasets` | `[dataset]` | all five | Subset of `usage_events`, `tool_calls`, `quota_snapshots`, `fx_rates`, `subscriptions`; non-empty, unique. |
-| `redact` | table of column to mode | none | Column `cwd`, `project`, `client`, `git_branch`, `account` or `session_id`; mode `hash` (BLAKE3 keyed with a per-install secret, 16 hex characters, so grouping still works) or `drop` (empty CSV cell, JSON `null`, SQL `NULL`). |
+| `redact` | table of column to mode | none | Column `cwd`, `project`, `client`, `git_branch`, `account`, `session_id` or `skill`; mode `hash` (BLAKE3 keyed with a per-install secret, 16 hex characters, so grouping still works) or `drop` (empty CSV cell, JSON `null`, SQL `NULL`). |
 | `dir` | path | platform | `csv`, `jsonl` only: output directory. |
 | `mode` | `append`, `snapshot` | `"append"` | `csv`, `jsonl` only. `append` adds changed rows with their `revision` (keep the highest per id); `snapshot` atomically rewrites each touched partition with one row per id. |
 | `partition` | `month`, `day`, `all` | `"month"` | `csv`, `jsonl` only. Files are named `<dataset>-<partition>.<ext>`, partitioned by row date, e.g. `usage_events-2026-05.csv`. |
@@ -446,7 +446,7 @@ A scrape endpoint: `GET /metrics` on `listen`, nothing else.
 | `listen` | `host:port` | `"127.0.0.1:9464"` | Address to bind; unique among exporters. A non-loopback address exposes the metrics to the network, and macOS asks to allow incoming connections. |
 | `exclude_projects` | `[glob]` | none | Leave out events and tool calls whose project key (`host/owner/repo`), name or git remote matches. `*` does not cross `/`. |
 | `exclude_paths` | `[glob]` | none | Leave out events and tool calls whose working directory matches; `~` expands. `*` does not cross `/`, so `~/work/secret` leaves out only that directory: write `~/work/secret/**` for everything below it. An error with `privacy.redact_paths`, which stores hashes. |
-| `redact` | table of label to mode | none | Label `project`, `client`, `git_branch`, `account` or `session_id`; mode `hash` (the keyed hash sinks use) or `drop` (empty label). `cwd` is rejected: metrics never carry it. |
+| `redact` | table of label to mode | none | Label `project`, `client`, `git_branch`, `account`, `session_id` or `skill`; mode `hash` (the keyed hash sinks use) or `drop` (empty label). `cwd` is rejected: metrics never carry it. |
 | `auth` | table | none | Credentials a scraper must send; see below. |
 
 ### `[[metrics.remote_write]]`

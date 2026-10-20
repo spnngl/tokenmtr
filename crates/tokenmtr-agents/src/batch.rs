@@ -73,7 +73,7 @@ pub struct BatchParts {
 ///   (last wins: Claude writes several streaming lines per message, and the first under-counts
 ///   output); the event keeps the position of its first occurrence.
 /// - **Tool calls:** unique per `(agent, tool_use_id)`. The first push wins; a later push only
-///   fills a missing `event_key`.
+///   fills a missing `event_key` or `skill`.
 /// - **Tool results:** set `is_error` on the call, whether the call was pushed before or after the
 ///   result. Results without a call in the batch are kept apart.
 /// - **Signals:** unique per `(agent, session, kind, at)`.
@@ -119,6 +119,9 @@ impl ParseBatch {
                 let kept = &mut self.tool_calls[*slot.get()];
                 if kept.event_key.is_none() {
                     kept.event_key = parsed.event_key;
+                }
+                if kept.call.skill.is_none() {
+                    kept.call.skill = parsed.call.skill;
                 }
             }
             Entry::Vacant(slot) => {
@@ -247,6 +250,7 @@ mod tests {
                 tool_name: "Bash".to_owned(),
                 mcp_server: None,
                 is_error: None,
+                skill: None,
             },
             event_key: None,
         })

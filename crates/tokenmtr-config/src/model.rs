@@ -168,6 +168,8 @@ pub enum RedactColumn {
     Account,
     /// Agent session id.
     SessionId,
+    /// Name of the agent skill a tool call loaded.
+    Skill,
 }
 
 /// What redaction does to a column.
@@ -439,17 +441,31 @@ pub struct MetricsConfig {
 pub const METRIC_LABELS: &[&str] = &[
     "account",
     "agent",
+    "arch",
     "billing",
     "client",
     "error",
     "git_branch",
+    "kernel_version",
     "kind",
+    "machine_id",
+    "machine_name",
     "mcp_server",
     "model",
+    "os",
+    "os_build",
+    "os_id",
+    "os_name",
+    "os_version",
+    "plan",
     "profile",
     "project",
     "provider",
+    "rate_limit_tier",
+    "service_tier",
     "session_id",
+    "sidechain",
+    "skill",
     "tool",
     "type",
     "version",
