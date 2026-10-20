@@ -48,10 +48,12 @@ fn check_service(backend: &Backend, sidecar: &Sidecar) -> Result<RepairOutcome, 
     daemon::check_unit(backend.service(), sidecar)
 }
 
-/// Repairs the background service when this app moved (macOS), and restarts a daemon that still
-/// runs another version than this app (after an update) on the bundled one.
+/// Repairs the background service when this app moved (macOS), reinstalls it when it is missing
+/// after onboarding, and restarts a daemon that still runs another version than this app (after
+/// an update) on the bundled one. A missing service after onboarding is mostly a `brew upgrade`:
+/// the cask's `uninstall` removes it, then Homebrew reopens the new app.
 /// Runs off the main thread: the service manager may take seconds.
-async fn repair_service(backend: Backend) {
+async fn repair_service(backend: Backend, onboarded: bool) {
     let Ok(sidecar) = Sidecar::locate() else {
         return;
     };
@@ -60,18 +62,24 @@ async fn repair_service(backend: Backend) {
         move || Ok(check_service(&backend, &sidecar)?)
     })
     .await;
-    match checked {
-        Ok(RepairOutcome::Repaired) => tracing::info!("daemon plist repaired after the app moved"),
+    let action = match checked {
+        Ok(RepairOutcome::NotInstalled) if onboarded => "reinstall the missing daemon",
         Ok(RepairOutcome::Current) if daemon::outdated(backend.transport()).await => {
-            let restarted =
-                backend::blocking(move || Ok(install_service(backend.service(), &sidecar)?)).await;
-            match restarted {
-                Ok(()) => tracing::info!("daemon restarted on this app's version"),
-                Err(error) => tracing::warn!(%error, "could not restart the outdated daemon"),
-            }
+            "restart the outdated daemon on this app's version"
         }
-        Ok(_) => {}
-        Err(error) => tracing::warn!(%error, "could not verify the background service"),
+        Ok(RepairOutcome::Repaired) => {
+            tracing::info!("daemon plist repaired after the app moved");
+            return;
+        }
+        Ok(_) => return,
+        Err(error) => {
+            tracing::warn!(%error, "could not verify the background service");
+            return;
+        }
+    };
+    match backend::blocking(move || Ok(install_service(backend.service(), &sidecar)?)).await {
+        Ok(()) => tracing::info!(action, "daemon service installed"),
+        Err(error) => tracing::warn!(%error, action, "could not install the daemon service"),
     }
 }
 
@@ -99,13 +107,14 @@ fn setup(app: &mut tauri::App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
     let backend = Backend::detect()?;
     let store = AppStore::open(&handle)?;
+    let onboarded = store.onboarding_complete();
     let shell = Shell::new(backend.clone(), store);
     let gate = shell.recap_gate.clone();
     app.manage(shell);
     // No Dock icon until the main window opens.
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    tauri::async_runtime::spawn(repair_service(backend.clone()));
+    tauri::async_runtime::spawn(repair_service(backend.clone(), onboarded));
     windows::create_recap(&handle, gate)?;
     tray::install(&handle)?;
     tray::refresh(&handle);

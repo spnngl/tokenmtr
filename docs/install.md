@@ -33,8 +33,9 @@ brew install --cask spnngl/tap/tokenmtr
 The cask installs the app to `/Applications` and links `tokenmtr` into Homebrew's `bin`. It also
 removes the quarantine flag, so step 2 does not apply. It does not start the daemon: Homebrew
 sandboxes cask install steps away from launchd. The onboarding installs it
-([step 3](#3-first-run)). `brew upgrade` keeps the daemon, and the app restarts it on the new
-version at launch. Then continue at [step 3](#3-first-run).
+([step 3](#3-first-run)). `brew upgrade` and `brew uninstall` remove the daemon. The app
+reinstalls it at its next launch; `brew upgrade` reopens the app when it was running. Then
+continue at [step 3](#3-first-run).
 
 **Done when:** `TokenMtr.app` is in `/Applications` and `tokenmtr --version` prints the version.
 
@@ -92,7 +93,8 @@ tokenmtr service status
 ```
 
 Run `service install` again after you move the app: the plist stores the binary's path. The app
-repairs it on every launch.
+repairs it on every launch, and once onboarding is done it reinstalls a missing daemon: to keep
+the daemon off, quit the app as well.
 
 **Done when:** `service status` prints a running pid, and `~/Library/LaunchAgents/dev.tokenmtr.daemon.plist` exists.
 
@@ -149,10 +151,9 @@ across updates of a signed build. If the prompt never appears, grant access by h
 
 ## 7. Uninstall
 
-With Homebrew, `brew uninstall --cask --zap tokenmtr` quits the app and removes the daemon, the
-app, the login item, the config, the store, its backups, the logs and the cache. A plain
-`brew uninstall --cask tokenmtr` keeps the daemon, which also survives `brew upgrade`: run
-`tokenmtr service uninstall` before it. Without Homebrew:
+With Homebrew, `brew uninstall --cask tokenmtr` quits the app and removes the daemon and the app.
+`brew uninstall --cask --zap tokenmtr` also deletes the login item, the config, the store, its
+backups, the logs and the cache. Without Homebrew:
 
 1. Optional: erase TokenMtr's data with the CLI before deleting it:
 
