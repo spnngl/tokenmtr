@@ -102,7 +102,7 @@ fn sample() -> Folded {
         ),
         gauge(Family::Series, &[], 5.0),
         gauge(Family::SnapshotTimestamp, &[], 1_772_323_200.0),
-        gauge(Family::BuildInfo, &["0.1.0"], 1.0),
+        gauge(Family::BuildInfo, &["0.2.0"], 1.0),
     ])
 }
 

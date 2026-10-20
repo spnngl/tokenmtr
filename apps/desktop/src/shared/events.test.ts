@@ -112,7 +112,7 @@ describe("shell events", () => {
     await subscribeToShell({ listen, queryClient, window: "main" });
     fire(EVENTS.daemonState, { state: "offline" });
     expect(queryClient.invalidateQueries).toHaveBeenLastCalledWith({ queryKey: ["app-state"] });
-    fire(EVENTS.daemonState, { state: "connected", daemon_version: "0.1.0" });
+    fire(EVENTS.daemonState, { state: "connected", daemon_version: "0.2.0" });
     expect(queryClient.invalidateQueries).toHaveBeenLastCalledWith();
   });
 
