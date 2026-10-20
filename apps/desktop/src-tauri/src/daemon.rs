@@ -106,7 +106,8 @@ pub enum RepairOutcome {
     /// Not an app bundle or package, a bundle on a disk image or in a translocated copy, or no
     /// sidecar on disk: nothing to point the service at.
     Skipped,
-    /// No service is installed (the daemon is installed from onboarding).
+    /// No service is installed: onboarding installs it, and the app reinstalls it at launch once
+    /// onboarding is done.
     NotInstalled,
     /// The service already runs the sidecar.
     Current,

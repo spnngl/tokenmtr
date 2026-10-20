@@ -109,6 +109,7 @@ On macOS:
 - `TokenMtr.app/Contents/MacOS/tokenmtr --version` prints the new version.
 - Copy the app to `/Applications` and start it with no daemon installed: onboarding offers "Install daemon"; afterwards `launchctl print gui/$(id -u)/dev.tokenmtr.daemon` shows the program path inside the `.app`. Started from the dmg instead, the app asks to be moved to Applications.
 - Move the `.app` to another folder and launch it: the app repairs the plist to the new path on launch; `tokenmtr service status` reports running.
+- Quit the app, run `tokenmtr service uninstall` and launch it again: it reinstalls the daemon, as after a `brew upgrade`; `tokenmtr service status` reports running.
 
 On Linux, CI covers the package checks above. By hand, on a graphical session of each family (Ubuntu 26.04 with GNOME on Wayland, Fedora 44 with KDE):
 
