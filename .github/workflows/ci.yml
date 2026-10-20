@@ -44,4 +44,6 @@ jobs:
       - run: pnpm -C apps/desktop run build
       # `cargo test --workspace` includes tokenmtr-desktop, whose `bindings_file_is_current`
       # test fails when apps/desktop/src/shared/bindings.ts is stale.
-      - run: just check
+      # The UI checks do not depend on the OS: run them on Linux only, the cheaper runner. macOS
+      # still formats, lints and tests all the Rust.
+      - run: just ${{ runner.os == 'Linux' && 'check' || 'check-rust' }}
