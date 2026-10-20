@@ -309,11 +309,14 @@ function QuotaSection(): ReactNode {
 /** Overview: quota, headline figures, daily cost, top models and projects, activity. */
 export function OverviewScreen(): ReactNode {
   const { filters } = useFilters();
+  const overview = toRemote(useOverview(filters));
+  // The calendar ignores the range: it still has a story to tell when the range is idle.
+  const idleRange = overview.kind === "ready" && overview.data.events === 0;
   return (
     <>
       <PageHeader to="/" />
       <RemoteView
-        remote={toRemote(useOverview(filters))}
+        remote={overview}
         emptyWhen={(totals) => (totals.events === 0 ? NO_USAGE_COPY : null)}
       >
         {(totals) => (
@@ -330,6 +333,7 @@ export function OverviewScreen(): ReactNode {
           </>
         )}
       </RemoteView>
+      {idleRange ? <ActivityCalendarCard /> : null}
     </>
   );
 }

@@ -167,6 +167,27 @@ describe("Overview", () => {
     expect(within(figure).getByText(/sessions over the last two years/)).toBeTruthy();
   });
 
+  it("moves through the activity calendar with the arrow keys", async () => {
+    const user = userEvent.setup();
+    await renderApp("/");
+    const figure = await screen.findByRole("figure", { name: "Daily activity" });
+    const readout = within(figure).getByRole("status");
+    expect(readout.textContent).toMatch(/\(today\)/);
+    within(figure)
+      .getByRole("region", { name: /Daily activity grid/ })
+      .focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(readout.textContent).not.toMatch(/\(today\)/);
+    await user.keyboard("{End}");
+    expect(readout.textContent).toMatch(/\(today\)/);
+  });
+
+  it("keeps the activity calendar when the range has no usage", async () => {
+    await renderApp("/?range=custom&from=2024-01-01&to=2024-01-31");
+    expect(await screen.findByRole("figure", { name: "Daily activity" })).toBeTruthy();
+    expect(screen.queryByRole("figure", { name: "Daily cost" })).toBeNull();
+  });
+
   it("applies the URL filters to the data", async () => {
     await renderApp("/?agent=pi");
     await heading("Overview");

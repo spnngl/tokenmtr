@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { useFilters } from "../../app/use-filters";
 import { formatCount, formatTokens, LOCALE } from "../../shared/format";
 import { useActivityCalendar } from "../../shared/queries";
@@ -115,15 +115,53 @@ export function monthsOf(days: readonly ActivityDay[]): MonthRow[] {
   return [...months.values()];
 }
 
-/** GitHub-style daily activity over the last two years, tokens or started sessions. */
+interface Streaks {
+  /** Active days in a row up to today; an idle today does not break it yet. */
+  readonly current: number;
+  readonly longest: number;
+  /** The first day with the highest value; none when every day is idle. */
+  readonly busiest: ActivityDay | undefined;
+}
+
+export function streaksOf(days: readonly ActivityDay[], metric: CalendarMetric): Streaks {
+  let run = 0;
+  let longest = 0;
+  let busiest: ActivityDay | undefined;
+  for (const day of days) {
+    const value = measure(day, metric);
+    run = value > 0 ? run + 1 : 0;
+    longest = Math.max(longest, run);
+    if (value > 0 && (busiest === undefined || value > measure(busiest, metric))) {
+      busiest = day;
+    }
+  }
+  const last = days.at(-1);
+  let current = 0;
+  const end = last !== undefined && measure(last, metric) === 0 ? days.length - 1 : days.length;
+  for (let i = end - 1; i >= 0; i -= 1) {
+    const day = days[i];
+    if (day === undefined || measure(day, metric) === 0) {
+      break;
+    }
+    current += 1;
+  }
+  return { current, longest, busiest };
+}
+
+/**
+ * GitHub-style daily activity over the last two years, tokens or started sessions. Nothing when
+ * every day is idle.
+ */
 export function ActivityCalendarCard(): ReactNode {
   const { filters } = useFilters();
   const [metric, setMetric] = useState<CalendarMetric>("tokens");
   return (
     <CardRemote title="Daily activity" remote={toRemote(useActivityCalendar(filters))}>
-      {(calendar) => (
-        <CalendarFrame calendar={calendar} metric={metric} onMetricChange={setMetric} />
-      )}
+      {(calendar) =>
+        calendar.days.some((day) => day.total_tokens > 0 || day.sessions > 0) ? (
+          <CalendarFrame calendar={calendar} metric={metric} onMetricChange={setMetric} />
+        ) : null
+      }
     </CardRemote>
   );
 }
@@ -136,11 +174,14 @@ function CalendarFrame(props: {
   const { calendar, metric } = props;
   const total = calendar.days.reduce((sum, day) => sum + measure(day, metric), 0);
   const active = calendar.days.filter((day) => measure(day, metric) > 0).length;
+  // Over every day, not the visible weeks: a day keeps its shade when the window resizes.
+  const levelOf = levelsOf(calendar.days.map((day) => measure(day, metric)));
   return (
     <ChartFrame
       title="Daily activity"
       description={`${formatValue(total, metric)} over the last two years, on ${formatCount(active)} active days. The grid shows as many recent weeks as fit.`}
       points={calendar.days.length}
+      interactive
       actions={
         <SegmentedControl
           label="Activity measure"
@@ -182,23 +223,99 @@ function CalendarFrame(props: {
         />
       }
     >
-      <ResponsiveChart height={HEADER_HEIGHT + 7 * PITCH}>
-        {({ width }) => <CalendarGrid days={calendar.days} metric={metric} width={width} />}
-      </ResponsiveChart>
+      <div className="flex flex-col gap-3">
+        <StreakStats streaks={streaksOf(calendar.days, metric)} metric={metric} />
+        <ResponsiveChart height={HEADER_HEIGHT + 7 * PITCH}>
+          {({ width }) => (
+            <CalendarGrid days={calendar.days} metric={metric} levelOf={levelOf} width={width} />
+          )}
+        </ResponsiveChart>
+      </div>
     </ChartFrame>
   );
 }
 
+function formatDays(count: number): string {
+  return `${formatCount(count)} ${count === 1 ? "day" : "days"}`;
+}
+
+function StreakStats(props: {
+  readonly streaks: Streaks;
+  readonly metric: CalendarMetric;
+}): ReactNode {
+  const { current, longest, busiest } = props.streaks;
+  const stats = [
+    { label: "Current streak", value: formatDays(current) },
+    { label: "Longest streak", value: formatDays(longest) },
+    {
+      label: "Busiest day",
+      value:
+        busiest === undefined
+          ? "None"
+          : `${DAY_FORMAT.format(utc(busiest.day))} · ${formatValue(measure(busiest, props.metric), props.metric)}`,
+    },
+  ];
+  return (
+    <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+      {stats.map((stat) => (
+        <div key={stat.label} className="flex gap-1.5">
+          <dt className="text-fg-muted">{stat.label}</dt>
+          <dd className="font-medium text-fg tabular-nums">{stat.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Days an arrow key moves: a column is a week, a row a day. */
+const ARROW_STEPS: Readonly<Record<string, number>> = {
+  ArrowLeft: -7,
+  ArrowRight: 7,
+  ArrowUp: -1,
+  ArrowDown: 1,
+};
+
 function CalendarGrid(props: {
   readonly days: readonly ActivityDay[];
   readonly metric: CalendarMetric;
+  readonly levelOf: (value: number) => number;
   readonly width: number;
 }): ReactNode {
-  const { metric } = props;
+  const { metric, levelOf } = props;
   const all = weeksOf(props.days);
   const weeks = all.slice(all.length - weeksThatFit(props.width, all.length));
-  const levelOf = levelsOf(weeks.flat().map((day) => measure(day, metric)));
+  const visible = weeks.flat();
+  const today = visible.at(-1);
+  // The day under the pointer or the keyboard; the readout shows today without one.
+  const [active, setActive] = useState<string | null>(null);
+  const shown = visible.find((day) => day.day === active) ?? today;
+  const scroller = useRef<HTMLElement>(null);
   const height = HEADER_HEIGHT + 7 * PITCH - GAP;
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    const from = visible.findIndex((day) => day.day === shown?.day);
+    const step = ARROW_STEPS[event.key];
+    const to =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? visible.length - 1
+          : step === undefined
+            ? null
+            : from + step;
+    if (to === null) {
+      return;
+    }
+    event.preventDefault();
+    const day = visible[to];
+    if (day !== undefined) {
+      setActive(day.day);
+      event.currentTarget
+        .querySelector(`[data-day="${day.day}"]`)
+        ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex text-[10px]">
@@ -219,16 +336,25 @@ function CalendarGrid(props: {
         </svg>
         {/* A reversed row scrolls from its end: it opens on today, a narrow window scrolls back. */}
         <section
-          aria-label="Daily activity grid"
+          ref={scroller}
+          aria-label="Daily activity grid, arrow keys move between days"
           // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must be focusable (WCAG 2.1.1).
           tabIndex={0}
-          className="flex min-w-0 flex-1 flex-row-reverse overflow-x-auto"
+          onKeyDown={onKeyDown}
+          onFocus={() => setActive((day) => day ?? today?.day ?? null)}
+          onBlur={() => setActive(null)}
+          className="flex min-w-0 flex-1 flex-row-reverse overflow-x-auto rounded-xs focus-visible:outline-2 focus-visible:outline-ring"
         >
           <svg
             width={weeks.length * PITCH - GAP}
             height={height}
             aria-hidden="true"
             className="shrink-0"
+            onPointerLeave={() => {
+              if (document.activeElement !== scroller.current) {
+                setActive(null);
+              }
+            }}
           >
             {monthLabels(weeks).map(({ column, label }) => (
               <text key={column} x={column * PITCH} y={HEADER_HEIGHT - 5} className="fill-fg-muted">
@@ -236,27 +362,45 @@ function CalendarGrid(props: {
               </text>
             ))}
             {weeks.map((week, column) =>
-              week.map((day, row) => {
-                const value = measure(day, metric);
-                return (
-                  <rect
-                    key={day.day}
-                    x={column * PITCH}
-                    y={HEADER_HEIGHT + row * PITCH}
-                    width={CELL}
-                    height={CELL}
-                    rx={2}
-                    style={{ fill: fill(levelOf(value)) }}
-                  >
-                    <title>{`${DAY_FORMAT.format(utc(day.day))}: ${formatValue(value, metric)}`}</title>
-                  </rect>
-                );
-              }),
+              week.map((day, row) => (
+                <rect
+                  key={day.day}
+                  data-day={day.day}
+                  x={column * PITCH}
+                  y={HEADER_HEIGHT + row * PITCH}
+                  width={CELL}
+                  height={CELL}
+                  rx={2}
+                  style={{
+                    fill: fill(levelOf(measure(day, metric))),
+                    stroke:
+                      active !== null && day.day === shown?.day
+                        ? "var(--fg)"
+                        : day.day === today?.day
+                          ? "var(--fg-muted)"
+                          : undefined,
+                  }}
+                  onPointerEnter={() => setActive(day.day)}
+                />
+              )),
             )}
           </svg>
         </section>
       </div>
-      <Legend />
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-fg-muted">
+        <p role="status" className="tabular-nums">
+          {shown === undefined ? null : (
+            <>
+              {DAY_FORMAT.format(utc(shown.day))}
+              {shown.day === today?.day ? " (today)" : ""}:{" "}
+              <span className="font-medium text-fg">
+                {formatValue(measure(shown, metric), metric)}
+              </span>
+            </>
+          )}
+        </p>
+        <Legend />
+      </div>
     </div>
   );
 }
@@ -285,7 +429,7 @@ function monthLabels(
 
 function Legend(): ReactNode {
   return (
-    <div className="flex items-center justify-end gap-1 text-xs text-fg-muted">
+    <div className="flex items-center gap-1">
       <span className="pr-1">Less</span>
       {LEGEND.map((level) => (
         <span
