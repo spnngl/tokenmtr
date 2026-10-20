@@ -4,6 +4,7 @@ import type { DashboardTarget, DataSource, NotificationPermissionState } from ".
 import { commandFailure, DataSourceError } from "./errors";
 import type { Filters } from "./filters";
 import {
+  activityCalendarSchema,
   advisorReportSchema,
   alertSchema,
   appStateSchema,
@@ -102,6 +103,8 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     unresolvedCwds: (filters) =>
       read("unresolved_cwds", request(filters), z.array(unresolvedCwdSchema)),
     heatmap: (filters) => read("heatmap", request(filters), heatmapSchema),
+    activityCalendar: (filters) =>
+      read("activity_calendar", request(filters), activityCalendarSchema),
     tools: (filters) => read("tools", request(filters), toolsReportSchema),
     signals: (filters) => read("signals", request(filters), signalsReportSchema),
     billing: (filters) => read("billing", request(filters), billingReportSchema),

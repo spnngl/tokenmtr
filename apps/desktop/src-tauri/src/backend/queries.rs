@@ -142,6 +142,15 @@ pub fn heatmap(
     filtered(app, now, request, tokenmtr_query::heatmap)
 }
 
+/// `activity_calendar`.
+pub fn activity_calendar(
+    app: &AppContext,
+    now: Timestamp,
+    request: &QueryRequest,
+) -> Result<Value, CommandError> {
+    filtered(app, now, request, tokenmtr_query::activity_calendar)
+}
+
 /// `tools`.
 pub fn tools(
     app: &AppContext,

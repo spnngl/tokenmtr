@@ -29,6 +29,7 @@ export const COMMANDS = [
   "branches",
   "unresolved_cwds",
   "heatmap",
+  "activity_calendar",
   "tools",
   "signals",
   "billing",

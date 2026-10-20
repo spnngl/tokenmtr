@@ -19,18 +19,19 @@ use tokenmtr_core::{
     TokenCounts, UsdMicros, Verdict, WindowId,
 };
 use tokenmtr_query::{
-    AdvisorReport, AgentRecap, AlertView, BackupView, BillingAmounts, BillingMonth, BillingPoint,
-    BillingReport, BillingSeries, BranchRow, Breakdown, Bucket, BudgetState, BudgetView,
-    COST_EDGES_MICROS, CostBucket, DaemonHealth, DaemonState, DateRange, FxRateView, Granularity,
-    GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap, IngestStatus, Live, MetricsHealth,
-    MetricsKind, MetricsRunView, MetricsState, ModelRow, ModelSessions, ModelSlice, NO_GROUP,
-    ParseIssueView, Period, ProjectModelsRow, ProjectRemote, ProjectRow, QuotaHistory, QuotaMeter,
-    QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA, Series, SeriesPoint, SessionAnalytics,
-    SessionCompactions, SessionDay, SessionDetail, SessionEvent, SessionModel, SessionPage,
-    SessionPoint, SessionRow, SessionStartCell, SessionTimeline, SessionToolCall, SignalDay,
-    SignalModel, SignalsReport, SinkHealth, SinkRunView, SinkState, SparkPoint, Status,
-    SubscriptionLine, SystemHealth, TimelineEvent, TimelineSignal, TimelineTool, ToolModelCalls,
-    ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
+    ActivityCalendar, ActivityDay, AdvisorReport, AgentRecap, AlertView, BackupView,
+    BillingAmounts, BillingMonth, BillingPoint, BillingReport, BillingSeries, BranchRow, Breakdown,
+    Bucket, BudgetState, BudgetView, COST_EDGES_MICROS, CostBucket, DaemonHealth, DaemonState,
+    DateRange, FxRateView, Granularity, GroupBy, GroupValue, HealthLevel, HeatCell, Heatmap,
+    IngestStatus, Live, MetricsHealth, MetricsKind, MetricsRunView, MetricsState, ModelRow,
+    ModelSessions, ModelSlice, NO_GROUP, ParseIssueView, Period, ProjectModelsRow, ProjectRemote,
+    ProjectRow, QuotaHistory, QuotaMeter, QuotaPoint, QuotaSpend, QuotaWindowView, STATUS_SCHEMA,
+    Series, SeriesPoint, SessionAnalytics, SessionCompactions, SessionDay, SessionDetail,
+    SessionEvent, SessionModel, SessionPage, SessionPoint, SessionRow, SessionStartCell,
+    SessionTimeline, SessionToolCall, SignalDay, SignalModel, SignalsReport, SinkHealth,
+    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent,
+    TimelineSignal, TimelineTool, ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd,
+    Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -404,6 +405,29 @@ fn heatmap() -> Value {
         currency: Currency::Usd,
         cells,
     })
+}
+
+fn activity_calendar() -> Value {
+    // Two weeks from a Monday: busy weekdays, a quiet weekend, one idle Wednesday.
+    let start = day("2026-03-02");
+    let days = (0..14_u8)
+        .map(|i| {
+            let weekday = i % 7;
+            let sessions: u8 = match weekday {
+                2 if i < 7 => 0,
+                0..=4 => 2 + weekday,
+                _ => 1,
+            };
+            ActivityDay {
+                day: start
+                    .checked_add(jiff::Span::new().days(i64::from(i)))
+                    .unwrap(),
+                total_tokens: u64::from(sessions) * 1_250_000,
+                sessions: sessions.into(),
+            }
+        })
+        .collect();
+    json(ActivityCalendar { days })
 }
 
 fn tools() -> Value {
@@ -1944,6 +1968,7 @@ fn goldens() -> Vec<(&'static str, Value)> {
         ("branches", branches()),
         ("unresolved_cwds", unresolved_cwds()),
         ("heatmap", heatmap()),
+        ("activity_calendar", activity_calendar()),
         ("tools", tools()),
         ("signals", signals()),
         ("sessions", sessions()),

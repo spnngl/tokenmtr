@@ -61,6 +61,11 @@ export const useUnresolvedCwds = (filters: Filters) =>
   useRead(["unresolved-cwds", filters], (ds) => ds.unresolvedCwds(filters), KEEP);
 export const useHeatmap = (filters: Filters) =>
   useRead(["heatmap", filters], (ds) => ds.heatmap(filters), KEEP);
+/** Keyed without the range and currency, which the calendar ignores, so changing them reuses it. */
+export function useActivityCalendar(filters: Filters) {
+  const { range: _range, currency: _currency, ...scope } = filters;
+  return useRead(["activity-calendar", scope], (ds) => ds.activityCalendar(filters), KEEP);
+}
 export const useTools = (filters: Filters) =>
   useRead(["tools", filters], (ds) => ds.tools(filters), KEEP);
 export const useSignals = (filters: Filters) =>
