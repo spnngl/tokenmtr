@@ -50,6 +50,7 @@ const DATASET_QUERIES: Readonly<Record<string, readonly string[]>> = {
     "branches",
     "unresolved-cwds",
     "heatmap",
+    "activity-calendar",
     "signals",
     "billing",
     "sessions",

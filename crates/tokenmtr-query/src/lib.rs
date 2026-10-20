@@ -71,6 +71,7 @@
 //! | [`project_models`] | [`ProjectModelsRow`]s: `project`, `name`, `models` ([`ModelSlice`]: `model` + usage) |
 //! | [`project_remotes`] | [`ProjectRemote`]s: `name`, `host`, `repository`, `default_branch`, `keys_project` |
 //! | [`sessions`], [`session_detail`] | [`SessionPage`], [`SessionDetail`] |
+//! | [`activity_calendar`] | [`ActivityCalendar`]: [`ActivityDay`]s (`day`, `total_tokens`, `sessions`) over the last [`CALENDAR_WEEKS`] weeks, whatever the filtered range |
 //! | [`tools`], [`signals`], [`heatmap`] | [`ToolsReport`] (`by_model`: [`ToolModelCalls`]), [`SignalsReport`] (`models`: [`SignalModel`]), [`Heatmap`] |
 //! | [`billing`] | [`BillingReport`]: total, api, per-subscription lines, months |
 //! | [`billing_series`] | [`BillingSeries`]: [`BillingPoint`]s with paid split, savings, `roi`, cumulative sums, optional per-agent amounts |
@@ -90,6 +91,7 @@
 mod billing;
 mod billing_series;
 mod breakdowns;
+mod calendar;
 mod context;
 mod engine;
 mod error;
@@ -116,6 +118,7 @@ pub use breakdowns::{
     SignalDay, SignalsReport, ToolRow, ToolsReport, Totals, UnresolvedCwd, branches, heatmap,
     models, overview, projects, session_detail, sessions, signals, tools, unresolved_cwds,
 };
+pub use calendar::{ActivityCalendar, ActivityDay, CALENDAR_WEEKS, activity_calendar};
 pub use context::{FxPolicy, QueryContext, WeekStart, load_fx_rates, load_subscriptions};
 pub use error::{FilterError, QueryError};
 pub use filters::{BillingFilter, ClientName, FilterSpec, Filters, ProfileSelector};

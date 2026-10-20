@@ -1,6 +1,7 @@
 import type { Filters } from "../filters";
 import type { Currency } from "../format";
 import type {
+  ActivityCalendar,
   BillingAmounts,
   BillingPoint,
   BillingSeries,
@@ -12,8 +13,24 @@ import type {
   SessionTimeline,
   TimelineEvent,
 } from "../schemas";
-import { convert, type DayRange, groupBy, rangeOf } from "./aggregate";
-import { addDays, createRng, type Fact, hashString, type SessionSeed } from "./seed";
+import {
+  convert,
+  type DayRange,
+  groupBy,
+  rangeOf,
+  selectFacts,
+  sumRaw,
+  wireUsage,
+} from "./aggregate";
+import {
+  addDays,
+  createRng,
+  type Fact,
+  hashString,
+  type SessionSeed,
+  TODAY,
+  weekdayOf,
+} from "./seed";
 import { find, iso, matches } from "./sessions";
 
 /**
@@ -228,6 +245,33 @@ export function sessionAnalyticsOf(
     )
     .slice(0, ROWS_LIMIT);
   return { currency, total: points.length, rows, histogram, days, starts };
+}
+
+/** Mirrors `CALENDAR_WEEKS` of the query crate. */
+const CALENDAR_WEEKS = 105;
+
+/** Daily tokens and started sessions from the Monday 104 weeks before today's week to today. */
+export function activityCalendarOf(
+  facts: readonly Fact[],
+  sessions: readonly SessionSeed[],
+  filters: Filters,
+): ActivityCalendar {
+  const start = addDays(TODAY, 1 - weekdayOf(TODAY) - 7 * (CALENDAR_WEEKS - 1));
+  const scoped: Filters = { ...filters, range: { kind: "custom", from: start, to: TODAY } };
+  const tokens = groupBy(selectFacts(facts, scoped), (fact) => fact.date);
+  const starts = groupBy(
+    sessions.filter((seed) => matches(seed, scoped)),
+    (seed) => new Date(seed.startedAtMs + OFFSET_MS).toISOString().slice(0, 10),
+  );
+  const days = [];
+  for (let day = start; day <= TODAY; day = addDays(day, 1)) {
+    days.push({
+      day,
+      total_tokens: wireUsage(sumRaw(tokens.get(day) ?? []), "USD").total_tokens,
+      sessions: starts.get(day)?.length ?? 0,
+    });
+  }
+  return { days };
 }
 
 const TIMELINE_TOOLS: readonly { readonly name: string; readonly server: string | null }[] = [

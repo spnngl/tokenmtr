@@ -157,6 +157,16 @@ describe("Overview", () => {
     expect(screen.queryByRole("columnheader", { name: /claude-opus-4/ })).toBeNull();
   });
 
+  it("shows the daily activity calendar by tokens, then by sessions", async () => {
+    const user = userEvent.setup();
+    await renderApp("/");
+    const figure = await screen.findByRole("figure", { name: "Daily activity" });
+    expect(within(figure).getByText(/tokens over the last two years/)).toBeTruthy();
+    const measure = screen.getByRole("radiogroup", { name: "Activity measure" });
+    await user.click(within(measure).getByRole("radio", { name: "Sessions" }));
+    expect(within(figure).getByText(/sessions over the last two years/)).toBeTruthy();
+  });
+
   it("applies the URL filters to the data", async () => {
     await renderApp("/?agent=pi");
     await heading("Overview");

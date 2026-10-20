@@ -194,6 +194,7 @@ describe("command bindings", () => {
       tauri.branches(filters),
       tauri.unresolvedCwds(filters),
       tauri.heatmap(filters),
+      tauri.activityCalendar(filters),
       tauri.tools(filters),
       tauri.signals(filters),
       tauri.billing(filters),

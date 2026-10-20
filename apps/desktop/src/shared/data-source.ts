@@ -1,6 +1,7 @@
 import type { Filters } from "./filters";
 import type { Currency } from "./format";
 import type {
+  ActivityCalendar,
   AdvisorReport,
   Alert,
   AppState,
@@ -105,6 +106,8 @@ export interface DataSource {
   branches(filters: Filters): Promise<Branches>;
   unresolvedCwds(filters: Filters): Promise<UnresolvedCwd[]>;
   heatmap(filters: Filters): Promise<Heatmap>;
+  /** Tokens and started sessions per day over the last two years; ignores `filters.range`. */
+  activityCalendar(filters: Filters): Promise<ActivityCalendar>;
   tools(filters: Filters): Promise<ToolsReport>;
   signals(filters: Filters): Promise<SignalsReport>;
   billing(filters: Filters): Promise<BillingReport>;

@@ -216,6 +216,20 @@ export const heatmapSchema = z.object({
 });
 export type Heatmap = z.infer<typeof heatmapSchema>;
 
+/** One local day: tokens (daily aggregates included) and the sessions that started on it. */
+const activityDaySchema = z.object({
+  day: dateSchema,
+  total_tokens: countSchema,
+  sessions: countSchema,
+});
+export type ActivityDay = z.infer<typeof activityDaySchema>;
+
+/** Zero-filled days, in order, from the start of the week two years back to today. */
+export const activityCalendarSchema = z.object({
+  days: z.array(activityDaySchema),
+});
+export type ActivityCalendar = z.infer<typeof activityCalendarSchema>;
+
 const toolRowSchema = z.object({
   tool_name: z.string().nullable(),
   mcp_server: z.string().nullable(),

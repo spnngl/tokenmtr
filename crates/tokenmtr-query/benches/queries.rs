@@ -476,10 +476,11 @@ mod read {
     use tokenmtr_core::AgentId;
     use tokenmtr_export::fetch_batch;
     use tokenmtr_query::{
-        Bucket, Granularity, GroupBy, Period, ProjectGrouping, QueryContext, Selection, billing,
-        billing_series, branches, heatmap, ingest_status, models, overview, project_models,
-        projects, quota_history, quota_latest, recap, series, session_analytics, session_detail,
-        session_timeline, sessions, signals, status, tools, unresolved_cwds,
+        Bucket, Granularity, GroupBy, Period, ProjectGrouping, QueryContext, Selection,
+        activity_calendar, billing, billing_series, branches, heatmap, ingest_status, models,
+        overview, project_models, projects, quota_history, quota_latest, recap, series,
+        session_analytics, session_detail, session_timeline, sessions, signals, status, tools,
+        unresolved_cwds,
     };
     use tokenmtr_store::{Dataset, Revision, StoreRead, StoreReader};
 
@@ -563,6 +564,13 @@ mod read {
     #[divan::bench]
     fn heatmap_90d(bencher: Bencher<'_, '_>) {
         run(bencher, |r, c| heatmap(r, c, &last_days(90)).expect("q"));
+    }
+
+    #[divan::bench]
+    fn activity_calendar_2y(bencher: Bencher<'_, '_>) {
+        run(bencher, |r, c| {
+            activity_calendar(r, c, &last_days(30)).expect("q")
+        });
     }
 
     #[divan::bench]

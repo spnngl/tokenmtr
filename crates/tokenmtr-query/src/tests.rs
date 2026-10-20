@@ -2272,3 +2272,57 @@ fn projects_group_by_folder_merges_worktrees_and_splits_clones() {
     let unknown = ProjectKey::try_from("nowhere").unwrap();
     assert_eq!(project_remotes(&reader, &unknown).unwrap(), []);
 }
+
+#[test]
+fn activity_calendar_counts_tokens_and_started_sessions_per_local_day() {
+    let seed = Seed::new();
+    let session = |e: UsageEvent, id: &str| UsageEvent {
+        session: SessionId::try_from(id.to_owned()).unwrap(),
+        ..e
+    };
+    let paris = |wall: &str| local("Europe/Paris", wall);
+    let mut agg = session(seed.ev("agg", paris("2026-03-04T00:00:00")), "agg");
+    agg.kind = EventKind::DailyAggregate;
+    agg.tokens.output = 1_000;
+    seed.put(&[
+        // Session a starts the evening before its second event.
+        session(seed.ev("a1", paris("2026-03-02T23:30:00")), "a"),
+        session(seed.ev("a2", paris("2026-03-03T00:30:00")), "a"),
+        session(seed.ev("b1", paris("2026-03-03T09:00:00")), "b"),
+        agg,
+        // The Sunday before the calendar starts.
+        session(seed.ev("old", paris("2024-03-10T12:00:00")), "old"),
+    ]);
+    let reader = seed.reader();
+    let ctx = usd_ctx("Europe/Paris", "2026-03-10T12:00:00Z");
+    // The filtered range does not narrow the calendar.
+    let calendar =
+        activity_calendar(&reader, &ctx, &days(date(2026, 3, 9), date(2026, 3, 10))).unwrap();
+
+    assert_eq!(
+        calendar.days.first().unwrap().day,
+        date(2024, 3, 11),
+        "a Monday, 104 weeks back"
+    );
+    assert_eq!(
+        calendar.days.last().unwrap().day,
+        date(2026, 3, 10),
+        "today"
+    );
+    assert_eq!(calendar.days.len(), 104 * 7 + 2);
+    let shown: Vec<(Date, u64, u64)> = calendar
+        .days
+        .iter()
+        .filter(|d| d.total_tokens > 0 || d.sessions > 0)
+        .map(|d| (d.day, d.total_tokens, d.sessions))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (date(2026, 3, 2), 1, 1),
+            (date(2026, 3, 3), 2, 1),
+            (date(2026, 3, 4), 1_000, 0),
+        ],
+        "a session counts on its first local day; daily aggregates add tokens, not sessions"
+    );
+}

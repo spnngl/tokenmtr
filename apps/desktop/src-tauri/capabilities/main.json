@@ -19,6 +19,7 @@
     "allow-branches",
     "allow-unresolved-cwds",
     "allow-heatmap",
+    "allow-activity-calendar",
     "allow-tools",
     "allow-signals",
     "allow-billing",

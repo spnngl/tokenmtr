@@ -4,7 +4,12 @@ import type { Filters } from "../filters";
 import type { Currency } from "../format";
 import type { AppState, Os, Settings, UnresolvedCwd } from "../schemas";
 import { rangeOf } from "./aggregate";
-import { billingSeriesOf, sessionAnalyticsOf, sessionTimelineOf } from "./analytics";
+import {
+  activityCalendarOf,
+  billingSeriesOf,
+  sessionAnalyticsOf,
+  sessionTimelineOf,
+} from "./analytics";
 import { advisorOf, quotaHistoryOf, quotaLatestOf } from "./quota";
 import { recapOf } from "./recap";
 import { generateMockReport } from "./report";
@@ -272,6 +277,8 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     unresolvedCwds: () => read(() => (empty ? [] : [...UNRESOLVED])),
     heatmap: (filters) =>
       read(() => heatmapOf(empty ? [] : factsFor(filters), answered(filters.currency))),
+    activityCalendar: (filters) =>
+      read(() => activityCalendarOf(empty ? [] : FACTS, empty ? [] : SESSIONS, filters)),
     tools: (filters) => read(() => toolsOf(empty ? [] : factsFor(filters))),
     signals: (filters) => read(() => signalsOf(rangeOf(filters.range))),
     billing: (filters) =>

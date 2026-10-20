@@ -34,6 +34,7 @@ import {
   PageHeader,
 } from "../../shared/ui";
 import { toRemote } from "../../shared/use-remote";
+import { ActivityCalendarCard } from "./activity-calendar";
 import { HeatmapGrid, summarizeWeekdays, type WeekdaySummary } from "./heatmap";
 
 const TOP_COUNT = 5;
@@ -324,6 +325,7 @@ export function OverviewScreen(): ReactNode {
               <TopModels />
               <TopProjects />
             </div>
+            <ActivityCalendarCard />
             <Activity />
           </>
         )}

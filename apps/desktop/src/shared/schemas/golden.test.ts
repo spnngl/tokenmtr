@@ -115,6 +115,12 @@ describe("golden command responses", () => {
     expect((await serve("heatmap").heatmap(FILTERS)).cells).toHaveLength(168);
   });
 
+  it("activity_calendar", async () => {
+    const { days } = await serve("activity_calendar").activityCalendar(FILTERS);
+    expect(days).toHaveLength(14);
+    expect(days[2]).toEqual({ day: "2026-03-04", total_tokens: 0, sessions: 0 });
+  });
+
   it("tools", async () => {
     const tools = await serve("tools").tools(FILTERS);
     expect(tools.mcp_servers[0]?.tool_name).toBeNull();
