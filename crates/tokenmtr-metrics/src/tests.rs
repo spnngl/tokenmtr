@@ -11,7 +11,9 @@ use jiff::{SignedDuration, Timestamp};
 use rusqlite::params_from_iter;
 use rusqlite::types::Value as Sql;
 use tempfile::TempDir;
-use tokenmtr_config::{GlobList, OutputFilter, RedactColumn, RedactMode};
+use tokenmtr_config::{
+    AccountLabels, AccountName, GlobList, OutputFilter, RedactColumn, RedactMode,
+};
 use tokenmtr_core::event::ToolCall;
 use tokenmtr_core::quota::QuotaWindowState;
 use tokenmtr_core::{
@@ -147,6 +149,7 @@ fn context(subscriptions: Vec<Subscription>, zone: &str) -> SnapshotContext {
         TimeZone::get(zone).unwrap(),
         subscriptions,
         SignedDuration::from_hours(48),
+        AccountLabels::default(),
     )
 }
 
@@ -721,6 +724,39 @@ fn the_account_falls_back_to_the_organization() {
         .unwrap();
     let folded = everything(&seed, &take(&seed));
     assert_eq!(label(of(&folded, Family::Events)[0], "account"), "Acme");
+}
+
+#[test]
+fn the_configured_account_fills_only_a_missing_one() {
+    let mut seed = Seed::new();
+    seed.put(&[seed.ev("e", "2026-02-28T00:00:00Z")]);
+    let configured = SnapshotContext::new(
+        TimeZone::UTC,
+        Vec::new(),
+        SignedDuration::from_hours(48),
+        AccountLabels {
+            global: Some(AccountName::try_from("configured".to_owned()).unwrap()),
+            ..AccountLabels::default()
+        },
+    );
+    let account = |seed: &Seed| {
+        let taken = snapshot(&seed.reader(), &configured, now()).unwrap();
+        label(of(&everything(seed, &taken), Family::Events)[0], "account").to_owned()
+    };
+    assert_eq!(account(&seed), "configured");
+
+    seed.store
+        .save_account(&AccountRecord {
+            agent: AgentId::CLAUDE,
+            profile: ProfileId::default_profile(),
+            email: Some("me@example.com".to_owned()),
+            organization: None,
+            detected_plan: None,
+            rate_limit_tier: None,
+            fetched_at: now(),
+        })
+        .unwrap();
+    assert_eq!(account(&seed), "me@example.com");
 }
 
 #[test]

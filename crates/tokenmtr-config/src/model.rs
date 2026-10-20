@@ -86,6 +86,30 @@ impl fmt::Display for ClientName {
     }
 }
 
+/// An `account` label set by the config (non-blank).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[serde(try_from = "String")]
+pub struct AccountName(String);
+
+impl AccountName {
+    /// The label as text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for AccountName {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, String> {
+        if value.trim().is_empty() {
+            Err("account must not be blank".to_owned())
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
 /// A git remote or branch name, such as `origin` or `main`: non-blank, without whitespace.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(try_from = "String", into = "String")]
@@ -461,6 +485,36 @@ pub struct AgentConfig {
     pub profiles: Vec<ProfileConfig>,
 }
 
+/// The configured `account` metric label, used for a profile whose provider reports no account
+/// (pi always; Claude without an email or organization). The most specific key wins:
+/// `profiles[].account`, then `[agents.<agent>].account`, then the top-level `account`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccountLabels {
+    /// Top-level `account`.
+    pub global: Option<AccountName>,
+    /// `[agents.<agent>].account`.
+    pub agents: BTreeMap<AgentId, AccountName>,
+    /// `[[agents.<agent>.profiles]].account`.
+    pub profiles: BTreeMap<(AgentId, ProfileId), AccountName>,
+}
+
+impl AccountLabels {
+    /// The label configured for `profile` of `agent`, by the precedence above.
+    #[must_use]
+    pub fn get(&self, agent: AgentId, profile: &ProfileId) -> Option<&AccountName> {
+        self.profiles
+            .get(&(agent, profile.clone()))
+            .or_else(|| self.agents.get(&agent))
+            .or(self.global.as_ref())
+    }
+
+    /// Whether no `account` key is set.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.global.is_none() && self.agents.is_empty() && self.profiles.is_empty()
+    }
+}
+
 /// `[machine]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachineConfig {
@@ -782,6 +836,8 @@ pub struct Config {
     pub privacy: PrivacyConfig,
     /// `[agents.*]`: one entry per known agent.
     pub agents: BTreeMap<AgentId, AgentConfig>,
+    /// Top-level `account` with the `account` keys of `[agents.*]` and their profiles.
+    pub accounts: AccountLabels,
     /// `[[sinks]]`: ids unique.
     pub sinks: Vec<SinkConfig>,
     /// `[metrics]`.

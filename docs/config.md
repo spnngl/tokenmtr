@@ -19,6 +19,7 @@ The example below shows every table and key; commented keys show optional settin
 
 ```toml
 schema_version = 1
+# account = "me@example.com"   # metrics `account` label of agents that report none
 
 [machine]
 # name = "work-mbp"            # display label; default: host name
@@ -128,9 +129,11 @@ id = "default"
 # [[agents.claude.profiles]]
 # id = "work"
 # config_dir = "~/.claude-work"    # roots, credentials and stats cache come from here
+# account = "me@acme.com"         # overrides [agents.claude] and top-level account
 
 [agents.pi]
 enabled = true
+# account = "me@example.com"       # overrides the top-level account
 
 [[agents.pi.profiles]]
 id = "default"
@@ -211,6 +214,7 @@ Types: `[x]` is a list of `x`. A default of "platform" means a path under the da
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `schema_version` | integer | `1` | Must equal `1`. |
+| `account` | string | none | Metrics `account` label of a profile whose agent reports no account: pi always, Claude without an account email or organization. Non-blank. `[agents.<agent>]` and its profiles override it. |
 
 ### `[machine]`
 
@@ -397,7 +401,9 @@ When the database cannot be read as expected (a Superset update changed it), the
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Collect this agent. |
+| `account` | string | top-level `account` | Metrics `account` label of this agent's profiles; see the top-level `account`. Non-blank. |
 | `profiles[].id` | id | required | Unique within the agent. |
+| `profiles[].account` | string | the agent's `account` | Metrics `account` label of this profile; see the top-level `account`. Non-blank. |
 | `profiles[].roots` | `[path]` | discovery | Session roots; non-empty. |
 | `profiles[].config_dir` | path | discovery | Claude only. Roots, credentials and stats cache come from here. Exclusive with `roots`. |
 

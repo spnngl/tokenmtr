@@ -279,6 +279,7 @@ impl Ctx {
         } else if old.is_none_or(|o| {
             o.metrics != new.metrics
                 || o.subscriptions != new.subscriptions
+                || o.accounts != new.accounts
                 || display_zone(o) != display_zone(new)
         }) {
             self.schedule_now(Job::MetricsRefresh);
@@ -346,6 +347,7 @@ impl Ctx {
             display_zone(config),
             config.subscriptions.clone(),
             config.metrics.session_window,
+            config.accounts.clone(),
         );
         let taken = {
             let reader = lock(&self.metrics.reader);
