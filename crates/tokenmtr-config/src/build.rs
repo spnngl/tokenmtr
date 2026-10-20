@@ -17,9 +17,9 @@ use tokenmtr_core::{
 use crate::env::Env;
 use crate::error::{ConfigPath, Rejection, Violation};
 use crate::model::{
-    AccountLabels, AdvisorConfig, AgentConfig, AlertSettings, BackupConfig, BudgetEntry,
-    BudgetScope, CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig, Dataset,
-    DisplayConfig, FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig,
+    AccountLabels, AccountName, AdvisorConfig, AgentConfig, AlertSettings, BackupConfig,
+    BudgetEntry, BudgetScope, CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig,
+    Dataset, DisplayConfig, FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig,
     IntegrationsConfig, LoggingConfig, MachineConfig, MenubarConfig, MenubarRing, Percent,
     PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig,
     SinkConfig, SinkTarget, SqliteSink, StoreConfig, SupersetConfig, TimeZoneSetting, path_glob,
@@ -608,32 +608,12 @@ fn build_subscriptions(
 
 // -- agents ------------------------------------------------------------------------------------
 
-fn build_accounts(raw: &RawConfig) -> AccountLabels {
-    let agents = &raw.agents;
-    let claude = agents
-        .claude
-        .profiles
-        .iter()
-        .map(|p| (AgentId::CLAUDE, &p.id, &p.account));
-    let pi = agents
-        .pi
-        .profiles
-        .iter()
-        .map(|p| (AgentId::PI, &p.id, &p.account));
-    AccountLabels {
-        global: raw.account.clone(),
-        agents: [
-            (AgentId::CLAUDE, &agents.claude.account),
-            (AgentId::PI, &agents.pi.account),
-        ]
-        .into_iter()
-        .filter_map(|(agent, account)| Some((agent, account.clone()?)))
-        .collect(),
-        profiles: claude
-            .chain(pi)
-            .filter_map(|(agent, id, account)| Some(((agent, id.clone()), account.clone()?)))
-            .collect(),
-    }
+/// An agent as written: the one list every per-agent rule reads.
+struct AgentSource<'a> {
+    id: AgentId,
+    enabled: Option<bool>,
+    account: Option<&'a AccountName>,
+    profiles: Vec<ProfileSource<'a>>,
 }
 
 /// A profile as written, whatever the agent.
@@ -641,34 +621,74 @@ struct ProfileSource<'a> {
     id: &'a ProfileId,
     roots: Option<&'a [String]>,
     config_dir: Option<&'a str>,
+    account: Option<&'a AccountName>,
+}
+
+fn agent_sources(raw: &RawAgents) -> [AgentSource<'_>; 2] {
+    [
+        AgentSource {
+            id: AgentId::CLAUDE,
+            enabled: raw.claude.enabled,
+            account: raw.claude.account.as_ref(),
+            profiles: raw
+                .claude
+                .profiles
+                .iter()
+                .map(|p| ProfileSource {
+                    id: &p.id,
+                    roots: p.roots.as_deref(),
+                    config_dir: p.config_dir.as_deref(),
+                    account: p.account.as_ref(),
+                })
+                .collect(),
+        },
+        AgentSource {
+            id: AgentId::PI,
+            enabled: raw.pi.enabled,
+            account: raw.pi.account.as_ref(),
+            profiles: raw
+                .pi
+                .profiles
+                .iter()
+                .map(|p| ProfileSource {
+                    id: &p.id,
+                    roots: p.roots.as_deref(),
+                    config_dir: None,
+                    account: p.account.as_ref(),
+                })
+                .collect(),
+        },
+    ]
 }
 
 fn build_agents(raw: &RawAgents, env: &dyn Env) -> Checked<BTreeMap<AgentId, AgentConfig>> {
-    let claude = raw.claude.profiles.iter().map(|p| ProfileSource {
-        id: &p.id,
-        roots: p.roots.as_deref(),
-        config_dir: p.config_dir.as_deref(),
-    });
-    let pi = raw.pi.profiles.iter().map(|p| ProfileSource {
-        id: &p.id,
-        roots: p.roots.as_deref(),
-        config_dir: None,
-    });
-    let mut agents = BTreeMap::new();
-    agents.insert(
-        AgentId::CLAUDE,
-        build_agent(
-            env,
-            AgentId::CLAUDE,
-            raw.claude.enabled,
-            &claude.collect::<Vec<_>>(),
-        )?,
-    );
-    agents.insert(
-        AgentId::PI,
-        build_agent(env, AgentId::PI, raw.pi.enabled, &pi.collect::<Vec<_>>())?,
-    );
-    Ok(agents)
+    agent_sources(raw)
+        .iter()
+        .map(|agent| {
+            let built = build_agent(env, agent.id, agent.enabled, &agent.profiles)?;
+            Ok((agent.id, built))
+        })
+        .collect()
+}
+
+/// Runs after [`build_agents`], which rejects duplicate profile ids.
+fn build_accounts(raw: &RawConfig) -> AccountLabels {
+    let sources = agent_sources(&raw.agents);
+    AccountLabels {
+        global: raw.account.clone(),
+        agents: sources
+            .iter()
+            .filter_map(|agent| Some((agent.id, agent.account?.clone())))
+            .collect(),
+        profiles: sources
+            .iter()
+            .flat_map(|agent| {
+                agent.profiles.iter().filter_map(|profile| {
+                    Some(((agent.id, profile.id.clone()), profile.account?.clone()))
+                })
+            })
+            .collect(),
+    }
 }
 
 fn build_agent(

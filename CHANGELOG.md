@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- The metrics `account` label of a profile whose agent reports no account (pi; Claude without an email or organization) comes from the config: top-level `account`, `[agents.<agent>].account` or `profiles[].account`, the most specific winning ([docs/config.md](docs/config.md)).
+
 ## [0.2.0] - 2026-10-20
 
 Linux packages (deb and rpm for amd64 and arm64) join the macOS app.

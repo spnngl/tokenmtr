@@ -89,7 +89,8 @@ A counter series that is new to Prometheus loses its first value to `increase()`
 - Counters are totals over the whole store, so these changes move or lower a series, which
   Prometheus reads as a counter reset: late ingest of old logs (a first run, a backfill), a project
   that is re-resolved to another remote, a change to `[[subscriptions]]` or `display.timezone`
-  (`billing` changes), a change to an output's exclusions or redaction, and an account change.
+  (`billing` changes), a change to an output's exclusions or redaction, and an account change (detected, or the
+  `account` keys of the config).
 - Metrics stop when the daemon stops. A scrape target goes down (`up == 0`); remote-write series
   go stale after five minutes. Alert on a silent machine with
   `absent_over_time(tokenmtr_build_info{machine="my-mac"}[10m])`.
