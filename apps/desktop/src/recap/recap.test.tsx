@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { bootstrapConfig } from "../shared/app-context";
@@ -29,6 +29,8 @@ function renderRecap(overrides: Partial<RecapProps> = {}) {
     onPeriodChange: vi.fn(),
     onOpenDashboard: vi.fn(),
     onOpenSettings: vi.fn(),
+    onEditConfig: vi.fn(),
+    onQuit: vi.fn(),
     onScanNow: vi.fn(),
     isScanning: false,
     agentLabels: new Map([["claude", "Claude Code"]]),
@@ -50,7 +52,10 @@ describe("Recap", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open dashboard" }));
     await user.tab();
     await user.tab();
+    await user.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Quit TokenMtr" }));
     await user.tab();
     expect(document.activeElement).toBe(tabs[0]);
     await user.keyboard("{ArrowRight}");
@@ -138,13 +143,17 @@ describe("Recap", () => {
     expect(props.onOpenDashboard).toHaveBeenLastCalledWith("claude");
   });
 
-  it("wires Scan now and Settings", async () => {
+  it("wires Scan now, Edit config file, Settings and Quit", async () => {
     const user = userEvent.setup();
     const { props } = renderRecap();
     await user.click(screen.getByRole("button", { name: "Scan now" }));
+    await user.click(screen.getByRole("button", { name: "Edit config file" }));
     await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Quit TokenMtr" }));
     expect(props.onScanNow).toHaveBeenCalledOnce();
+    expect(props.onEditConfig).toHaveBeenCalledOnce();
     expect(props.onOpenSettings).toHaveBeenCalledOnce();
+    expect(props.onQuit).toHaveBeenCalledOnce();
   });
 
   it("shows the empty state when no agent exists", () => {
@@ -206,5 +215,17 @@ describe("RecapApp", () => {
     renderApp("populated", onAction);
     await userEvent.setup().click(await screen.findByRole("button", { name: "Scan now" }));
     expect(onAction).toHaveBeenCalledWith("scanNow", []);
+  });
+
+  it("edits the config file and quits from the header", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    renderApp("populated", onAction);
+    await user.click(await screen.findByRole("button", { name: "Edit config file" }));
+    await user.click(screen.getByRole("button", { name: "Quit TokenMtr" }));
+    await waitFor(() => {
+      expect(onAction).toHaveBeenCalledWith("editConfig", []);
+      expect(onAction).toHaveBeenCalledWith("quit", []);
+    });
   });
 });

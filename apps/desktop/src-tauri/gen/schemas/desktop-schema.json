@@ -423,6 +423,12 @@
           "markdownDescription": "Enables the connect_keychain command without any pre-configured scope."
         },
         {
+          "description": "Enables the edit_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-edit-config",
+          "markdownDescription": "Enables the edit_config command without any pre-configured scope."
+        },
+        {
           "description": "Enables the erase_all_data command without any pre-configured scope.",
           "type": "string",
           "const": "allow-erase-all-data",
@@ -529,6 +535,12 @@
           "type": "string",
           "const": "allow-projects",
           "markdownDescription": "Enables the projects command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the quit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-quit",
+          "markdownDescription": "Enables the quit command without any pre-configured scope."
         },
         {
           "description": "Enables the quota_history command without any pre-configured scope.",
@@ -741,6 +753,12 @@
           "markdownDescription": "Denies the connect_keychain command without any pre-configured scope."
         },
         {
+          "description": "Denies the edit_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-edit-config",
+          "markdownDescription": "Denies the edit_config command without any pre-configured scope."
+        },
+        {
           "description": "Denies the erase_all_data command without any pre-configured scope.",
           "type": "string",
           "const": "deny-erase-all-data",
@@ -847,6 +865,12 @@
           "type": "string",
           "const": "deny-projects",
           "markdownDescription": "Denies the projects command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the quit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-quit",
+          "markdownDescription": "Denies the quit command without any pre-configured scope."
         },
         {
           "description": "Denies the quota_history command without any pre-configured scope.",

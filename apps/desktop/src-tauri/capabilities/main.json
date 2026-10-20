@@ -45,6 +45,7 @@
     "allow-install-daemon",
     "allow-restart-daemon",
     "allow-reveal-path",
+    "allow-edit-config",
     "allow-add-project-rule",
     "allow-add-subscription",
     "allow-set-menubar-rings",

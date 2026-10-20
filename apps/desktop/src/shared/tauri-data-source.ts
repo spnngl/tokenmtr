@@ -146,6 +146,8 @@ export function createTauriDataSource(invoke: Invoke): DataSource {
     installDaemon: () => act("install_daemon"),
     restartDaemon: () => act("restart_daemon"),
     revealPath: (target) => act("reveal_path", { target }),
+    editConfig: () => act("edit_config"),
+    quit: () => act("quit"),
     projectRuleFor: (cwd) => read("project_rule_for", { cwd }, projectRuleSchema),
     addProjectRule: (cwd, name) => act("add_project_rule", { cwd, name }),
     addSubscription: (spec) => act("add_subscription", { spec }),

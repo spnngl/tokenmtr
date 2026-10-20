@@ -360,10 +360,12 @@ describe("Settings", () => {
     await user.click(await screen.findByRole("button", { name: "Scan now" }));
     await user.click(screen.getByRole("button", { name: "Back up now" }));
     await user.click(screen.getByRole("button", { name: "Reveal exports folder" }));
+    await user.click(screen.getByRole("button", { name: "Edit config file" }));
     await waitFor(() => {
       expect(onAction).toHaveBeenCalledWith("scanNow", []);
       expect(onAction).toHaveBeenCalledWith("backupNow", []);
       expect(onAction).toHaveBeenCalledWith("revealPath", [{ kind: "exports_dir" }]);
+      expect(onAction).toHaveBeenCalledWith("editConfig", []);
     });
   });
 

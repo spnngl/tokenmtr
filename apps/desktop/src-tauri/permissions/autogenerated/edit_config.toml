@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-edit-config"
+description = "Enables the edit_config command without any pre-configured scope."
+commands.allow = ["edit_config"]
+
+[[permission]]
+identifier = "deny-edit-config"
+description = "Denies the edit_config command without any pre-configured scope."
+commands.deny = ["edit_config"]
