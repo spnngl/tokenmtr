@@ -2,6 +2,3 @@
 # `fuzz/Cargo.lock` locks the fuzz targets' dependencies, none of which ships.
 exclude:
   - "./fuzz/**"
-  # Release assets the workflow downloaded next to the sources.
-  - "./artifacts/**"
-  - "./assets/**"
