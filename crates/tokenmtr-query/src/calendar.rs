@@ -1,15 +1,14 @@
 //! Activity calendar: tokens and started sessions per local day over the last two years.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
+use jiff::Span;
 use jiff::civil::Date;
-use jiff::{Span, Timestamp};
 use serde::Serialize;
-use tokenmtr_core::AgentId;
 use tokenmtr_store::StoreReader;
 
 use crate::context::QueryContext;
-use crate::engine::{Dim, Scope, fetch};
+use crate::engine::{Dim, Scope, billed_cells, session_starts};
 use crate::error::QueryError;
 use crate::filters::Filters;
 use crate::range::{Bucket, DateRange};
@@ -67,20 +66,13 @@ pub fn activity_calendar(
             )
         })
         .collect();
-    for row in fetch(reader, ctx, &filters, Dim::None, Scope::Usage)?.rows {
-        if let Some(day) = days.get_mut(&row.local) {
-            day.total_tokens += row.cell.total_tokens();
+    for (cell, local, _) in billed_cells(reader, ctx, &filters, Dim::None, Scope::Usage)? {
+        if let Some(day) = days.get_mut(&local) {
+            day.total_tokens += cell.total_tokens();
         }
     }
-    let mut first_event: HashMap<(AgentId, Option<String>), Timestamp> = HashMap::new();
-    for row in fetch(reader, ctx, &filters, Dim::Session, Scope::Traffic)?.rows {
-        first_event
-            .entry((row.cell.agent, row.cell.k1))
-            .and_modify(|first| *first = (*first).min(row.cell.first_at))
-            .or_insert(row.cell.first_at);
-    }
-    for first in first_event.into_values() {
-        if let Some(day) = days.get_mut(&ctx.zone().to_datetime(first).date()) {
+    for start in session_starts(reader, ctx, &filters)? {
+        if let Some(day) = days.get_mut(&ctx.zone().to_datetime(start).date()) {
             day.sessions += 1;
         }
     }

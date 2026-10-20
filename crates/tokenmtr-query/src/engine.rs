@@ -509,20 +509,8 @@ pub(crate) fn fetch(
     let currency = ctx.currency();
     let subs = ctx.subscriptions();
     let mut rows = Vec::new();
-    for cell in query_cells(reader, ctx, filters, dim, scope)? {
+    for (cell, local, mode) in billed_cells(reader, ctx, filters, dim, scope)? {
         let utc = utc_date(cell.start);
-        let local = ctx.zone().to_datetime(cell.start).date();
-        let mode = mode_of(subs, &cell, local);
-        let keep = match (filters.billing_filter(), mode) {
-            (BillingFilter::Any, _)
-            | (BillingFilter::Api, Mode::Api | Mode::Extra)
-            | (BillingFilter::Subscription(None), Mode::Subscription(_)) => true,
-            (BillingFilter::Subscription(Some(id)), Mode::Subscription(i)) => subs[i].id() == id,
-            _ => false,
-        };
-        if !keep {
-            continue;
-        }
         let (value, rate_approx) = usd_to(currency, ctx.fx(), utc, cell.cost_usd)?;
         let approximate = rate_approx || cell.approximate + cell.estimated + cell.unpriced > 0;
         let (api, paid) = match mode {
@@ -548,6 +536,94 @@ pub(crate) fn fetch(
         allocate_fees(reader, ctx, filters, &mut fetched)?;
     }
     Ok(fetched)
+}
+
+/// The cells of `filters` passing its billing filter, with their local date and billing mode:
+/// [`fetch`] without the money, for queries that only count tokens.
+pub(crate) fn billed_cells(
+    reader: &StoreReader,
+    ctx: &QueryContext,
+    filters: &Filters,
+    dim: Dim,
+    scope: Scope,
+) -> Result<Vec<(Cell, Date, Mode)>, QueryError> {
+    let subs = ctx.subscriptions();
+    Ok(query_cells(reader, ctx, filters, dim, scope)?
+        .into_iter()
+        .filter_map(|cell| {
+            let local = ctx.zone().to_datetime(cell.start).date();
+            let mode = mode_of(subs, &cell, local);
+            passes(filters, subs, mode).then_some((cell, local, mode))
+        })
+        .collect())
+}
+
+/// When each session of `filters` starts: its first real-traffic event in the range, kept when
+/// that event's billing mode passes the billing filter. Cheaper than [`fetch`] with
+/// [`Dim::Session`]: one earliest instant per session, profile and provider instead of a cell
+/// per 15 minutes.
+pub(crate) fn session_starts(
+    reader: &StoreReader,
+    ctx: &QueryContext,
+    filters: &Filters,
+) -> Result<Vec<Timestamp>, QueryError> {
+    let (conditions, params) = where_sql(ctx, filters, Scope::Traffic)?;
+    let sql = format!(
+        "SELECT agent, session, profile, provider, at_us FROM usage_event WHERE {conditions}"
+    );
+    let mut statement = reader.connection().prepare_cached(&sql)?;
+    let mut rows = statement.query(rusqlite::params_from_iter(params))?;
+    // Keyed by the four columns joined with NUL, which no id holds: one allocation per group.
+    let mut earliest: HashMap<String, i64> = HashMap::new();
+    let mut key = String::new();
+    while let Some(row) = rows.next()? {
+        key.clear();
+        for i in 0..4 {
+            key.push_str(text(row, i)?.unwrap_or_default());
+            key.push('\0');
+        }
+        let at: i64 = row.get(4)?;
+        match earliest.get_mut(key.as_str()) {
+            Some(first) => *first = (*first).min(at),
+            None => {
+                earliest.insert(key.clone(), at);
+            }
+        }
+    }
+    let subs = ctx.subscriptions();
+    let mut starts: HashMap<(AgentId, &str), Timestamp> = HashMap::new();
+    for (key, at) in &earliest {
+        let mut parts = key.split('\0');
+        let mut next = || parts.next().unwrap_or_default();
+        let (agent, session, profile, provider) = (next(), next(), next(), next());
+        let agent: AgentId = parse("agent", agent)?;
+        let profile: ProfileId = parse("profile", profile)?;
+        let provider: Option<ProviderId> = (!provider.is_empty())
+            .then(|| parse("provider", provider))
+            .transpose()?;
+        let at = micros_ts(*at)?;
+        let local = ctx.zone().to_datetime(at).date();
+        let mode = covering(subs, agent, &profile, provider.as_ref(), local)
+            .map_or(Mode::Api, Mode::Subscription);
+        if passes(filters, subs, mode) {
+            starts
+                .entry((agent, session))
+                .and_modify(|start| *start = (*start).min(at))
+                .or_insert(at);
+        }
+    }
+    Ok(starts.into_values().collect())
+}
+
+/// Whether `mode` passes the billing filter of `filters`.
+fn passes(filters: &Filters, subs: &[Subscription], mode: Mode) -> bool {
+    match (filters.billing_filter(), mode) {
+        (BillingFilter::Any, _)
+        | (BillingFilter::Api, Mode::Api | Mode::Extra)
+        | (BillingFilter::Subscription(None), Mode::Subscription(_)) => true,
+        (BillingFilter::Subscription(Some(id)), Mode::Subscription(i)) => subs[i].id() == id,
+        _ => false,
+    }
 }
 
 fn allocate_fees(
