@@ -31,10 +31,12 @@ brew install --cask spnngl/tap/tokenmtr
 ```
 
 The cask installs the app to `/Applications` and links `tokenmtr` into Homebrew's `bin`. It also
-removes the quarantine flag, so step 2 does not apply, and starts the daemon (step 4). Every
-`brew upgrade` restarts the daemon on the new binary. Then continue at [step 3](#3-first-run).
+removes the quarantine flag, so step 2 does not apply. It does not start the daemon: Homebrew
+sandboxes cask install steps away from launchd. The onboarding installs it
+([step 3](#3-first-run)). `brew upgrade` keeps the daemon, and the app restarts it on the new
+version at launch. Then continue at [step 3](#3-first-run).
 
-**Done when:** `tokenmtr service status` reports a running daemon.
+**Done when:** `TokenMtr.app` is in `/Applications` and `tokenmtr --version` prints the version.
 
 ## 1. Install the app
 
@@ -147,9 +149,10 @@ across updates of a signed build. If the prompt never appears, grant access by h
 
 ## 7. Uninstall
 
-With Homebrew, `brew uninstall --cask tokenmtr` quits the app and removes the daemon and the app.
-`brew uninstall --cask --zap tokenmtr` also deletes the config, the store, its backups, the logs and
-the cache. Without Homebrew:
+With Homebrew, `brew uninstall --cask --zap tokenmtr` quits the app and removes the daemon, the
+app, the login item, the config, the store, its backups, the logs and the cache. A plain
+`brew uninstall --cask tokenmtr` keeps the daemon, which also survives `brew upgrade`: run
+`tokenmtr service uninstall` before it. Without Homebrew:
 
 1. Optional: erase TokenMtr's data with the CLI before deleting it:
 
