@@ -131,12 +131,14 @@ async fn quota_failures_are_reported_by_kind() -> TestResult {
     .await;
     assert_eq!(quota_status(&env, &server.uri()).await?, "malformed");
 
-    // Nothing listens.
+    // Nothing listens. The daemon's own first poll can fail before the client's refresh asks,
+    // because a refused connection returns at once; the refresh then meets that poll's backoff.
     let env = Env::new()?;
     sign_in(&env)?;
-    assert_eq!(
-        quota_status(&env, "http://127.0.0.1:9").await?,
-        "network_down"
+    let status = quota_status(&env, "http://127.0.0.1:9").await?;
+    assert!(
+        matches!(status.as_str(), "network_down" | "backoff"),
+        "{status}"
     );
     Ok(())
 }
