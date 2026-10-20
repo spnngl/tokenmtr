@@ -11,8 +11,8 @@ use jiff::SignedDuration;
 use jiff::civil::date;
 use tokenmtr_config::{
     ConfigDocument, ConfigError, ConfigFormat, FileFormat, GitConfig, GitName, LineCol, LogFormat,
-    MenubarRing, Partition, ProfileLocation, RawProject, SinkTarget, TimeZoneSetting, Violation,
-    load, load_str,
+    MAX_MACHINE_NAME_BYTES, MenubarRing, Partition, ProfileLocation, RawProject, SinkTarget,
+    TimeZoneSetting, Violation, load, load_str,
 };
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, EurMicros, ModelId, Money, Override, Plan, ProfileId,
@@ -274,6 +274,32 @@ fn quota_interval_below_a_minute_is_rejected() {
     assert_eq!(path, "quota.interval");
     assert!(matches!(violation, Violation::IntervalTooShort { .. }));
     assert_eq!(position, at(2, 12));
+}
+
+#[test]
+fn the_machine_name_is_trimmed_and_a_blank_one_is_the_default() {
+    let named = parse("[machine]\nname = \"  work-mbp \"\n").unwrap();
+    assert_eq!(named.machine.name.as_deref(), Some("work-mbp"));
+    let blank = parse("[machine]\nname = \"  \"\n").unwrap();
+    assert_eq!(blank.machine.name, None);
+}
+
+#[test]
+fn a_machine_name_that_is_no_label_value_is_rejected() {
+    let (path, violation, position) = invalid("[machine]\nname = \"a\\tb\"\n");
+    assert_eq!(path, "machine.name");
+    assert!(matches!(violation, Violation::NotPrintable));
+    assert_eq!(position, at(2, 8));
+    let long = format!("[machine]\nname = \"{}\"\n", "é".repeat(65));
+    let (_, violation, _) = invalid(&long);
+    assert!(matches!(
+        violation,
+        Violation::TooLong {
+            max_bytes: MAX_MACHINE_NAME_BYTES
+        }
+    ));
+    let longest = format!("[machine]\nname = \"{}\"\n", "é".repeat(64));
+    assert!(parse(&longest).is_ok());
 }
 
 #[test]

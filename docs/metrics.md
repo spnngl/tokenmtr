@@ -26,7 +26,7 @@ as a counter reset).
 | `tokenmtr_build_info` | gauge | `version` | the workspace version | Constant 1; the label carries the TokenMtr version. |
 | `tokenmtr_events_total` | counter | `account`, `agent`, `billing`, `client`, `kind`, `model`, `profile`, `project`, `provider`, `service_tier`, `sidechain` | `usage_event` rows, all history | Usage events recorded, by kind. |
 | `tokenmtr_last_event_timestamp_seconds` | gauge | `agent`, `profile` | `usage_event` rows, all history, per profile | When the newest usage event happened, in Unix seconds. |
-| `tokenmtr_machine_info` | gauge | `arch`, `kernel_version`, `machine_id`, `machine_name`, `os`, `os_build`, `os_id`, `os_name`, `os_version`, `version` | the store's machine id, `[machine].name` and the OS | Constant 1; the labels carry the machine, its operating system and the TokenMtr build. |
+| `tokenmtr_machine_info` | gauge | `arch`, `kernel_version`, `machine_id`, `machine_name`, `os`, `os_build`, `os_id`, `os_name`, `os_version` | the store's machine id, the machine name and the OS | Constant 1; the labels carry the machine and its operating system. |
 | `tokenmtr_parse_issues` | gauge | `agent`, `kind` | unresolved `parse_issue` rows | Open parse issues: agent files TokenMtr could not read. |
 | `tokenmtr_quota_fetched_at_timestamp_seconds` | gauge | `account`, `agent`, `profile`, `window` | the newest successful quota poll of each profile | When the quota poll behind the quota gauges ran, in Unix seconds. |
 | `tokenmtr_quota_resets_at_timestamp_seconds` | gauge | `account`, `agent`, `profile`, `window` | the newest successful quota poll of each profile | When the quota window resets, in Unix seconds. |
@@ -59,12 +59,17 @@ organization; on quota gauges, else the account the poll recorded), else the con
 `sidechain` is `true` for an event the agent marks as a sidechain (a subagent's call), else `false`.
 
 `machine_id` is the store's id, stable for the life of the store. `tokenmtr_machine_info` links it to
-the machine name, the operating system (`os_id`, `os_version`, `os_name` from `/etc/os-release` on
-Linux, from `SystemVersion.plist` on macOS; `os_build` on macOS only), the kernel version and the
-TokenMtr version.
+the machine name and the operating system, read once when the daemon starts. On Linux, `os_id`,
+`os_version`, `os_name` and `os_build` are `ID`, `VERSION_ID`, `PRETTY_NAME` and `BUILD_ID` of
+`/etc/os-release` (else `/usr/lib/os-release`), and `kernel_version` is the kernel release. On
+macOS they come from `SystemVersion.plist` (`os_build` is the build, such as `24F74`) and
+`uname -r`. `os` and `arch` are those of the TokenMtr build. The TokenMtr version is on
+`tokenmtr_build_info`.
 
-A skill is counted when an agent loads it: Claude Code through its `Skill` tool, Pi when it reads a
-`SKILL.md`. Slash commands are not skills. Only tool calls ingested by this version carry a skill.
+A skill is counted when an agent loads it: Claude Code through its `Skill` tool, pi when it reads a
+`SKILL.md` from its first line under a `skills` directory (`~/.pi/agent/skills/<name>/SKILL.md`,
+`.agents/skills/<name>/SKILL.md`). Reading a skill to edit it counts too. Slash commands are not
+skills. Only tool calls ingested by this version carry a skill.
 
 Tool calls take the working directory and project of the usage event they belong to, or of the
 earliest event of their session that has one.

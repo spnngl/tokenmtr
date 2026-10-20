@@ -32,7 +32,7 @@ use tokenmtr_store::{
     QuotaOutcome, QuotaPoll, SessionSignal, Store, StoreRead, StoreReader,
 };
 
-use crate::snapshot::{FALLBACK_SQL, QUOTA_SQL, Segments, tools_sql, usage_sql};
+use crate::snapshot::{FALLBACK_SQL, QUOTA_SQL, SIGNALS_SQL, Segments, tools_sql, usage_sql};
 use crate::{Family, Folded, Machine, OutputScope, Snapshot, SnapshotContext, Value, snapshot};
 
 fn ts(text: &str) -> Timestamp {
@@ -268,7 +268,6 @@ fn an_empty_store_has_only_the_meta_series() {
     assert_eq!(label(machine, "os_name"), "Ubuntu 24.04 LTS");
     assert_eq!(label(machine, "os_build"), "");
     assert_eq!(label(machine, "kernel_version"), "6.8.0");
-    assert_eq!(label(machine, "version"), env!("CARGO_PKG_VERSION"));
     assert_eq!(
         gauge(of(&folded, Family::SnapshotTimestamp)[0]),
         now().as_second() as f64
@@ -505,6 +504,69 @@ fn an_excluded_path_leaves_that_output_only() {
     );
     // The first fold is untouched by the second.
     assert_eq!(sum(&all, Family::Tokens, &[]), 22);
+}
+
+#[test]
+fn an_excluded_session_leaves_every_family_built_from_it() {
+    let mut seed = Seed::new();
+    seed.project("/w/secret/a", "github.com/acme/secret", "secret", None);
+    seed.project("/w/open/b", "github.com/acme/open", "open", None);
+    let a = seed.ev_in(
+        "a",
+        "2026-02-28T10:00:00Z",
+        "/w/secret/a",
+        "github.com/acme/secret",
+    );
+    let mut b = seed.ev_in(
+        "b",
+        "2026-02-28T11:00:00Z",
+        "/w/open/b",
+        "github.com/acme/open",
+    );
+    b.session = SessionId::try_from("s2".to_owned()).unwrap();
+    seed.put(&[a.clone(), b.clone()]);
+    seed.call_skill("ka", Some(&a), "s1", "Skill", Some("secret-skill"));
+    seed.call_skill("kb", Some(&b), "s2", "Skill", Some("open-skill"));
+    let signal = |session: &str, at| SessionSignal {
+        agent: AgentId::CLAUDE,
+        session: SessionId::try_from(session.to_owned()).unwrap(),
+        kind: SignalKind::Compaction,
+        at: ts(at),
+    };
+    seed.store
+        .record_signals(&[
+            signal("s1", "2026-02-28T10:30:00Z"),
+            signal("s2", "2026-02-28T11:30:00Z"),
+        ])
+        .unwrap();
+    let folded = fold(&seed, &take(&seed), &filter(&[], &["/w/open/*"]));
+
+    let sessions = |family| {
+        of(&folded, family)
+            .iter()
+            .map(|s| label(s, "session_id").to_owned())
+            .collect::<Vec<_>>()
+    };
+    for family in [
+        Family::SessionInfo,
+        Family::SessionStartAt,
+        Family::SessionLastEventAt,
+        Family::SessionSkillUses,
+        Family::SessionSignals,
+    ] {
+        assert_eq!(sessions(family), ["s1"], "{}", family.name());
+    }
+    assert_eq!(sum(&folded, Family::SkillUses, &[]), 1);
+    assert_eq!(
+        sum(&folded, Family::SkillUses, &[("skill", "secret-skill")]),
+        1
+    );
+    assert_eq!(sum(&folded, Family::Signals, &[]), 1);
+    assert_eq!(
+        gauge(of(&folded, Family::LastEventAt)[0]),
+        ts("2026-02-28T10:00:00Z").as_second() as f64,
+        "the excluded later event does not move the last event"
+    );
 }
 
 #[test]
@@ -1125,6 +1187,10 @@ fn the_session_queries_ride_the_session_and_time_indexes() {
 
     let quota = plan(&reader, QUOTA_SQL);
     assert!(quota.contains("quota_snapshot_profile_fetched"), "{quota}");
+
+    let signals = plan(&reader, SIGNALS_SQL);
+    assert!(signals.contains("usage_event_session"), "{signals}");
+    assert!(!signals.contains("SCAN usage_event"), "{signals}");
 }
 
 #[test]

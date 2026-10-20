@@ -164,7 +164,7 @@ const SIGNAL: [&str; 3] = ["agent", "kind", "profile"];
 const SESSION_SIGNAL: [&str; 2] = ["kind", "session_id"];
 const QUOTA: [&str; 4] = ["account", "agent", "profile", "window"];
 const ACCOUNT: [&str; 5] = ["account", "agent", "plan", "profile", "rate_limit_tier"];
-const MACHINE: [&str; 10] = [
+const MACHINE: [&str; 9] = [
     "arch",
     "kernel_version",
     "machine_id",
@@ -174,7 +174,6 @@ const MACHINE: [&str; 10] = [
     "os_id",
     "os_name",
     "os_version",
-    "version",
 ];
 
 impl Family {
@@ -282,8 +281,7 @@ impl Family {
             Self::Events => "Usage events recorded, by kind.",
             Self::LastEventAt => "When the newest usage event happened, in Unix seconds.",
             Self::MachineInfo => {
-                "Constant 1; the labels carry the machine, its operating system and the TokenMtr \
-                 build."
+                "Constant 1; the labels carry the machine and its operating system."
             }
             Self::ParseIssues => "Open parse issues: agent files TokenMtr could not read.",
             Self::QuotaFetchedAt => {
@@ -360,7 +358,7 @@ impl Family {
                 "`usage_event` rows, all history"
             }
             Self::LastEventAt => "`usage_event` rows, all history, per profile",
-            Self::MachineInfo => "the store's machine id, `[machine].name` and the OS",
+            Self::MachineInfo => "the store's machine id, the machine name and the OS",
             Self::ParseIssues => "unresolved `parse_issue` rows",
             Self::QuotaFetchedAt | Self::QuotaResetsAt | Self::QuotaUsedRatio => {
                 "the newest successful quota poll of each profile"

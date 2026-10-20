@@ -36,6 +36,9 @@ pub const UNATTRIBUTED_MODEL: &str = "unattributed";
 const READ_TOOL: &str = "read";
 /// The file that defines a skill; its directory names the skill.
 const SKILL_FILE: &str = "SKILL.md";
+/// The directory every skill location of pi and of the Agent Skills layout sits under
+/// (`~/.pi/agent/skills`, `.agents/skills`, ...).
+const SKILLS_DIR: &str = "skills";
 
 /// Per-file facts the line parser needs. Build one per source file with [`LineContext::new`].
 #[derive(Debug, Clone)]
@@ -258,16 +261,31 @@ fn push_tool_call(
 }
 
 /// The skill a `read` call loads: the directory name of an `arguments.path` whose file name is
-/// exactly [`SKILL_FILE`] (`/x/skills/foo/SKILL.md` is `foo`). The rest of the path is dropped.
-/// Any other shape of `arguments`, a path without a parent directory or an invalid name yields
+/// exactly [`SKILL_FILE`] and that sits under a [`SKILLS_DIR`] (`/x/skills/foo/SKILL.md` and
+/// `/x/skills/group/foo/SKILL.md` are `foo`). The rest of the path is dropped.
+///
+/// A read that starts past the first line is the rest of a skill already counted, so it loads
+/// none. A `SKILL.md` outside a [`SKILLS_DIR`] (a home or repository root) is not a skill: its
+/// directory names a user or a project. Any other shape of `arguments` or an invalid name yields
 /// no skill.
 fn skill_of(arguments: &RawValue) -> Option<SkillName> {
     let arguments: ReadArguments<'_> = serde_json::from_str(arguments.get()).ok()?;
+    if arguments.offset.is_some_and(|line| line > 1) {
+        return None;
+    }
     let path = Utf8Path::new(arguments.path.as_deref()?);
     if path.file_name() != Some(SKILL_FILE) {
         return None;
     }
-    SkillName::try_from(path.parent()?.file_name()?.trim()).ok()
+    let dir = path.parent()?;
+    let under_skills = dir
+        .ancestors()
+        .skip(1)
+        .any(|ancestor| ancestor.file_name() == Some(SKILLS_DIR));
+    if !under_skills {
+        return None;
+    }
+    SkillName::try_from(dir.file_name()?.trim()).ok()
 }
 
 /// Where the identity of one usage block comes from.
@@ -532,11 +550,13 @@ impl Block<'_> {
     }
 }
 
-/// The arguments of a `read` call; every field but `path` is skipped.
+/// The arguments of a `read` call; every field but `path` and `offset` is skipped.
 #[derive(Deserialize)]
 struct ReadArguments<'a> {
     #[serde(borrow)]
     path: Option<Cow<'a, str>>,
+    /// The 1-based line the read starts at; absent reads from the start.
+    offset: Option<u64>,
 }
 
 #[cfg(test)]
@@ -583,6 +603,34 @@ mod tests {
             skill_of_read(".agents/skills/foo/SKILL.md")?.as_deref(),
             Some("foo")
         );
+        assert_eq!(
+            skill_of_read("/x/skills/productivity/writing/SKILL.md")?.as_deref(),
+            Some("writing")
+        );
+        let from_start = parse_tool_call("read", &json!({"path": "/x/skills/foo/SKILL.md"}))?;
+        assert_eq!(from_start.1.as_deref(), Some("foo"));
+        Ok(())
+    }
+
+    #[test]
+    fn the_rest_of_a_chunked_read_records_no_skill() -> TestResult {
+        let rest = json!({"path": "/x/skills/foo/SKILL.md", "offset": 120, "limit": 100});
+        assert_eq!(parse_tool_call("read", &rest)?.1, None);
+        Ok(())
+    }
+
+    #[test]
+    fn a_skill_file_outside_a_skills_directory_records_no_skill() -> TestResult {
+        for path in [
+            "/Users/alice/SKILL.md",
+            "~/SKILL.md",
+            "/home/alice/src/app/SKILL.md",
+            "skills/SKILL.md",
+            "/x/skills/SKILL.md",
+            "/x/skills-old/foo/SKILL.md",
+        ] {
+            assert_eq!(skill_of_read(path)?, None, "{path}");
+        }
         Ok(())
     }
 
@@ -599,11 +647,11 @@ mod tests {
         ] {
             assert_eq!(skill_of_read(path)?, None, "{path}");
         }
-        let long = format!("/x/{}/SKILL.md", "a".repeat(129));
+        let long = format!("/x/skills/{}/SKILL.md", "a".repeat(129));
         assert_eq!(skill_of_read(&long)?, None);
-        assert_eq!(skill_of_read("/x/a\u{1}b/SKILL.md")?, None);
+        assert_eq!(skill_of_read("/x/skills/a\u{1}b/SKILL.md")?, None);
         assert_eq!(
-            parse_tool_call("edit", &json!({"path": "/x/foo/SKILL.md"}))?.1,
+            parse_tool_call("edit", &json!({"path": "/x/skills/foo/SKILL.md"}))?.1,
             None
         );
         Ok(())
@@ -611,7 +659,12 @@ mod tests {
 
     #[test]
     fn odd_arguments_record_no_skill_and_keep_the_line() -> TestResult {
-        for arguments in [json!("/x/foo/SKILL.md"), json!({"path": 3}), json!(null)] {
+        for arguments in [
+            json!("/x/skills/foo/SKILL.md"),
+            json!({"path": 3}),
+            json!({"path": "/x/skills/foo/SKILL.md", "offset": "1"}),
+            json!(null),
+        ] {
             assert_eq!(
                 parse_tool_call("read", &arguments)?,
                 (LineClass::Event, None),

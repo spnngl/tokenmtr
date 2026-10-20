@@ -207,7 +207,6 @@ impl Labelled for MachineLabels<'_> {
             "os_id" => &machine.os_id,
             "os_name" => &machine.os_name,
             "os_version" => &machine.os_version,
-            "version" => VERSION,
             _ => "",
         }
     }

@@ -220,7 +220,7 @@ Types: `[x]` is a list of `x`. A default of "platform" means a path under the da
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `name` | string | host name | Label of this machine in the UI and exports; rows also carry a stable `machine_id`. A blank value means the default. |
+| `name` | string | host name | Label of this machine in the UI, exports and metrics; rows also carry a stable `machine_id`. Trimmed; at most 128 bytes, no control characters. A blank value means the default. |
 
 ### `[display]`
 
@@ -461,7 +461,7 @@ Pushes the metrics to a Prometheus remote-write receiver every `interval`.
 | `exclude_projects`, `exclude_paths`, `redact` | | | As for exporters. |
 | `tenant` | string | none | Sent as `X-Scope-OrgID`. |
 | `auth` | table | none | Credentials sent to the receiver; see below. |
-| `external_labels` | table of string | `{ machine = <machine.name> }` | Labels added to every series. A name must match `[a-zA-Z_][a-zA-Z0-9_]*`, not start with `__` and not be a label the metrics carry (`agent`, `profile`, `provider`, `model`, `project`, `client`, `account`, `billing`, `session_id`, `git_branch`, `type`, `kind`, `tool`, `mcp_server`, `error`, `window`, `version`). |
+| `external_labels` | table of string | `{ machine = <machine.name> }` | Labels added to every series. A name must match `[a-zA-Z_][a-zA-Z0-9_]*`, not start with `__` and not be a label the metrics carry (any label of the catalog in [metrics.md](metrics.md#catalog)). |
 
 An exclusion or redaction applies to its own output only.
 

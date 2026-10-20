@@ -130,7 +130,7 @@ Primary key: `tool_call_id`. Partitioned by: `at_utc`.
 | `tool_name` | text | no |  | Tool name; for MCP tools the part after the server. |
 | `mcp_server` | text | yes |  | MCP server name for MCP tools. |
 | `is_error` | boolean | yes |  | Whether the result was an error; empty until a result is seen. |
-| `skill` | text | yes | `skill` | Agent skill the call loaded (Claude Code `Skill`, pi `read` of a `SKILL.md`); empty for other calls and calls ingested before skills were recorded. |
+| `skill` | text | yes | `skill` | Agent skill the call loaded (Claude Code `Skill`, pi `read` of a `SKILL.md` under a `skills` directory); empty for other calls and calls ingested before skills were recorded. |
 
 ### `subscriptions`
 
