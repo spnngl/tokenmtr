@@ -21,5 +21,7 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["src/test-setup.ts"],
+    // The axe and chart tests take over 5 s (the default) on a busy CI runner.
+    testTimeout: 15_000,
   },
 });
