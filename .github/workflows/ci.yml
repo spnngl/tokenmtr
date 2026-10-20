@@ -25,6 +25,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - if: runner.os == 'Linux'
         uses: ./.github/actions/linux-deps
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -40,6 +42,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          # renovate: datasource=github-releases depName=casey/just
+          just-version: "1.59.0"
       - run: pnpm -C apps/desktop install --frozen-lockfile
       - run: pnpm -C apps/desktop run build
       # `cargo test --workspace` includes tokenmtr-desktop, whose `bindings_file_is_current`
