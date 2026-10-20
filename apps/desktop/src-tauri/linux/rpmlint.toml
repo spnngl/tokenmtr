@@ -1,0 +1,11 @@
+# rpmlint errors on the rpm that Tauri builds and its config cannot fix: the
+# Tauri bundler (2.12) writes no Packager, Group, Buildhost or changelog tag.
+# release-linux.yml passes this file to `rpmlint -c`.
+Filters = [
+    # The release signs SHA256SUMS with cosign, not the rpm with a GPG key.
+    'no-signature',
+    'no-packager-tag',
+    'no-group-tag',
+    'no-changelogname-tag',
+    'no-buildhost-tag',
+]
