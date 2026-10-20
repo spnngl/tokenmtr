@@ -103,6 +103,13 @@ for (const theme of THEMES) {
           await shoot(page, theme, `${viewport.name}-quota-no-extra-usage`);
         });
 
+        test("overview with an idle range keeps the activity calendar", async ({ page }) => {
+          await page.goto("/?mock=populated#/?range=custom&from=2024-01-01&to=2024-01-31&z=");
+          await expect(page.getByRole("figure", { name: "Daily activity" })).toBeVisible();
+          await settle(page);
+          await shoot(page, theme, `${viewport.name}-overview-idle-range`);
+        });
+
         test("command palette", async ({ page }) => {
           await page.goto("/?mock=populated#/");
           await settle(page);

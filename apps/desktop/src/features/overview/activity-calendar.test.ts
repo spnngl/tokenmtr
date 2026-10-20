@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityDay } from "../../shared/schemas";
-import { levelsOf, monthsOf, weeksOf, weeksThatFit } from "./activity-calendar";
+import { levelsOf, monthsOf, streaksOf, weeksOf, weeksThatFit } from "./activity-calendar";
 
 function day(date: string, total_tokens: number, sessions: number): ActivityDay {
   return { day: date, total_tokens, sessions };
@@ -28,6 +28,26 @@ describe("activity calendar", () => {
     expect(levelOf(1)).toBe(1);
     expect(levelOf(8)).toBe(4);
     expect(levelsOf([0, 0])(0)).toBe(0);
+  });
+
+  it("finds the streaks and the busiest day; an idle today keeps the current streak", () => {
+    const days = [
+      day("2026-03-01", 5, 1),
+      day("2026-03-02", 9, 1),
+      day("2026-03-03", 7, 1),
+      day("2026-03-04", 0, 0),
+      day("2026-03-05", 9, 2),
+      day("2026-03-06", 1, 1),
+      day("2026-03-07", 0, 0),
+    ];
+    expect(streaksOf(days, "tokens")).toEqual({ current: 2, longest: 3, busiest: days[1] });
+    expect(streaksOf(days, "sessions").busiest).toBe(days[4]);
+    expect(streaksOf([...days, day("2026-03-08", 0, 0)], "tokens").current).toBe(0);
+    expect(streaksOf([day("2026-03-01", 0, 0)], "tokens")).toEqual({
+      current: 0,
+      longest: 0,
+      busiest: undefined,
+    });
   });
 
   it("sums the months for the table", () => {
