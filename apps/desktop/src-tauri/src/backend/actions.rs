@@ -98,6 +98,44 @@ pub fn install_daemon(backend: &Backend) -> Result<(), CommandError> {
     Ok(install_service(backend.service(), &sidecar)?)
 }
 
+/// The config file, created first when missing, holding only comments.
+///
+/// # Errors
+///
+/// The config file cannot be created.
+pub fn config_file(backend: &Backend) -> Result<Utf8PathBuf, CommandError> {
+    tokenmtr_app::ensure_config_file(backend.config_path())?;
+    Ok(backend.config_path().to_owned())
+}
+
+/// Opens `path` in the user's default text editor, whatever app owns its extension: `open -t`
+/// on macOS, `xdg-open` elsewhere (desktops map `.toml` to a text editor).
+///
+/// # Errors
+///
+/// The opener cannot start or reports a failure.
+pub fn open_in_text_editor(path: &Utf8Path) -> Result<(), CommandError> {
+    let mut opener = if cfg!(target_os = "macos") {
+        let mut open = std::process::Command::new("open");
+        open.arg("-t");
+        open
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    let output = opener
+        .arg(path)
+        .output()
+        .map_err(|error| CommandError::internal(format!("cannot open {path}: {error}")))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(CommandError::internal(format!(
+            "cannot open {path}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
+}
+
 /// The path `target` stands for, if it exists. A missing config file is created first, holding
 /// only comments.
 ///
@@ -113,10 +151,7 @@ pub fn reveal_path(backend: &Backend, target: &RevealTarget) -> Result<Utf8PathB
             .ok_or_else(|| CommandError::invalid(format!("session {session} has no transcript")))
     };
     let path = match target {
-        RevealTarget::ConfigFile => {
-            tokenmtr_app::ensure_config_file(backend.config_path())?;
-            backend.config_path().to_owned()
-        }
+        RevealTarget::ConfigFile => config_file(backend)?,
         RevealTarget::ExportsDir => backend.paths().exports_dir().clone(),
         RevealTarget::Transcript { agent, session } => transcript(*agent, session)?,
         RevealTarget::TranscriptFolder { agent, session } => {

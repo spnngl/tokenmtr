@@ -153,6 +153,10 @@ export interface DataSource {
   restartDaemon(): Promise<void>;
   /** Shows `target` in the OS file manager. */
   revealPath(target: RevealTarget): Promise<void>;
+  /** Opens the config file (created when missing) in the default text editor. */
+  editConfig(): Promise<void>;
+  /** Quits the app; the background daemon keeps running. */
+  quit(): Promise<void>;
   /** The rule the shell suggests for `cwd`, named after its repository when known. */
   projectRuleFor(cwd: string): Promise<ProjectRule>;
   /** Adds a `[[projects]]` rule naming the sessions started in `cwd` `name`. */

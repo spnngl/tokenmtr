@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { useDataAction, useScanNow } from "../shared/actions";
+import { useDataAction, useEditConfig, useQuit, useScanNow } from "../shared/actions";
 import { useAppConfig, useDataSource } from "../shared/app-context";
 import type { DashboardTarget } from "../shared/data-source";
 import { errorText } from "../shared/errors";
@@ -20,6 +20,8 @@ export function RecapApp(): ReactNode {
   );
   const ds = useDataSource();
   const scan = useScanNow();
+  const edit = useEditConfig();
+  const quit = useQuit();
   const open = useDataAction((ds, target: DashboardTarget) => ds.openDashboard(target), {
     failure: "Could not open the dashboard",
     refetch: false,
@@ -47,6 +49,8 @@ export function RecapApp(): ReactNode {
       onPeriodChange={setPeriod}
       onOpenDashboard={(agent) => open.mutate({ route: "/", agent })}
       onOpenSettings={() => open.mutate({ route: "/settings", agent: null })}
+      onEditConfig={() => edit.mutate()}
+      onQuit={() => quit.mutate()}
       onScanNow={() => scan.mutate()}
       isScanning={scan.isPending}
       agentLabels={agentLabels}

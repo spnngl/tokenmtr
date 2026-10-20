@@ -56,6 +56,8 @@ export const COMMANDS = [
   "install_daemon",
   "restart_daemon",
   "reveal_path",
+  "edit_config",
+  "quit",
   "add_project_rule",
   "add_subscription",
   "set_menubar_rings",

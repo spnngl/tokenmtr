@@ -366,6 +366,19 @@ pub async fn reveal_path(shell: State<'_, Shell>, target: RevealTarget) -> Reply
     tauri_plugin_opener::reveal_item_in_dir(path).map_err(CommandError::internal)
 }
 
+/// Opens the config file in the default text editor, creating it first when missing.
+#[tauri::command]
+pub async fn edit_config(shell: State<'_, Shell>) -> Reply<()> {
+    let backend = shell.backend.clone();
+    blocking(move || actions::open_in_text_editor(&actions::config_file(&backend)?)).await
+}
+
+/// Quits the app, as the tray's Quit does; the background daemon keeps running.
+#[tauri::command]
+pub fn quit(app: AppHandle<Wry>) {
+    app.exit(0);
+}
+
 /// Labels the sessions started in a directory with a project.
 #[tauri::command]
 pub async fn add_project_rule(
@@ -605,6 +618,8 @@ command_table!(
     install_daemon,
     restart_daemon,
     reveal_path,
+    edit_config,
+    quit,
     add_project_rule,
     add_subscription,
     set_menubar_rings,

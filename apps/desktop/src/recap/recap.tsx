@@ -1,6 +1,7 @@
-import { Settings } from "lucide-react";
+import { FilePen, Power, RefreshCw, Settings } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "react-aria-components";
+import { APP_NAME } from "../shared/bindings";
 import { Button } from "../shared/button";
 import { PERIODS, type Period, type RecapSnapshot } from "../shared/schemas";
 import { SegmentedControl } from "../shared/segmented-control";
@@ -27,6 +28,8 @@ export interface RecapProps {
   /** `null` on the `All` tab. */
   readonly onOpenDashboard: (agent: string | null) => void;
   readonly onOpenSettings: () => void;
+  readonly onEditConfig: () => void;
+  readonly onQuit: () => void;
   readonly onScanNow: () => void;
   /** A scan started by `onScanNow` is running. */
   readonly isScanning: boolean;
@@ -105,11 +108,23 @@ export function Recap(props: RecapProps): ReactNode {
             Open dashboard
           </Button>
           <span className="flex-1" />
-          <Button variant="quiet" isPending={props.isScanning} onPress={props.onScanNow}>
-            Scan now
+          {/* Icons only: five labelled buttons overflow 360px. The spinner replaces the icon. */}
+          <Button
+            variant="quiet"
+            aria-label="Scan now"
+            isPending={props.isScanning}
+            onPress={props.onScanNow}
+          >
+            {props.isScanning ? null : <RefreshCw className="size-4" aria-hidden />}
+          </Button>
+          <Button variant="quiet" aria-label="Edit config file" onPress={props.onEditConfig}>
+            <FilePen className="size-4" aria-hidden />
           </Button>
           <Button variant="quiet" aria-label="Settings" onPress={props.onOpenSettings}>
             <Settings className="size-4" aria-hidden />
+          </Button>
+          <Button variant="quiet" aria-label={`Quit ${APP_NAME}`} onPress={props.onQuit}>
+            <Power className="size-4" aria-hidden />
           </Button>
         </div>
         <span role="status" className="flex items-start gap-1.5 px-1 text-xs text-fg-muted">

@@ -76,6 +76,17 @@ export const useRevealConfig = () =>
     refetch: false,
   });
 
+/** Open the config file in the default text editor; changes no data, so nothing refetches. */
+export const useEditConfig = () =>
+  useDataAction((ds) => ds.editConfig(), {
+    failure: "Could not open the config file",
+    refetch: false,
+  });
+
+/** Quit the app; the daemon keeps collecting. */
+export const useQuit = () =>
+  useDataAction((ds) => ds.quit(), { failure: "Could not quit", refetch: false });
+
 /** Install the daemon's service and start it (also starts an installed, stopped daemon). */
 export const useInstallDaemon = () =>
   useDataAction((ds) => ds.installDaemon(), { failure: "Could not start the daemon" });

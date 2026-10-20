@@ -341,6 +341,8 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
     },
     restartDaemon: () => act("restartDaemon"),
     revealPath: (target) => act("revealPath", target),
+    editConfig: () => act("editConfig"),
+    quit: () => act("quit"),
     projectRuleFor: (cwd) => read(() => ({ match: cwd, name: cwd.split("/").pop() ?? "project" })),
     addProjectRule: (cwd, name) => act("addProjectRule", cwd, name),
     addSubscription: (spec) => act("addSubscription", spec),

@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - The metrics `account` label of a profile whose agent reports no account (pi; Claude without an email or organization) comes from the config: top-level `account`, `[agents.<agent>].account` or `profiles[].account`, the most specific winning ([docs/config.md](docs/config.md)).
+- **Edit config file** opens the config file (created when missing) in the default text editor, from Settings and the menu-bar recap; the recap also gets a **Quit TokenMtr** button.
 
 ## [0.2.0] - 2026-10-20
 

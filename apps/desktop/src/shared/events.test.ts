@@ -222,6 +222,8 @@ describe("command bindings", () => {
       tauri.installDaemon(),
       tauri.restartDaemon(),
       tauri.revealPath({ kind: "exports_dir" }),
+      tauri.editConfig(),
+      tauri.quit(),
       tauri.projectRuleFor("/tmp"),
       tauri.addProjectRule("/tmp", "scratch"),
       tauri.addSubscription({

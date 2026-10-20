@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   useDataAction,
+  useEditConfig,
   useInstallDaemon,
   useRestartDaemon,
   useRevealPath,
@@ -44,6 +45,7 @@ function Fact(props: { readonly label: string; readonly children: ReactNode }): 
 
 function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
   const reveal = useRevealPath();
+  const edit = useEditConfig();
   const revealing = (kind: "config_file" | "exports_dir"): boolean =>
     reveal.isPending && reveal.variables.kind === kind;
   const login = useDataAction((ds, enabled: boolean) => ds.setLaunchAtLogin(enabled), {
@@ -61,6 +63,9 @@ function GeneralCard({ settings }: { readonly settings: Settings }): ReactNode {
         </Fact>
       </dl>
       <div className="flex flex-wrap gap-2">
+        <Button isPending={edit.isPending} onPress={() => edit.mutate()}>
+          Edit config file
+        </Button>
         <Button
           isPending={revealing("config_file")}
           onPress={() => reveal.mutate({ kind: "config_file" })}

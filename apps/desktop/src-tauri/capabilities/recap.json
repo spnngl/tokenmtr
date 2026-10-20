@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "recap",
-  "description": "The tray popover: reads the recap, opens the main window, starts a scan, connects the Keychain, fits itself to its content.",
+  "description": "The tray popover: reads the recap, opens the main window, starts a scan, connects the Keychain, fits itself to its content, opens the config file in a text editor, quits the app.",
   "windows": ["recap"],
   "permissions": [
     "core:event:allow-listen",
@@ -10,6 +10,8 @@
     "allow-open-dashboard",
     "allow-fit-recap",
     "allow-scan-now",
-    "allow-connect-keychain"
+    "allow-connect-keychain",
+    "allow-edit-config",
+    "allow-quit"
   ]
 }

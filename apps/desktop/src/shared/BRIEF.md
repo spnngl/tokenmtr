@@ -13,7 +13,7 @@
 
 - **User and job**: the same developer glancing at the menu bar. Job: answer "am I about to hit a limit, and what did today cost?" in two seconds.
 - **Lead**: quota windows with the projected time to 100%.
-- **Primary action**: Open dashboard (filtered on the selected agent). Scan now and Settings are secondary.
+- **Primary action**: Open dashboard (filtered on the selected agent). Scan now, Edit config file, Settings and Quit are secondary.
 - **Density**: compact, one column, scrolls inside the footer-anchored window. Blocks an agent cannot report vanish instead of showing zeros.
 - **Mood**: same tokens as the app, no chrome of its own.
 - **States**: same `StateView` set. The footer status dot always carries its text label (`src/recap/health.ts`), never colour alone.
