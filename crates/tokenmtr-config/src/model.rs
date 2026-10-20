@@ -539,7 +539,8 @@ pub struct MachineConfig {
     pub name: Option<String>,
 }
 
-/// The longest `[machine].name`, in bytes: the cap of every detected machine label.
+/// The longest `[machine].name`, in bytes; equals `tokenmtr_platform::host::MAX_LABEL_BYTES`, the
+/// cap of the detected machine labels.
 pub const MAX_MACHINE_NAME_BYTES: usize = 128;
 
 /// The time zone that buckets days.
