@@ -88,18 +88,19 @@ jobs:
           done
 
           # The files both packages must install.
-          deb_files=$(dpkg-deb -c "$deb" | awk '{print $6}')
+          # Absolute paths, as rpm lists them: Tauri writes the deb's entries without a leading ./.
+          deb_files=$(dpkg-deb -c "$deb" | awk '{sub(/^\.?\/?/, "/", $6); print $6}')
           rpm_files=$(rpm -qpl "$rpm")
           for file in /usr/bin/tokenmtr /usr/bin/tokenmtr-desktop /usr/share/applications/tokenmtr.desktop; do
-            printf '%s\n' "$deb_files" | grep -Fx ".$file" || { echo "::error::deb lacks $file"; exit 1; }
+            printf '%s\n' "$deb_files" | grep -Fx "$file" || { echo "::error::deb lacks $file"; exit 1; }
             printf '%s\n' "$rpm_files" | grep -Fx "$file" || { echo "::error::rpm lacks $file"; exit 1; }
           done
-          printf '%s\n' "$deb_files" | grep -Fx ./usr/share/doc/tokenmtr/copyright
-          printf '%s\n' "$deb_files" | grep -Fx ./usr/share/doc/tokenmtr/changelog.gz
+          printf '%s\n' "$deb_files" | grep -Fx /usr/share/doc/tokenmtr/copyright
+          printf '%s\n' "$deb_files" | grep -Fx /usr/share/doc/tokenmtr/changelog.gz
           printf '%s\n' "$rpm_files" | grep -Fx /usr/share/licenses/tokenmtr/LICENSE
 
           lintian --fail-on error "$deb"
-          rpmlint "$rpm"
+          rpmlint -c apps/desktop/src-tauri/linux/rpmlint.toml "$rpm"
 
           # The sidecar the daemon runs reports the tagged version.
           dpkg-deb -x "$deb" "$RUNNER_TEMP/deb"
