@@ -38,9 +38,14 @@ The `.p12` holds the private key: it goes into repository secrets only, never in
 ## Checklist
 
 1. Set the new version in the workspace `Cargo.toml` (`[workspace.package] version`). It is the only place: the CLI, the daemon and the app read it, and `tauri.conf.json` has no `version` key on purpose.
-2. Move the `CHANGELOG.md` entries from "Unreleased" under the new version and date.
+2. Move the `CHANGELOG.md` entries from "Unreleased" under `## [<version>] - <date>`, and update the comparison links at the end of the file. The release notes start with that section; the workflow fails when it is empty.
 3. Optional local build: `just release --target universal-apple-darwin` for the published dmg (Apple silicon and Intel), or plain `just release` for the host architecture. `--unsigned` skips signing for a local test build. Without the identity the build warns and is unsigned: never publish it.
-4. Commit, tag `v<version>`; the human pushes the commit, then the tag.
+4. Commit, open a pull request and merge it. Then tag the merged commit and push the tag: `main` takes rebase merges only, which rewrite the commit, so a tag made before the merge points at a commit on no branch, and the workflow fails.
+
+   ```sh
+   git switch main && git pull --ff-only
+   git tag v<version> && git push origin v<version>
+   ```
 
 A version with a pre-release suffix (`0.2.0-rc.1`) is not supported: the deb and rpm version schemes order it differently, and the workflow rejects it.
 
@@ -54,11 +59,11 @@ Three files, so the signing secrets and the write permission each reach one job 
 - `release-macos.yml` builds, signs and verifies the dmg (steps 2 to 4 below).
 - `release-linux.yml` builds and checks the deb and rpm on `ubuntu-26.04` and `ubuntu-26.04-arm`, then installs the deb on a fresh runner of each architecture (see [Linux packages](#linux-packages)).
 
-1. `release.yml` fails unless the tag is `v` plus the workspace version, without a pre-release suffix.
+1. `release.yml` fails unless the tagged commit is on `main`, the tag is `v` plus the workspace version, without a pre-release suffix, and `CHANGELOG.md` has entries under that version.
 2. macOS: imports the `.p12` into a throwaway keychain and trusts the certificate for code signing, so `release.nu` finds the identity. Fails when a secret is missing: an unsigned build is never published.
 3. macOS: builds the UI, then runs `just release --target universal-apple-darwin`, which runs `just check` first.
 4. macOS: checks the bundle as in [Verify the artifact](#verify-the-artifact): signature and authority, both architectures, `tokenmtr --version` equal to the tag.
-5. `publish`, only when every build and check passed: generates the SBOM `tokenmtr_<version>.spdx.json` from the lockfiles (syft; `.syft.yaml` excludes `fuzz/`), writes `SHA256SUMS` over the dmg, packages, certificate and SBOM, signs it with keyless cosign (`SHA256SUMS.sigstore.json`), attests provenance and the SBOM for the dmg, debs and rpms, and publishes the release. The notes give the certificate's SHA-256 fingerprint, the commands to verify a download, the `git shortlog` since the previous tag and GitHub's generated notes.
+5. `publish`, only when every build and check passed: generates the SBOM `tokenmtr_<version>.spdx.json` from the lockfiles (syft; `.syft.yaml` excludes `fuzz/`), writes `SHA256SUMS` over the dmg, packages, certificate and SBOM, signs it with keyless cosign (`SHA256SUMS.sigstore.json`), attests provenance and the SBOM for the dmg, debs and rpms, and publishes the release. The notes give the version's `CHANGELOG.md` section, the certificate's SHA-256 fingerprint, the commands to verify a download, the `git shortlog` since the previous tag and GitHub's generated notes.
 
 A failed build publishes nothing. The jobs use no build cache, so a release never builds from state that a pull request wrote. Renovate in the tap reads `SHA256SUMS` to bump the cask's `sha256`: keep the file name and the dmg name `TokenMtr_<version>_universal.dmg`.
 

@@ -17,10 +17,19 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # origin/main, for the check below
           persist-credentials: false
+      # A rebase merge rewrites the commit, so a tag made before the merge is on no branch.
+      - name: Tag is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::the tagged commit $GITHUB_SHA is not on main: tag the commit the pull request merged"
+            exit 1
+          fi
       - name: Tag matches the workspace version
         id: version
         env:
@@ -38,6 +47,19 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Changelog has a section for the version
+        id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # The lines between `## [<version>] - <date>` and the next `## [` heading or the link
+          # definitions at the end.
+          notes=$(awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { found = 1; next } found && /^(## \[|\[[^]]*\]: )/ { exit } found' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no entries under ## [$VERSION]"
+            exit 1
+          fi
+          { echo 'changelog<<CHANGELOG_EOF'; printf '%s\n' "$notes"; echo 'CHANGELOG_EOF'; } >> "$GITHUB_OUTPUT"
 
   macos:
     needs: version
@@ -129,12 +151,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          CHANGELOG: ${{ needs.version.outputs.changelog }}
         run: |
           # SHA-256 of the DER certificate, the form `codesign --extract-certificates` lets users hash.
           fingerprint=$(openssl x509 -in assets/tokenmtr-signing.pem -outform der | sha256sum | cut -d' ' -f1)
           identity="https://github.com/$REPOSITORY/.github/workflows/release.yml@refs/tags/$TAG"
           previous=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
           {
+            printf '%s\n\n' "$CHANGELOG"
             echo "The dmg is signed with the self-signed certificate \`TokenMtr Local Signing\`, SHA-256 fingerprint \`$fingerprint\` (\`tokenmtr-signing.pem\`)."
             echo
             echo "## Verify a download"

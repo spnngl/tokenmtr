@@ -60,3 +60,7 @@ First release: macOS app (universal, Apple Silicon and Intel) plus the `tokenmtr
 - Store schema 7: new `project_remote` table; repository-keyed projects are renamed from the last URL segment (`images`) to `owner/repo` (`spnngl/images`). The migration runs on open; exports keep their columns (the project key is unchanged).
 - `[menubar] title` is gone: the menu bar shows rings instead of a text title. Remove the key, or the config is rejected.
 - `tokenmtr erase` deletes the config with `--delete-config` (`--config <path>` is the global flag that picks the file).
+
+[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/spnngl/tokenmtr/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/spnngl/tokenmtr/releases/tag/v0.1.0
