@@ -158,10 +158,11 @@ impl Ctx {
         Ok(summaries)
     }
 
-    /// Reads every Claude profile's credentials once with the Keychain's consent prompt
-    /// allowed, waiting for the user, so they can grant this binary access for good; then
-    /// polls as [`Ctx::poll_quota`]. Credentials read this way are cached like a poll's, so
-    /// quota works until they expire even when the user allowed access only once.
+    /// Reads every Claude profile's credentials again, then polls as [`Ctx::poll_quota`]
+    /// without retry delays. Only a profile whose Keychain refused the quiet read gets the
+    /// consent prompt, waiting for the user, so they can grant this binary access for good.
+    /// Credentials read this way are cached like a poll's, so quota works until they expire
+    /// even when the user allowed access only once.
     ///
     /// # Errors
     /// As [`Ctx::poll_quota`].
@@ -175,9 +176,22 @@ impl Ctx {
         for profile in claude_profiles(&active.config) {
             let location = credential_location(&self.settings.paths, &profile);
             let lookup = location.clone();
+            let denied = lock(&self.run)
+                .quota
+                .profiles
+                .get(&profile.id)
+                .is_some_and(|state| state.keychain_denied);
             let loaded = self
                 .blocking(ThreadPriority::UserInitiated, move |ctx| {
-                    ClaudeCredentials::load_interactive(&lookup, &*ctx.settings.secrets)
+                    let secrets = &*ctx.settings.secrets;
+                    // A quiet read first: a prompt for an item that grants it is noise.
+                    if !denied {
+                        match ClaudeCredentials::load(&lookup, secrets) {
+                            Err(error) if error.is_keychain_denied() => {}
+                            loaded => return loaded,
+                        }
+                    }
+                    ClaudeCredentials::load_interactive(&lookup, secrets)
                 })
                 .await?;
             let (credentials, keychain_denied) = match loaded {
