@@ -355,6 +355,53 @@ impl tokenmtr_platform::SecretStore for PromptingKeychain {
     }
 }
 
+/// A Keychain that grants quiet lookups and refuses every prompt.
+struct QuietKeychain(String);
+
+impl tokenmtr_platform::SecretStore for QuietKeychain {
+    fn get(
+        &self,
+        _service: &str,
+    ) -> Result<Option<secrecy::SecretString>, tokenmtr_platform::SecretError> {
+        Ok(Some(secrecy::SecretString::from(self.0.clone())))
+    }
+
+    fn get_interactive(
+        &self,
+        _service: &str,
+    ) -> Result<Option<secrecy::SecretString>, tokenmtr_platform::SecretError> {
+        Err(tokenmtr_platform::SecretError::Denied)
+    }
+}
+
+#[tokio::test]
+async fn connecting_a_readable_keychain_shows_no_prompt() -> TestResult {
+    let env = Env::new()?;
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        USAGE,
+        ResponseTemplate::new(200).set_body_bytes(fixture("claude_usage.json")?),
+    )
+    .await;
+    serve(&server, PROFILE, ResponseTemplate::new(404)).await;
+    env.write_config_with(&["quota"], "")?;
+    let mut settings = settings_for(&env, &server.uri())?;
+    let credentials = String::from_utf8(fixture("claude_credentials.json")?)?;
+    settings.secrets = std::sync::Arc::new(QuietKeychain(credentials));
+    let daemon = tokenmtr_daemon::Daemon::start(settings).await?;
+    let mut client = env.client().await?;
+
+    let summary = client.connect_keychain().await?;
+    let status = summary
+        .profiles
+        .first()
+        .map(|p| serde_json::to_value(p.status).unwrap_or_default());
+    assert_eq!(status, Some("ok".into()));
+    daemon.shutdown().await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn a_denied_keychain_stays_denied_until_connected() -> TestResult {
     let env = Env::new()?;
