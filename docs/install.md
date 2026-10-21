@@ -130,10 +130,11 @@ The quota poll reads Claude Code's OAuth token, read-only, from:
   `Claude Code-credentials-<first 8 hex characters of sha256(config_dir)>`.
 
 Every poll reads the credentials again, so a token Claude Code refreshed is used from the next
-poll on. The daemon reads the item with `/usr/bin/security`, which Claude Code writes it with, so
-macOS lets the read through without a prompt, also after Claude Code rewrites the item at each
-token refresh. When an item does not trust `security`, the read is refused: the quota shows
-`keychain_denied` and the daemon reads only the credentials files until you connect it:
+poll on. The daemon never waits on a Keychain prompt. When the item does not grant it access, it
+reads the item through `/usr/bin/security`, which Claude Code writes the item with, so macOS lets
+the read through, also after Claude Code rewrites the item at each token refresh. When the item
+trusts neither, the read is refused: the quota shows `keychain_denied` and the daemon reads only
+the credentials files until you connect it:
 
 1. Click **Connect Claude account** on the Quota screen or in the menu bar recap, or run
    `tokenmtr quota connect` while the daemon runs.

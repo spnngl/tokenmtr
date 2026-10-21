@@ -17,8 +17,8 @@ const PROBLEMS: Readonly<Record<Exclude<QuotaStatus, "ok">, string>> = {
 };
 
 /**
- * Asks the daemon to re-read the credentials, the macOS prompt allowed, and poll again: for a
- * token the agent refreshed since the last poll, or a Keychain that refused the daemon.
+ * Asks the daemon to re-read the credentials and poll again: for a token the agent refreshed
+ * since the last poll, or a Keychain that refused the daemon (macOS then asks the user).
  */
 function ReloadCredentials(props: { readonly status: Exclude<QuotaStatus, "ok"> }): ReactNode {
   const reload = useReloadClaudeCredentials();
