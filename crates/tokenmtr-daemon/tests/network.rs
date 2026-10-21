@@ -336,6 +336,84 @@ async fn a_refreshed_token_is_used_at_the_next_poll() -> TestResult {
     Ok(())
 }
 
+/// How [`ScriptedKeychain`] answers its next quiet lookups.
+#[derive(Clone, Copy)]
+enum Answer {
+    Grant,
+    Fail,
+    Deny,
+}
+
+/// A Keychain whose quiet lookups answer as the test sets, and that never prompts.
+struct ScriptedKeychain {
+    credentials: String,
+    answer: std::sync::Mutex<Answer>,
+}
+
+impl ScriptedKeychain {
+    fn answer(&self, answer: Answer) {
+        *self
+            .answer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = answer;
+    }
+}
+
+impl tokenmtr_platform::SecretStore for ScriptedKeychain {
+    fn get(
+        &self,
+        _service: &str,
+    ) -> Result<Option<secrecy::SecretString>, tokenmtr_platform::SecretError> {
+        match *self
+            .answer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            Answer::Grant => Ok(Some(secrecy::SecretString::from(self.credentials.clone()))),
+            Answer::Fail => Err(tokenmtr_platform::SecretError::Store("locked".into())),
+            Answer::Deny => Err(tokenmtr_platform::SecretError::Denied),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_failed_or_denied_read_keeps_the_cached_token() -> TestResult {
+    let env = Env::new()?;
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        USAGE,
+        ResponseTemplate::new(200).set_body_bytes(fixture("claude_usage.json")?),
+    )
+    .await;
+    serve(&server, PROFILE, ResponseTemplate::new(404)).await;
+    env.write_config_with(&["quota"], "")?;
+    let keychain = std::sync::Arc::new(ScriptedKeychain {
+        credentials: String::from_utf8(fixture("claude_credentials.json")?)?,
+        answer: std::sync::Mutex::new(Answer::Grant),
+    });
+    let mut settings = settings_for(&env, &server.uri())?;
+    settings.secrets = keychain.clone();
+    let daemon = tokenmtr_daemon::Daemon::start(settings).await?;
+    let mut client = env.client().await?;
+    let status = |summary: &tokenmtr_control::QuotaSummary| {
+        summary
+            .profiles
+            .first()
+            .map(|p| serde_json::to_value(p.status).unwrap_or_default())
+    };
+
+    // Granted, then failing, then denied, then read from files only (none): the server keeps
+    // answering the token read first.
+    for answer in [Answer::Grant, Answer::Fail, Answer::Deny, Answer::Deny] {
+        keychain.answer(answer);
+        let summary = client.refresh_quota().await?;
+        assert_eq!(status(&summary), Some("ok".into()));
+    }
+    daemon.shutdown().await?;
+    Ok(())
+}
+
 /// A Keychain that refuses quiet lookups and grants the one the user answers.
 struct PromptingKeychain(String);
 

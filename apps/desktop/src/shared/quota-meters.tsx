@@ -9,7 +9,8 @@ import { LevelIcon, type MeterLevel, meterLevel } from "./usage-meter";
 
 const PROBLEMS: Readonly<Record<Exclude<QuotaStatus, "ok">, string>> = {
   signed_out: "Signed out. Sign in to the agent to see its quota.",
-  token_expired: "Token expired. Open the agent once to refresh it.",
+  token_expired:
+    "Token expired. Use the agent once so it refreshes the token: the next poll picks it up, or press Refresh.",
   failed: "Could not fetch quota. Retrying on the next scan.",
   keychain_denied:
     'The Keychain did not let the daemon read the Claude credentials. Connect the account and choose "Always Allow" when macOS asks.',
