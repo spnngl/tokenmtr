@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Label, Meter } from "react-aria-components";
-import { useConnectKeychain } from "./actions";
+import { useReloadClaudeCredentials } from "./actions";
 import { Button } from "./button";
 import { formatClock, formatPercent, formatRelativeReset } from "./format";
 import type { QuotaEta, QuotaMeter, QuotaSpend, QuotaStatus, QuotaWindow } from "./schemas";
@@ -15,13 +15,16 @@ const PROBLEMS: Readonly<Record<Exclude<QuotaStatus, "ok">, string>> = {
     'The Keychain did not let the daemon read the Claude credentials. Connect the account and choose "Always Allow" when macOS asks.',
 };
 
-/** Asks the daemon to read the Keychain once with the macOS prompt allowed. */
-function ConnectKeychain(): ReactNode {
-  const connect = useConnectKeychain();
+/**
+ * Asks the daemon to re-read the credentials, the macOS prompt allowed, and poll again: for a
+ * token the agent refreshed since the last poll, or a Keychain that refused the daemon.
+ */
+function ReloadCredentials(props: { readonly status: Exclude<QuotaStatus, "ok"> }): ReactNode {
+  const reload = useReloadClaudeCredentials();
   return (
     <div>
-      <Button isPending={connect.isPending} onPress={() => connect.mutate()}>
-        Connect Claude account
+      <Button isPending={reload.isPending} onPress={() => reload.mutate()}>
+        {props.status === "keychain_denied" ? "Connect Claude account" : "Refresh"}
       </Button>
     </div>
   );
@@ -183,7 +186,7 @@ export function QuotaMeters(props: {
                 <p role="status" className="text-sm text-fg-muted">
                   {PROBLEMS[meter.status]}
                 </p>
-                {meter.status === "keychain_denied" ? <ConnectKeychain /> : null}
+                <ReloadCredentials status={meter.status} />
               </>
             )}
           </section>

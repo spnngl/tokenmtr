@@ -8,8 +8,8 @@ pub enum SecretError {
     /// The OS secret store refused or failed (locked, access denied, ...).
     #[error("secret store error: {0}")]
     Store(String),
-    /// Reading the secret needs the user's consent, which a non-interactive lookup never asks
-    /// for: the item's access list does not include this app, or the user denied it.
+    /// Reading the secret needs the user's consent, which a non-interactive lookup never waits
+    /// for: the item's access list does not include the reader, or the user denied it.
     #[error("access to the secret was not granted")]
     Denied,
     /// The stored secret is not UTF-8 text.
@@ -21,8 +21,8 @@ pub enum SecretError {
 pub trait SecretStore {
     /// Returns the secret stored for `service`, or `None` if there is none.
     ///
-    /// Never shows an OS consent prompt: a secret that needs one is [`SecretError::Denied`].
-    /// May block; call from a blocking context.
+    /// Never waits for the user: a secret that needs consent is [`SecretError::Denied`]. May
+    /// block briefly; call from a blocking context.
     ///
     /// # Errors
     /// [`SecretError`] if the store cannot be read or the secret is not text.
@@ -56,13 +56,26 @@ pub use keychain::KeychainSecrets;
 
 #[cfg(target_os = "macos")]
 mod keychain {
-    use std::sync::Mutex;
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
 
     use super::{SecretError, SecretStore};
     use secrecy::SecretString;
     use secrecy::zeroize::Zeroizing;
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
-    use security_framework::os::macos::keychain::SecKeychain;
+
+    /// Apple's Keychain tool. Claude Code writes its item through it, so the item's access list
+    /// and partition list always trust it.
+    const SECURITY: &str = "/usr/bin/security";
+    /// A `security` read that takes longer is waiting on a consent prompt: it is killed.
+    const SECURITY_TIMEOUT: Duration = Duration::from_secs(10);
+    /// How often a running `security` read is checked.
+    const SECURITY_POLL: Duration = Duration::from_millis(10);
+    /// `security`'s exit status is the low byte of the `OSStatus`: `errSecItemNotFound`.
+    const EXIT_ITEM_NOT_FOUND: i32 = 44;
+    /// `errSecInteractionNotAllowed`, `errSecAuthFailed`, `errSecUserCanceled`, as exit statuses.
+    const EXIT_DENIED: [i32; 3] = [36, 51, 128];
 
     /// `errSecItemNotFound` from `<Security/SecBase.h>`.
     const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
@@ -73,52 +86,79 @@ mod keychain {
     /// `errSecUserCanceled`.
     const ERR_SEC_USER_CANCELED: i32 = -128;
 
-    /// Serializes lookups: disabling Keychain UI is process-wide, so two overlapping lookups
-    /// would re-enable it under each other, or disable it under an interactive one.
-    static NO_UI: Mutex<()> = Mutex::new(());
-
-    /// Reads generic-password items from the login keychain. Never writes; prompts only through
-    /// [`SecretStore::get_interactive`].
+    /// Reads generic-password items from the login keychain. Never writes.
     ///
-    /// Access is granted per code signature. [`SecretStore::get`] is non-interactive, so an item
-    /// another app created is readable only once the user granted this program access: "Always
-    /// Allow" at an interactive lookup's prompt, or Keychain Access → the item → Access Control.
-    /// Until then it is [`SecretError::Denied`]. The grant names the signature, so it survives a
-    /// rebuild only when the build is signed with the same identity.
+    /// [`SecretStore::get`] runs `security find-generic-password -w`. Claude Code writes its
+    /// credentials item through `security` and rewrites it at each token refresh, which drops
+    /// a grant to this program ("Always Allow") but keeps trusting `security`. An item that does not trust `security` makes it
+    /// show a consent prompt: the read is killed after [`SECURITY_TIMEOUT`] and is
+    /// [`SecretError::Denied`], so the caller must stop reading that item.
+    ///
+    /// [`SecretStore::get_interactive`] reads through the Keychain API with the prompt allowed,
+    /// for an item that does not trust `security`.
     #[derive(Debug, Default, Clone, Copy)]
     pub struct KeychainSecrets;
 
     impl SecretStore for KeychainSecrets {
         fn get(&self, service: &str) -> Result<Option<SecretString>, SecretError> {
-            lookup(service, false)
+            security_lookup(service)
         }
 
         fn get_interactive(&self, service: &str) -> Result<Option<SecretString>, SecretError> {
-            lookup(service, true)
+            prompting_lookup(service)
         }
     }
 
-    /// Reads `service`'s item; `interactive` lets macOS show its consent prompt.
-    fn lookup(service: &str, interactive: bool) -> Result<Option<SecretString>, SecretError> {
-        let found = {
-            let _serial = NO_UI
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let _no_ui = if interactive {
-                None
-            } else {
-                Some(
-                    SecKeychain::disable_user_interaction()
-                        .map_err(|e| SecretError::Store(e.to_string()))?,
-                )
-            };
-            ItemSearchOptions::new()
-                .class(ItemClass::generic_password())
-                .service(service)
-                .load_data(true)
-                .limit(Limit::Max(1))
-                .search()
+    /// Reads `service`'s item with `security`, killing it after [`SECURITY_TIMEOUT`].
+    fn security_lookup(service: &str) -> Result<Option<SecretString>, SecretError> {
+        let store = |e: std::io::Error| SecretError::Store(format!("{SECURITY}: {e}"));
+        let mut child = Command::new(SECURITY)
+            .args(["find-generic-password", "-s", service, "-w"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(store)?;
+        let deadline = Instant::now() + SECURITY_TIMEOUT;
+        // The secret is far smaller than the pipe buffer: the child never blocks on stdout.
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(store)? {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                // Best effort: the read is refused whether or not the kill lands.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(SecretError::Denied);
+            }
+            std::thread::sleep(SECURITY_POLL);
         };
+        match status.code() {
+            Some(0) => {}
+            Some(EXIT_ITEM_NOT_FOUND) => return Ok(None),
+            Some(code) if EXIT_DENIED.contains(&code) => return Err(SecretError::Denied),
+            _ => return Err(SecretError::Store(format!("{SECURITY} failed: {status}"))),
+        }
+        let mut bytes = Zeroizing::new(Vec::new());
+        if let Some(mut stdout) = child.stdout.take() {
+            stdout.read_to_end(&mut bytes).map_err(store)?;
+        }
+        if bytes.last() == Some(&b'\n') {
+            bytes.pop();
+        }
+        std::str::from_utf8(&bytes)
+            .map(|text| Some(SecretString::from(text)))
+            .map_err(|_| SecretError::NotUtf8)
+    }
+
+    /// Reads `service`'s item through the Keychain API, letting macOS show its consent prompt.
+    fn prompting_lookup(service: &str) -> Result<Option<SecretString>, SecretError> {
+        let found = ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(service)
+            .load_data(true)
+            .limit(Limit::Max(1))
+            .search();
         let results = match found {
             Ok(results) => results,
             Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(None),
@@ -152,22 +192,40 @@ mod keychain {
     mod tests {
         use super::*;
         use secrecy::ExposeSecret;
-        use security_framework::passwords::{delete_generic_password, set_generic_password};
+
+        /// Runs `security` with `args`, as Claude Code does to write its item.
+        fn security(args: &[&str]) -> bool {
+            Command::new(SECURITY)
+                .args(args)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+        }
 
         /// Deletes the test item even if an assertion fails.
-        struct Cleanup<'a>(&'a str, &'a str);
+        struct Cleanup<'a>(&'a str);
         impl Drop for Cleanup<'_> {
             fn drop(&mut self) {
-                let _ = delete_generic_password(self.0, self.1);
+                security(&["delete-generic-password", "-s", self.0]);
             }
         }
 
         #[test]
-        fn reads_an_item_created_by_the_test() {
+        fn reads_an_item_written_by_security() {
             let service = format!("dev.tokenmtr.test.{}", std::process::id());
-            let account = "tokenmtr-test";
-            let _cleanup = Cleanup(&service, account);
-            set_generic_password(&service, account, b"s3cret-token").unwrap();
+            let _cleanup = Cleanup(&service);
+            let written = security(&[
+                "add-generic-password",
+                "-U",
+                "-a",
+                "tokenmtr-test",
+                "-s",
+                &service,
+                "-w",
+                "s3cret-token",
+            ]);
+            assert!(written, "cannot write the test item");
 
             let secret = KeychainSecrets.get(&service).unwrap().unwrap();
             assert_eq!(secret.expose_secret(), "s3cret-token");

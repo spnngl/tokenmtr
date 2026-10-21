@@ -102,11 +102,11 @@ export const useKeepTenYears = (agent: string, profile: string, label: string) =
   });
 
 /**
- * Let the daemon read the Claude credentials in the Keychain: macOS asks once, and "Always
- * Allow" keeps quota polling silent from then on.
+ * Re-read the Claude credentials now, macOS asking when the Keychain refuses the daemon, then
+ * poll quota again without waiting for a retry delay.
  */
-export const useConnectKeychain = () =>
+export const useReloadClaudeCredentials = () =>
   useDataAction((ds) => ds.connectKeychain(), {
-    failure: "Could not connect the Claude account",
-    success: () => "Claude account connected",
+    failure: "Could not reload the Claude credentials",
+    success: () => "Claude credentials reloaded",
   });
