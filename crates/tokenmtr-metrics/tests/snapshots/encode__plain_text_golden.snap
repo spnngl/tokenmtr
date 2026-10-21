@@ -4,7 +4,7 @@ expression: "encode(&sample(), Format::Plain)"
 ---
 # HELP tokenmtr_build_info Constant 1; the label carries the TokenMtr version.
 # TYPE tokenmtr_build_info gauge
-tokenmtr_build_info{version="0.2.0"} 1
+tokenmtr_build_info{version="0.3.0"} 1
 # HELP tokenmtr_quota_used_ratio Share of the quota window used, from 0 to 1.
 # TYPE tokenmtr_quota_used_ratio gauge
 tokenmtr_quota_used_ratio{account="me@example.com",agent="claude",profile="default",window="5h"} 0.42

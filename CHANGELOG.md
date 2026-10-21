@@ -5,7 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+A daily activity calendar, session and machine metrics, and Claude quota that follows token refreshes.
+
 ### Added
+
+- Overview: a GitHub-style **Daily activity** calendar of tokens or started sessions per local day over up to two years, with the current and longest streaks, the busiest day, keyboard navigation and a per-month table. It ignores the range filter and follows the others.
 
 - The metrics `account` label of a profile whose agent reports no account (pi; Claude without an email or organization) comes from the config: top-level `account`, `[agents.<agent>].account` or `profiles[].account`, the most specific winning ([docs/config.md](docs/config.md)).
 - **Edit config file** opens the config file (created when missing) in the default text editor, from Settings and the menu-bar recap; the recap also gets a **Quit TokenMtr** button.
@@ -17,6 +23,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Metrics: `tokenmtr_session_*` families no longer carry `agent`, `profile` or `account`; join on `tokenmtr_session_info` instead.
 - Config: `external_labels` can no longer use the label names the new metrics carry (`arch`, `kernel_version`, `machine_id`, `machine_name`, `os`, `os_build`, `os_id`, `os_name`, `os_version`, `plan`, `rate_limit_tier`, `service_tier`, `sidechain`, `skill`); such a config fails to load. `[machine].name` is trimmed and rejected when it has a control character or exceeds 128 bytes.
 - Once onboarding is done, the app reinstalls a missing background daemon at launch, so it survives `brew upgrade`, which removes it before installing the new app.
+
+### Fixed
+
+- Claude quota uses a token Claude Code refreshed from the next poll on, without a daemon restart: every poll reads the credentials again, and when the Keychain refuses the daemon after Claude Code rewrote its item, the daemon reads it through `/usr/bin/security`. A Claude profile whose quota is not ok shows **Refresh**, which reads the credentials again and polls at once.
 
 ## [0.2.0] - 2026-10-20
 
@@ -74,6 +84,7 @@ First release: macOS app (universal, Apple Silicon and Intel) plus the `tokenmtr
 - `[menubar] title` is gone: the menu bar shows rings instead of a text title. Remove the key, or the config is rejected.
 - `tokenmtr erase` deletes the config with `--delete-config` (`--config <path>` is the global flag that picks the file).
 
-[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/spnngl/tokenmtr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spnngl/tokenmtr/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spnngl/tokenmtr/releases/tag/v0.1.0
