@@ -8,6 +8,7 @@ import { axeViolations } from "../shared/axe";
 import { createMockDataSource, type MockScenario } from "../shared/mock";
 import { MOCK_TIME_ZONE, NOW_MS } from "../shared/mock/seed";
 import type { RecapSnapshot } from "../shared/schemas";
+import { TestProviders } from "../shared/test-providers";
 import { ThemeProvider } from "../shared/theme";
 import { Recap, type RecapProps } from "./recap";
 import { RecapApp } from "./recap-app";
@@ -36,7 +37,7 @@ function renderRecap(overrides: Partial<RecapProps> = {}) {
     agentLabels: new Map([["claude", "Claude Code"]]),
     ...overrides,
   };
-  return { props, ...render(<Recap {...props} />) };
+  return { props, ...render(<Recap {...props} />, { wrapper: TestProviders }) };
 }
 
 describe("Recap", () => {

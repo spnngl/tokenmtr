@@ -129,17 +129,22 @@ The quota poll reads Claude Code's OAuth token, read-only, from:
 - any other profile: `<config_dir>/.credentials.json`, then the item
   `Claude Code-credentials-<first 8 hex characters of sha256(config_dir)>`.
 
-The item belongs to Claude Code, so macOS refuses the daemon's background read until you allow it.
-Polls never show a prompt: after a refusal the quota shows `keychain_denied` and the daemon reads
-only the credentials files. To allow it once:
+Every poll reads the credentials again, so a token Claude Code refreshed is used from the next
+poll on. The daemon reads the item with `/usr/bin/security`, which Claude Code writes it with, so
+macOS lets the read through without a prompt, also after Claude Code rewrites the item at each
+token refresh. When an item does not trust `security`, the read is refused: the quota shows
+`keychain_denied` and the daemon reads only the credentials files until you connect it:
 
 1. Click **Connect Claude account** on the Quota screen or in the menu bar recap, or run
    `tokenmtr quota connect` while the daemon runs.
 2. macOS asks whether `tokenmtr` may use the item: enter your login password and choose
    **Always Allow**.
 
-The daemon then polls silently. The grant is tied to the code signature, which stays the same
-across updates of a signed build. If the prompt never appears, grant access by hand:
+While the quota shows any other problem (`token_expired`, `signed_out`, `failed`), **Refresh**
+re-reads the credentials and polls at once, without waiting for the next poll or a retry delay.
+
+The grant is tied to the code signature, which stays the same across updates of a signed build.
+If the prompt never appears, grant access by hand:
 
 1. Open Keychain Access, select the **login** keychain and search for `Claude Code-credentials`.
 2. Double-click the item, open **Access Control**, click **+** and add

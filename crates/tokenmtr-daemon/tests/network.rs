@@ -286,6 +286,56 @@ async fn with_every_networked_task_off_nothing_is_sent() -> TestResult {
     Ok(())
 }
 
+#[tokio::test]
+async fn a_refreshed_token_is_used_at_the_next_poll() -> TestResult {
+    let env = Env::new()?;
+    sign_in(&env)?;
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        USAGE,
+        ResponseTemplate::new(200).set_body_bytes(fixture("claude_usage.json")?),
+    )
+    .await;
+    serve(&server, PROFILE, ResponseTemplate::new(404)).await;
+    env.write_config_with(&["quota"], "")?;
+    let daemon = tokenmtr_daemon::Daemon::start(settings_for(&env, &server.uri())?).await?;
+    let mut client = env.client().await?;
+    client.refresh_quota().await?;
+
+    // The agent refreshes its token while the cached one is still valid.
+    let refreshed = String::from_utf8(fixture("claude_credentials.json")?)?
+        .replace("FAKE-TOKEN", "FRESH-TOKEN");
+    std::fs::write(env.home.join("claude/.credentials.json"), refreshed)?;
+    client.refresh_quota().await?;
+
+    let bearers: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|request| request.url.path() == USAGE)
+        .filter_map(|request| {
+            request
+                .headers
+                .get("authorization")?
+                .to_str()
+                .ok()
+                .map(str::to_owned)
+        })
+        .collect();
+    assert!(
+        bearers.first().is_some_and(|b| b.contains("FAKE-TOKEN")),
+        "{bearers:?}"
+    );
+    assert!(
+        bearers.last().is_some_and(|b| b.contains("FRESH-TOKEN")),
+        "{bearers:?}"
+    );
+    daemon.shutdown().await?;
+    Ok(())
+}
+
 /// A Keychain that refuses quiet lookups and grants the one the user answers.
 struct PromptingKeychain(String);
 

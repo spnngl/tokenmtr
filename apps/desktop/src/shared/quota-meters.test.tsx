@@ -2,6 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { etaText, QuotaMeters } from "./quota-meters";
 import type { QuotaMeter, QuotaWindow } from "./schemas";
+import { TestProviders } from "./test-providers";
 
 afterEach(cleanup);
 
@@ -79,12 +80,16 @@ describe("QuotaMeters", () => {
 
   it("groups donuts per profile and shows a profile's problem in its own group", () => {
     const expired: QuotaMeter = { ...meter([], "work"), status: "token_expired" };
-    render(<QuotaMeters meters={[meter([FIVE_HOUR]), expired]} timeZone="UTC" now={NOW} />);
+    render(<QuotaMeters meters={[meter([FIVE_HOUR]), expired]} timeZone="UTC" now={NOW} />, {
+      wrapper: TestProviders,
+    });
     const main = screen.getByRole("region", { name: "claude / default" });
     expect(within(main).getByRole("meter", { name: "5-hour" })).toBeTruthy();
     const work = screen.getByRole("region", { name: "claude / work" });
     expect(within(work).queryByRole("meter")).toBeNull();
     expect(within(work).getByRole("status").textContent).toMatch(/Token expired/);
+    expect(within(work).getByRole("button", { name: "Refresh" })).toBeTruthy();
+    expect(within(main).queryByRole("button")).toBeNull();
   });
 });
 

@@ -228,6 +228,23 @@ describe("Quota", () => {
     await user.click(first(screen.getAllByRole("button", { name: "Connect Claude account" })));
     await waitFor(() => expect(onAction).toHaveBeenCalledWith("connectKeychain", []));
   });
+
+  it("reloads the credentials of a profile whose token expired", async () => {
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    await renderApp("/quota", {
+      onAction,
+      wrap: (ds) => ({
+        ...ds,
+        quotaLatest: async (filters) =>
+          (await ds.quotaLatest(filters)).map(
+            (meter): QuotaMeter => ({ ...meter, status: "token_expired", windows: [] }),
+          ),
+      }),
+    });
+    await user.click(first(await screen.findAllByRole("button", { name: "Refresh" })));
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith("connectKeychain", []));
+  });
 });
 
 describe("Billing", () => {

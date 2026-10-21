@@ -65,7 +65,8 @@ pub(crate) struct QuotaRuntime {
 struct ProfileRuntime {
     /// Where the credentials were read; a reload that moves the profile starts afresh.
     location: Option<CredentialLocation>,
-    /// Credentials reused until they expire or the server answers 401/403.
+    /// The last credentials the server accepted: every poll reads the credentials again and
+    /// falls back on these when the read fails, until they expire or the server answers 401/403.
     credentials: Option<Arc<ClaudeCredentials>>,
     /// The Keychain refused once: only files are read, and without one the profile is
     /// `keychain_denied`, until [`Ctx::connect_keychain`] or a restart.
@@ -225,52 +226,13 @@ impl Ctx {
                 .filter(|credentials| !credentials.is_expired(Timestamp::now()));
             (fresh, state.keychain_denied)
         };
-        let credentials = if let Some(credentials) = cached {
-            Some(credentials)
-        } else {
-            let location = if keychain_denied {
-                location.without_keychain()
-            } else {
-                location
-            };
-            let loaded = self
-                .blocking(ThreadPriority::Background, move |ctx| {
-                    ClaudeCredentials::load(&location, &*ctx.settings.secrets)
-                })
-                .await?;
-            match loaded {
-                // Without the Keychain, finding no file says nothing about being signed in.
-                Ok(None) if keychain_denied => {
-                    return Ok(Polled::without_windows(
-                        profile.id,
-                        Some(QuotaOutcome::KeychainDenied),
-                        Status::KeychainDenied,
-                    ));
-                }
-                Ok(credentials) => credentials.map(Arc::new),
-                Err(error) => {
-                    if error.is_keychain_denied() {
-                        tracing::warn!(
-                            profile = %profile.id,
-                            "the Keychain denied access to the Claude credentials; \
-                             not asking again until `tokenmtr quota connect` or a restart"
-                        );
-                        if let Some(state) = lock(&self.run).quota.profiles.get_mut(&profile.id) {
-                            state.keychain_denied = true;
-                        }
-                        return Ok(Polled::without_windows(
-                            profile.id,
-                            Some(QuotaOutcome::KeychainDenied),
-                            Status::KeychainDenied,
-                        ));
-                    }
-                    tracing::warn!(profile = %profile.id, %error, "cannot read the Claude credentials");
-                    return Ok(Polled::without_windows(
-                        profile.id,
-                        Some(QuotaOutcome::Failed),
-                        Status::Failed,
-                    ));
-                }
+        let credentials = match self
+            .read_credentials(&profile.id, location, cached, keychain_denied)
+            .await?
+        {
+            Ok(credentials) => credentials,
+            Err((outcome, status)) => {
+                return Ok(Polled::without_windows(profile.id, Some(outcome), status));
             }
         };
         let poll = source.poll(credentials.as_deref()).await;
@@ -300,6 +262,53 @@ impl Ctx {
             outcome: Some(outcome),
             status,
             detected,
+        })
+    }
+
+    /// Reads the profile's credentials at every poll, so a token the agent refreshed is used from
+    /// the next poll on. A read that fails, or that finds nothing without the Keychain, keeps
+    /// `cached` (such as the token one `connect_keychain` read) until it expires or is rejected.
+    /// `Err` carries what to record when no credentials can be sent.
+    async fn read_credentials(
+        self: &Arc<Self>,
+        profile: &ProfileId,
+        location: CredentialLocation,
+        cached: Option<Arc<ClaudeCredentials>>,
+        keychain_denied: bool,
+    ) -> Result<Result<Option<Arc<ClaudeCredentials>>, (QuotaOutcome, Status)>, DaemonError> {
+        let lookup = if keychain_denied {
+            location.without_keychain()
+        } else {
+            location
+        };
+        let loaded = self
+            .blocking(ThreadPriority::Background, move |ctx| {
+                ClaudeCredentials::load(&lookup, &*ctx.settings.secrets)
+            })
+            .await?;
+        let denied = Err((QuotaOutcome::KeychainDenied, Status::KeychainDenied));
+        Ok(match (loaded, cached) {
+            (Ok(Some(credentials)), _) => Ok(Some(Arc::new(credentials))),
+            (Ok(None), Some(cached)) if keychain_denied => Ok(Some(cached)),
+            // Without the Keychain, finding no file says nothing about being signed in.
+            (Ok(None), None) if keychain_denied => denied,
+            (Ok(None), _) => Ok(None),
+            (Err(error), cached) if error.is_keychain_denied() => {
+                tracing::warn!(
+                    profile = %profile,
+                    "the Keychain denied access to the Claude credentials; \
+                     not asking again until `tokenmtr quota connect` or a restart"
+                );
+                if let Some(state) = lock(&self.run).quota.profiles.get_mut(profile) {
+                    state.keychain_denied = true;
+                }
+                cached.map_or(denied, |cached| Ok(Some(cached)))
+            }
+            (Err(_), Some(cached)) => Ok(Some(cached)),
+            (Err(error), None) => {
+                tracing::warn!(%profile, %error, "cannot read the Claude credentials");
+                Err((QuotaOutcome::Failed, Status::Failed))
+            }
         })
     }
 
