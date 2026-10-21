@@ -9,7 +9,7 @@ use reqwest::{Client, Response, StatusCode, Url};
 
 use crate::error::{NetworkKind, RemoteError};
 
-/// `User-Agent` of every request: `<brand CLI name>/<workspace version>`, e.g. `tokenmtr/0.2.0`.
+/// `User-Agent` of every request: `<brand CLI name>/<workspace version>`, e.g. `tokenmtr/0.3.0`.
 #[must_use]
 pub fn user_agent() -> String {
     format!(
