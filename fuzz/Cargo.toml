@@ -15,9 +15,11 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 jiff = "0.2"
+rusqlite = "0.40"
 tokenmtr-agents = { path = "../crates/tokenmtr-agents" }
 tokenmtr-config = { path = "../crates/tokenmtr-config" }
 tokenmtr-core = { path = "../crates/tokenmtr-core" }
+tokenmtr-import = { path = "../crates/tokenmtr-import" }
 tokenmtr-metrics = { path = "../crates/tokenmtr-metrics" }
 tokenmtr-platform = { path = "../crates/tokenmtr-platform" }
 tokenmtr-remote = { path = "../crates/tokenmtr-remote" }
@@ -81,6 +83,13 @@ bench = false
 [[bin]]
 name = "host_files"
 path = "fuzz_targets/host_files.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "export_row"
+path = "fuzz_targets/export_row.rs"
 test = false
 doc = false
 bench = false

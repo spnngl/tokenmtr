@@ -7,7 +7,7 @@ Every rule of the product lives in `crates/`; `apps/` only wire crates to a UI o
 - Apps depend on crates; a crate never depends on an app. A Tauri command or a CLI subcommand parses its input, calls into the crates and formats the answer; the logic stays in the crate, so a second front end reuses it.
 - `tokenmtr-core` is pure (bytes in, values out). IO lives in the crate that owns it: files in `tokenmtr-agents` and `tokenmtr-store`, network in `tokenmtr-remote`, OS services in `tokenmtr-platform`.
 - `tokenmtr-metrics` computes and encodes Prometheus metrics (store in, bytes out) and opens no socket; `tokenmtr-remote` serves and pushes them, and `tokenmtr-daemon` runs them.
-- Closed sets are enums whose variants wrap a trait implementation: `AgentKind` (`AgentSource`), `SinkKind` (`Sink`), `ConfigFormat` (`ConfigCodec`), `PlatformKind` (`Platform`). Add a variant and let the compiler's exhaustive matches list the places to update.
+- Closed sets are enums whose variants wrap a trait implementation: `AgentKind` (`AgentSource`), `SinkKind` (`Sink`), `ImportKind` (`ImportSource`), `ConfigFormat` (`ConfigCodec`), `PlatformKind` (`Platform`). Add a variant and let the compiler's exhaustive matches list the places to update.
 
 ## Privacy guardrails
 
@@ -20,5 +20,6 @@ Every rule of the product lives in `crates/`; `apps/` only wire crates to a UI o
 ## Branches
 
 - Changing a control-channel message (`crates/tokenmtr-control/src/protocol.rs`): read `docs/control-protocol.md` "Versioning" first, and update its message table.
+- Adding a source kind (rows read from other machines): follow `docs/adding-a-source.md`.
 - Porting to another OS (`tokenmtr-platform`): follow `docs/adding-a-platform.md`.
 - Adding a parser of outside data (agent file, HTTP response, config): add a fuzz target per `fuzz/AGENTS.md`.
