@@ -10,6 +10,7 @@ use tokenmtr_core::SourceId;
 use tokenmtr_import::{ImportOptions, ImportReport, ImportSpec, import_pending};
 use tokenmtr_platform::ThreadPriority;
 
+use crate::alerts::Evaluation;
 use crate::changes::std_duration;
 use crate::ctx::{Ctx, Job, lock};
 use crate::error::DaemonError;
@@ -85,6 +86,9 @@ impl Ctx {
         if reports.iter().any(|report| report.rows() > 0) {
             // Imported rows move the heads and count in budgets.
             self.after_write(true);
+        } else if reports.iter().any(|report| !report.failures.is_empty()) {
+            // A streak of failures may just have outlived `source_failing_after`.
+            self.evaluate_alerts(Evaluation::default());
         }
         reports
     }

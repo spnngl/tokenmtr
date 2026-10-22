@@ -116,5 +116,83 @@
         }
       ]
     }
+  ],
+  "sources": [
+    {
+      "source": "superset",
+      "kind": "superset",
+      "state": "healthy",
+      "files": 0,
+      "machines": 0,
+      "events": 0,
+      "tool_calls": 0,
+      "last_success_at": null,
+      "recent_runs": []
+    },
+    {
+      "source": "laptop",
+      "kind": "sqlite",
+      "state": "healthy",
+      "files": 1,
+      "machines": 1,
+      "events": 1842,
+      "tool_calls": 311,
+      "last_success_at": "2026-05-03T14:05:03Z",
+      "recent_runs": [
+        {
+          "path": null,
+          "started_at": "2026-05-03T14:05:00Z",
+          "finished_at": "2026-05-03T14:05:03Z",
+          "rows": 12,
+          "error": null
+        },
+        {
+          "path": null,
+          "started_at": "2026-05-03T14:00:00Z",
+          "finished_at": "2026-05-03T14:00:01Z",
+          "rows": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "source": "workstation",
+      "kind": "sqlite",
+      "state": "failing",
+      "since": "2026-05-03T13:40:00Z",
+      "last_error": "the file has a version of the export this build cannot read",
+      "files": 0,
+      "machines": 0,
+      "events": 0,
+      "tool_calls": 0,
+      "last_success_at": null,
+      "recent_runs": [
+        {
+          "path": "/Users/ada/Library/CloudStorage/Dropbox/tokenmtr/laptop/export.db",
+          "started_at": "2026-05-03T14:10:00Z",
+          "finished_at": "2026-05-03T14:10:00Z",
+          "rows": 0,
+          "error": "the file has a version of the export this build cannot read"
+        },
+        {
+          "path": null,
+          "started_at": "2026-05-03T14:10:00Z",
+          "finished_at": "2026-05-03T14:10:00Z",
+          "rows": 0,
+          "error": "1 of the files failed; first: the file has a version of the export this build cannot read"
+        }
+      ]
+    },
+    {
+      "source": "old-desktop",
+      "kind": "sqlite",
+      "state": "disabled",
+      "files": 2,
+      "machines": 1,
+      "events": 9120,
+      "tool_calls": 1450,
+      "last_success_at": "2026-04-20T09:00:04Z",
+      "recent_runs": []
+    }
   ]
 }

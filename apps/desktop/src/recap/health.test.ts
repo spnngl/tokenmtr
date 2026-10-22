@@ -19,6 +19,7 @@ describe("summarizeHealth", () => {
       daemon: RUNNING,
       sinks: [HEALTHY_SINK],
       metrics: [],
+      sources: [],
     };
     expect(summarizeHealth(system)).toEqual({ level: "ok", label: "Healthy" });
   });
@@ -29,6 +30,7 @@ describe("summarizeHealth", () => {
       daemon: { state: "stale", last_heartbeat: null, age_secs: 900 },
       sinks: [FAILING_SINK],
       metrics: [],
+      sources: [],
     };
     expect(summarizeHealth(system).label).toBe("Daemon offline");
   });
@@ -39,6 +41,7 @@ describe("summarizeHealth", () => {
       daemon: RUNNING,
       sinks: [FAILING_SINK, { ...FAILING_SINK, sink: "sheet" }],
       metrics: [],
+      sources: [],
     };
     expect(summarizeHealth(system).label).toBe("2 sinks failing");
   });
@@ -59,11 +62,37 @@ describe("summarizeHealth", () => {
           recent_runs: [],
         },
       ],
+      sources: [],
     };
     expect(summarizeHealth(system)).toEqual({
       level: "warning",
       label: "1 metrics output failing",
     });
+  });
+
+  it("names failing sources after metrics outputs", () => {
+    const system: SystemHealth = {
+      level: "warning",
+      daemon: RUNNING,
+      sinks: [HEALTHY_SINK],
+      metrics: [],
+      sources: [
+        {
+          state: "failing",
+          since: "2026-06-15T09:00:00Z",
+          last_error: "database is locked",
+          source: "laptop",
+          kind: "sqlite",
+          files: 1,
+          machines: 1,
+          events: 10,
+          tool_calls: 3,
+          last_success_at: null,
+          recent_runs: [],
+        },
+      ],
+    };
+    expect(summarizeHealth(system)).toEqual({ level: "warning", label: "1 source failing" });
   });
 
   it("reports lag as a warning", () => {
@@ -72,6 +101,7 @@ describe("summarizeHealth", () => {
       daemon: RUNNING,
       sinks: [{ ...BASE, state: "lagging" }],
       metrics: [],
+      sources: [],
     };
     expect(summarizeHealth(system)).toEqual({ level: "warning", label: "1 sink lagging" });
   });

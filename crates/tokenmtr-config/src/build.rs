@@ -394,6 +394,10 @@ fn build_alerts(raw: &RawConfig) -> AlertSettings {
                 &defaults.budget_thresholds,
             ),
             sink_failing_after: duration_or(alerts.sink_failing_after, defaults.sink_failing_after),
+            source_failing_after: duration_or(
+                alerts.source_failing_after,
+                defaults.source_failing_after,
+            ),
         },
         daemon_stale_after: duration_or(alerts.daemon_stale_after, SignedDuration::from_mins(15)),
     }

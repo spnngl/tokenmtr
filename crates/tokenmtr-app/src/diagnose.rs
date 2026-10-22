@@ -7,7 +7,7 @@ use tokenmtr_config::Env;
 use tokenmtr_platform::{ControlTransport, Paths, ServiceManager, ServiceStatus};
 use tokenmtr_store::{SCHEMA_VERSION, StoreRead, StoreReader};
 
-use crate::context::sink_dirs;
+use crate::context::external_dirs;
 use crate::guard::daemon_running;
 use crate::settings::{load_config, store_path};
 
@@ -79,7 +79,7 @@ pub fn diagnose(
     };
     diagnosis.store_schema = reader.schema_version().ok();
     let ingest = Ingestor::open(IngestSettings::from_config(&config, paths, env), &store)
-        .and_then(|ingestor| ingestor.doctor(&reader, &sink_dirs(paths, &config)));
+        .and_then(|ingestor| ingestor.doctor(&reader, &external_dirs(paths, &config)));
     match ingest {
         Ok(report) => diagnosis.ingest = Some(report),
         Err(error) => diagnosis.store_error = Some(error.to_string()),

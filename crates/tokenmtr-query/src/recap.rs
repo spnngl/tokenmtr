@@ -21,6 +21,7 @@ use crate::metrics_health::{MetricsHealth, MetricsSpec, metrics_health};
 use crate::quota::{QuotaMeter, quota_latest};
 use crate::range::{Bucket, DateRange, Period};
 use crate::series::{GroupBy, series};
+use crate::source_health::{SourceHealth, SourceKind, SourceSpec, source_health};
 
 /// What a budget applies to; `None` is "everything".
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -236,6 +237,8 @@ pub struct RecapConfig {
     pub sinks: Vec<SinkSpec>,
     /// Metrics outputs.
     pub metrics: Vec<MetricsSpec>,
+    /// Sources.
+    pub sources: Vec<SourceSpec>,
     /// Window of the live rate.
     pub live_window: SignedDuration,
     /// Heartbeat age after which the daemon counts as stale.
@@ -325,6 +328,8 @@ pub struct SystemHealth {
     pub sinks: Vec<SinkHealth>,
     /// Metrics outputs; empty when none is configured.
     pub metrics: Vec<MetricsHealth>,
+    /// Sources; empty when none is configured.
+    pub sources: Vec<SourceHealth>,
 }
 
 fn system_health(
@@ -335,6 +340,7 @@ fn system_health(
     let daemon = daemon_health(reader, ctx, cfg.daemon_stale_after)?;
     let sinks = sink_health(reader, ctx, &cfg.sinks)?;
     let metrics = metrics_health(reader, &cfg.metrics)?;
+    let sources = source_health(reader, &cfg.sources)?;
     let sink_level = match sinks.iter().map(|s| s.state.severity()).max() {
         Some(2) => HealthLevel::Error,
         Some(1) => HealthLevel::Warning,
@@ -345,16 +351,30 @@ fn system_health(
     } else {
         HealthLevel::Ok
     };
+    // A failing import is a warning at worst: it never blocks this machine'"''"'s own tracking. A
+    // drifted integration only lowers attribution, like its informational parse issue.
+    let sources_level = if sources
+        .iter()
+        .any(|s| s.kind == SourceKind::Sqlite && s.state.severity() > 0)
+    {
+        HealthLevel::Warning
+    } else {
+        HealthLevel::Ok
+    };
     let daemon_level = if daemon.state == DaemonState::Stale {
         HealthLevel::Warning
     } else {
         HealthLevel::Ok
     };
     Ok(SystemHealth {
-        level: sink_level.max(daemon_level).max(metrics_level),
+        level: sink_level
+            .max(daemon_level)
+            .max(metrics_level)
+            .max(sources_level),
         daemon,
         sinks,
         metrics,
+        sources,
     })
 }
 

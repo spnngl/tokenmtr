@@ -79,14 +79,17 @@
 //! | [`quota_latest`], [`quota_history`], [`advisor`] | [`QuotaMeter`], [`QuotaHistory`], [`AdvisorReport`] |
 //! | [`budgets`] | [`BudgetView`]: spent, limit, percent, projected |
 //! | [`recap`], [`status`] | [`Recap`], [`Status`] |
-//! | [`sink_health`], [`metrics_health`], [`daemon_health`], [`ingest_status`], [`parse_issues`], [`alerts`], [`backup_runs`], [`fx_rates`] | health views |
+//! | [`sink_health`], [`metrics_health`], [`source_health`], [`daemon_health`], [`ingest_status`], [`parse_issues`], [`alerts`], [`backup_runs`], [`fx_rates`] | health views |
 //!
 //! [`Recap`] and [`Status`] carry `status_schema` = [`STATUS_SCHEMA`] (`1`),
 //! `generated_at`, and `system` (`level` of `ok`/`warning`/`error`, `daemon`,
-//! `sinks`, `metrics`). Bump the schema on any breaking change. Sink health is tagged by
+//! `sinks`, `metrics`, `sources`). Bump the schema on any breaking change. Sink health is tagged by
 //! `state`: `healthy`, `lagging`, `failing` (with `since`, `last_error`) or
 //! `disabled`. Metrics output health is tagged likewise, by `healthy` or `failing`, and carries
-//! `output`, `kind` (`exporter` or `remote_write`), `last_success_at` and `recent_runs`.
+//! `output`, `kind` (`exporter` or `remote_write`), `last_success_at` and `recent_runs`. Source health
+//! is tagged by `healthy`, `failing` (with `since`, `last_error`) or `disabled`, and carries
+//! `source`, `kind` (`superset` or `sqlite`), `files`, `machines`, `events`, `tool_calls`,
+//! `last_success_at` and `recent_runs` (a run with no `path` is a whole pass).
 
 mod billing;
 mod billing_series;
@@ -106,6 +109,7 @@ mod recap;
 mod series;
 mod session_analytics;
 mod session_models;
+mod source_health;
 mod usage;
 
 pub use billing::{BillingMonth, BillingReport, SubscriptionLine, billing};
@@ -150,6 +154,10 @@ pub use session_analytics::{
     TimelineTool, session_analytics, session_timeline,
 };
 pub use session_models::{SessionModel, SignalModel, ToolModelCalls};
+pub use source_health::{
+    SOURCE_HEALTH_RUNS, SOURCE_RECENT_RUNS, SourceHealth, SourceKind, SourceRunView, SourceSpec,
+    SourceState, import_state, source_health,
+};
 pub use usage::Usage;
 
 #[cfg(test)]

@@ -36,6 +36,7 @@ Other `--json` outputs (`alerts`, `quota`, `fx`, `pricing`, `backup`, `doctor`, 
 | `system.daemon.last_heartbeat`, `age_secs` | timestamp, integer or `null` | Latest heartbeat and its age. |
 | `system.sinks[]` | object | One entry per configured sink (below). |
 | `system.metrics[]` | object | One entry per configured metrics output, exporters first (below). Added within schema 1; absent from older documents. |
+| `system.sources[]` | object | One entry per `[[sources]]` (below), the implicit Superset one included. Added within schema 1; absent from older documents. |
 | `agents[]` | recap | One recap per agent in `menubar.agents`. |
 
 A sink entry:
@@ -59,6 +60,21 @@ A metrics output entry:
 | `since`, `last_error` | timestamp, string | Present only when `state` is `failing`. |
 | `last_success_at` | timestamp or `null` | |
 | `recent_runs[]` | object | Newest first, at most 10: `started_at`, `finished_at`, `series` (pushed; `0` for a bind), `error`. |
+
+A source entry (also the output of `tokenmtr sources --json`, an array of them):
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `source` | string | Source id. |
+| `kind` | `superset` \| `sqlite` | |
+| `state` | `healthy` \| `failing` \| `disabled` | `sqlite`: failing from the first of the trailing passes that failed. `superset`: failing while its database has an unknown shape. |
+| `since`, `last_error` | timestamp, string | Present only when `state` is `failing`. |
+| `files`, `machines` | integer | Export files and machines the source holds rows of (`0` for `superset`). |
+| `events`, `tool_calls` | integer | Rows imported from it and still stored (`0` for `superset`). |
+| `last_success_at` | timestamp or `null` | |
+| `recent_runs[]` | object | Newest first, at most 10: `path` (`null` for a whole pass), `started_at`, `finished_at`, `rows`, `error`. |
+
+`tokenmtr sources import [<id>] --json` prints an array of `{source, files_read, rows, error}`; `tokenmtr sources forget <id> --json` prints `{source, events, tool_calls}`.
 
 A recap (also the body of `recap --json`):
 
@@ -95,7 +111,8 @@ The window `extra_usage` is Claude's pay-as-you-go spend this month: `used_perce
     "level": "ok",
     "daemon": { "state": "running", "last_heartbeat": "2026-10-18T14:11:50Z", "age_secs": 9 },
     "sinks": [],
-    "metrics": []
+    "metrics": [],
+    "sources": []
   },
   "agents": [
     {
@@ -165,7 +182,7 @@ The example omits `totals` fields for brevity; real output carries all of them.
 {
   "status_schema": 1,
   "generated_at": "2026-10-18T14:11:59.892069Z",
-  "system": { "level": "ok", "daemon": { "state": "never_started", "last_heartbeat": null, "age_secs": null }, "sinks": [], "metrics": [] },
+  "system": { "level": "ok", "daemon": { "state": "never_started", "last_heartbeat": null, "age_secs": null }, "sinks": [], "metrics": [], "sources": [] },
   "agent": "claude",
   "period": "today",
   "range": { "start": "2026-10-18", "end": "2026-10-19" },

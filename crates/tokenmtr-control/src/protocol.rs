@@ -8,11 +8,11 @@
 use camino::Utf8PathBuf;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use tokenmtr_core::{AgentId, Alert, SinkId};
+use tokenmtr_core::{AgentId, Alert, SinkId, SourceId};
 
 /// The protocol version this build speaks. Bumped on any change an older peer would misread; a
 /// daemon answers a [`Request::Hello`] with another version with [`Response::Incompatible`].
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// A dataset whose rows changed.
 pub use tokenmtr_core::Dataset;
@@ -50,6 +50,11 @@ pub enum Request {
     ExportNow {
         /// Restrict the export to this sink.
         sink: Option<SinkId>,
+    },
+    /// Import the `sqlite` sources now, all of them or one.
+    ImportNow {
+        /// Restrict the import to this source.
+        source: Option<SourceId>,
     },
     /// Write a backup now.
     BackupNow,
@@ -120,6 +125,8 @@ pub enum Response {
     Scanned(ScanSummary),
     /// Answer to [`Request::ExportNow`].
     Exported(ExportSummary),
+    /// Answer to [`Request::ImportNow`].
+    Imported(ImportSummary),
     /// Answer to [`Request::BackupNow`].
     BackedUp(BackupSummary),
     /// Answer to [`Request::Reprice`].
@@ -255,6 +262,26 @@ pub struct SinkExportSummary {
     /// Rows delivered.
     pub rows: u64,
     /// Why the run stopped early.
+    pub error: Option<String>,
+}
+
+/// Result of an import run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportSummary {
+    /// One entry per source that ran.
+    pub sources: Vec<SourceImportSummary>,
+}
+
+/// One source'"'"'s run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceImportSummary {
+    /// The source.
+    pub source: SourceId,
+    /// Files read.
+    pub files_read: u64,
+    /// Rows written (events and tool calls).
+    pub rows: u64,
+    /// The first failure of the run, when a file or folder failed.
     pub error: Option<String>,
 }
 

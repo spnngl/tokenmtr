@@ -57,4 +57,5 @@ export const EXPORT_HEALTH: SystemHealth = {
   daemon: { state: "running", last_heartbeat: "2026-05-21T12:04:00Z", age_secs: 20 },
   sinks: [SINK_HEALTHY, SINK_LAGGING, SINK_FAILING, SINK_DISABLED],
   metrics: [],
+  sources: [],
 };

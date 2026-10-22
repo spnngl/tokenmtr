@@ -120,17 +120,19 @@ pub struct DoctorReport {
     pub unresolved_cwds: Vec<Utf8PathBuf>,
     /// Working directories under a macOS protected folder.
     pub protected_cwds: Vec<Utf8PathBuf>,
-    /// Sink directories under a macOS protected folder.
-    pub protected_sinks: Vec<Utf8PathBuf>,
+    /// Directories outside the agents'' roots that the config makes the daemon read or write
+    /// (sink folders, source include folders) under a macOS protected folder.
+    pub protected_external: Vec<Utf8PathBuf>,
 }
 
 impl Ingestor {
-    /// Inspects roots, checkpoints, issues, projects and retention. Reads only. `sink_dirs` are
-    /// the directories of the configured file sinks, checked against the protected folders.
+    /// Inspects roots, checkpoints, issues, projects and retention. Reads only. `external_dirs`
+    /// are the folders of the configured sinks and sources, checked against the protected
+    /// folders.
     pub fn doctor(
         &self,
         store: &impl StoreRead,
-        sink_dirs: &[Utf8PathBuf],
+        external_dirs: &[Utf8PathBuf],
     ) -> Result<DoctorReport, IngestError> {
         let now = Timestamp::now();
         let mut agents = Vec::new();
@@ -173,7 +175,7 @@ impl Ingestor {
                 .collect(),
             unresolved_cwds: store.unresolved_cwds()?,
             protected_cwds,
-            protected_sinks: sink_dirs
+            protected_external: external_dirs
                 .iter()
                 .filter(|dir| self.under_protected(dir))
                 .cloned()

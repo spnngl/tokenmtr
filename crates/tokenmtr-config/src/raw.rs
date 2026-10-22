@@ -221,6 +221,7 @@ pub struct RawAlerts {
     pub quota_reset: Option<bool>,
     pub budget_thresholds: Option<Vec<Percent>>,
     pub sink_failing_after: Option<RawDuration>,
+    pub source_failing_after: Option<RawDuration>,
     pub daemon_stale_after: Option<RawDuration>,
 }
 

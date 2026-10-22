@@ -39,6 +39,7 @@ function rowOf(session: SessionSeed, currency: Currency): SessionRow {
     last_at: iso(session.startedAtMs + session.durationSecs * 1000),
     duration_secs: session.durationSecs,
     project: session.project,
+    machine: null,
     models: [...session.models],
     tool_calls: session.toolCalls,
     tool_errors: session.toolErrors,
@@ -77,7 +78,14 @@ const MAX_EVENTS = 60;
 export function sessionDetailOf(agent: string, session: string, currency: Currency): SessionDetail {
   const seed = find(agent, session);
   if (seed === undefined) {
-    return { currency, events: [], events_truncated: false, tool_calls: [], signals: [] };
+    return {
+      currency,
+      machine: null,
+      events: [],
+      events_truncated: false,
+      tool_calls: [],
+      signals: [],
+    };
   }
   const rng = createRng(hashString(session));
   const count = Math.min(seed.usage.events, MAX_EVENTS);
@@ -116,6 +124,7 @@ export function sessionDetailOf(agent: string, session: string, currency: Curren
   ]);
   return {
     currency,
+    machine: null,
     events,
     events_truncated: seed.usage.events > MAX_EVENTS,
     tool_calls: toolCalls,

@@ -69,6 +69,39 @@ const metricsHealthSchema = z.discriminatedUnion("state", [
 ]);
 export type MetricsHealth = z.infer<typeof metricsHealthSchema>;
 
+const sourceRunSchema = z.object({
+  /** `null` for a whole pass. */
+  path: z.string().nullable(),
+  started_at: timestampSchema,
+  finished_at: timestampSchema,
+  rows: countSchema,
+  error: z.string().nullable(),
+});
+
+/** `SourceState` is flattened into `SourceHealth`, tagged by `state`. */
+const sourceShape = {
+  source: z.string(),
+  kind: z.enum(["superset", "sqlite"]),
+  files: countSchema,
+  machines: countSchema,
+  events: countSchema,
+  tool_calls: countSchema,
+  last_success_at: timestampSchema.nullable(),
+  recent_runs: z.array(sourceRunSchema),
+} as const;
+
+const sourceHealthSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("healthy"), ...sourceShape }),
+  z.object({
+    state: z.literal("failing"),
+    since: timestampSchema,
+    last_error: z.string(),
+    ...sourceShape,
+  }),
+  z.object({ state: z.literal("disabled"), ...sourceShape }),
+]);
+export type SourceHealth = z.infer<typeof sourceHealthSchema>;
+
 export const daemonHealthSchema = z.object({
   state: z.enum(["running", "stale", "never_started"]),
   last_heartbeat: timestampSchema.nullable(),
@@ -79,12 +112,13 @@ const HEALTH_LEVELS = ["ok", "warning", "error"] as const;
 const healthLevelSchema = z.enum(HEALTH_LEVELS);
 export type HealthLevel = z.infer<typeof healthLevelSchema>;
 
-/** Worst of daemon, sinks and metrics outputs: the menu-bar status dot. */
+/** Worst of daemon, sinks, metrics outputs and sqlite sources: the menu-bar status dot. */
 export const systemHealthSchema = z.object({
   level: healthLevelSchema,
   daemon: daemonHealthSchema,
   sinks: z.array(sinkHealthSchema),
   metrics: z.array(metricsHealthSchema),
+  sources: z.array(sourceHealthSchema),
 });
 export type SystemHealth = z.infer<typeof systemHealthSchema>;
 
@@ -153,6 +187,12 @@ export const alertSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("metrics_failing"),
     output: z.string(),
+    since: timestampSchema,
+    ...alertShape,
+  }),
+  z.object({
+    kind: z.literal("source_failing"),
+    source: z.string(),
     since: timestampSchema,
     ...alertShape,
   }),

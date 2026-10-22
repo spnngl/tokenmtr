@@ -240,6 +240,7 @@ fn every_message_round_trips() -> TestResult {
         Request::Status,
         Request::ScanNow { agent: None },
         Request::ExportNow { sink: None },
+        Request::ImportNow { source: None },
         Request::BackupNow,
         Request::Reprice { all: true },
         Request::RefreshQuota,

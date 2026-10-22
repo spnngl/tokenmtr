@@ -12,15 +12,16 @@ use tokenmtr_agents::ingest::{
     DoctorReport, IngestSettings, Ingestor, ScanPriority, ScanReport, ScanRequest,
 };
 use tokenmtr_agents::{AgentKind, AgentSource, claude};
-use tokenmtr_config::{Config, Env, GitName, MenubarRing, RawProject};
-use tokenmtr_core::{AgentId, Plan, ProfileId, SubscriptionSpec};
+use tokenmtr_config::{Config, Env, GitName, MenubarRing, RawProject, SourceTarget};
+use tokenmtr_core::{AgentId, Plan, ProfileId, SourceId, SubscriptionSpec};
 use tokenmtr_export::Target;
+use tokenmtr_import::{ImportOptions, ImportReport, ImportSpec, import_pending};
 use tokenmtr_platform::{ControlTransport, Paths};
 use tokenmtr_query::{
     AlertView, BackupView, BudgetSpec, DateRange, Filters, FxRateView, Period, QueryContext,
     QuotaMeter, Recap, RecapConfig, Selection, SinkSpec, Status,
 };
-use tokenmtr_store::{BackupRun, RepriceScope, Store, StoreRead, StoreReader};
+use tokenmtr_store::{BackupRun, ImportedRows, RepriceScope, Store, StoreRead, StoreReader};
 
 use crate::backup::{BackupFile, backup_path, list_backups, prune_backups};
 use crate::error::AppError;
@@ -94,6 +95,33 @@ pub struct PricingSummary {
     pub snapshot: Option<PricingSnapshotInfo>,
     /// Models with unpriced events, most events first.
     pub unpriced_models: Vec<UnpricedModel>,
+}
+
+/// What one import run did for one source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceImport {
+    /// The source.
+    pub source: SourceId,
+    /// Files read.
+    pub files_read: u64,
+    /// Rows written (events and tool calls).
+    pub rows: u64,
+    /// The first failure of the run, when a file or folder failed.
+    pub error: Option<String>,
+}
+
+impl From<&ImportReport> for SourceImport {
+    fn from(report: &ImportReport) -> Self {
+        Self {
+            source: report.source.clone(),
+            files_read: report.read,
+            rows: report.rows(),
+            error: report
+                .failures
+                .first()
+                .map(|failure| failure.error.to_string()),
+        }
+    }
 }
 
 /// The loaded config, the file locations and a read-only store.
@@ -552,6 +580,59 @@ impl AppContext {
         Ok(ingestor.reprice(&mut store, scope)?)
     }
 
+    /// Imports the enabled `sqlite` sources (or only `only`) while no daemon runs.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::DaemonRunning`] (ask the daemon instead); [`AppError::InvalidRequest`] when
+    /// `only` is not an enabled `sqlite` source; store failures. A file that cannot be read is
+    /// in its report, not an error.
+    pub fn import_direct(&self, only: Option<&SourceId>) -> Result<Vec<SourceImport>, AppError> {
+        let specs: Vec<ImportSpec> = self
+            .config
+            .sources
+            .iter()
+            .filter(|source| source.enabled)
+            .filter(|source| only.is_none_or(|id| *id == source.id))
+            .filter_map(|source| ImportSpec::from_config(source, self.config.privacy.redact_paths))
+            .collect();
+        if let (Some(id), true) = (only, specs.is_empty()) {
+            return Err(AppError::InvalidRequest(format!(
+                "no enabled sqlite source named `{id}`"
+            )));
+        }
+        let _lock = lock_daemon(&self.transport, Duration::ZERO)?;
+        let mut store = Store::open(&self.store_path)?;
+        Ok(specs
+            .iter()
+            .map(|spec| import_pending(&mut store, spec, &ImportOptions::default(), &|| false))
+            .map(|report| SourceImport::from(&report))
+            .collect())
+    }
+
+    /// Deletes the rows imported for `source` and the cursors that tracked them. The files are
+    /// untouched, so enabling the source again imports everything again.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::InvalidRequest`] while the config still enables the source (its next import
+    /// would bring everything back); [`AppError::DaemonRunning`]; store failures.
+    pub fn forget_source(&self, source: &SourceId) -> Result<ImportedRows, AppError> {
+        let enabled = self.config.sources.iter().any(|candidate| {
+            candidate.id == *source
+                && candidate.enabled
+                && matches!(candidate.target, SourceTarget::Sqlite(_))
+        });
+        if enabled {
+            return Err(AppError::InvalidRequest(format!(
+                "source `{source}` is still enabled: disable or remove it in the config first"
+            )));
+        }
+        let _lock = lock_daemon(&self.transport, Duration::ZERO)?;
+        let mut store = Store::open(&self.store_path)?;
+        Ok(store.forget_source(source)?)
+    }
+
     /// What `doctor` reports about agent files, checkpoints, issues and retention.
     ///
     /// # Errors
@@ -559,23 +640,31 @@ impl AppContext {
     /// [`AppError::Ingest`].
     pub fn ingest_report(&self) -> Result<DoctorReport, AppError> {
         let ingestor = Ingestor::open(self.ingest_settings(), &self.store_path)?;
-        Ok(ingestor.doctor(&self.reader, &sink_dirs(&self.paths, &self.config))?)
+        Ok(ingestor.doctor(&self.reader, &external_dirs(&self.paths, &self.config))?)
     }
 }
 
-/// The directories of the configured sinks, checked against protected folders.
+/// The folders outside the agents'' roots the config points at, checked against protected
+/// folders: the directories of the configured sinks, and the folders the enabled `sqlite`
+/// sources read.
 #[must_use]
-pub fn sink_dirs(paths: &Paths, config: &Config) -> Vec<Utf8PathBuf> {
-    config
-        .sinks
-        .iter()
-        .filter_map(|sink| {
+pub fn external_dirs(paths: &Paths, config: &Config) -> Vec<Utf8PathBuf> {
+    let sinks =
+        config.sinks.iter().filter_map(|sink| {
             match tokenmtr_export::SinkSpec::from_config(sink, &paths.exports_dir()).target {
                 Target::File(file) => Some(file.dir),
                 Target::Sqlite(sqlite) => sqlite.path.parent().map(Utf8Path::to_owned),
             }
-        })
-        .collect()
+        });
+    let sources = config
+        .sources
+        .iter()
+        .filter(|source| source.enabled)
+        .flat_map(|source| match &source.target {
+            SourceTarget::Sqlite(sqlite) => tokenmtr_import::include_roots(&sqlite.include),
+            SourceTarget::Superset(_) => Vec::new(),
+        });
+    sinks.chain(sources).collect()
 }
 
 /// Every day the store can hold: from 2000 to tomorrow.

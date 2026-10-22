@@ -10,6 +10,7 @@ mod read;
 mod run;
 mod service;
 mod setup;
+mod sources;
 mod system;
 
 use anyhow::Context;
@@ -52,6 +53,8 @@ enum Command {
     Scan(data::ScanArgs),
     /// Re-estimate stored events with the active pricing snapshot.
     Reprice(data::RepriceArgs),
+    /// Show the sources, import other machines'' exports now, or forget a source'"''"'s rows.
+    Sources(sources::SourcesArgs),
     /// Check the config, the store, the daemon and the agents' files.
     Doctor(system::DoctorArgs),
     /// Install, remove or inspect the background service.
@@ -85,6 +88,7 @@ fn main() -> anyhow::Result<()> {
         Command::Erase(args) => data::erase(&setup, args),
         Command::Scan(args) => data::scan(&setup, args),
         Command::Reprice(args) => data::reprice(&setup, args),
+        Command::Sources(args) => sources::sources(&setup, args),
         Command::Doctor(args) => system::doctor(&setup, args),
         Command::Service(action) => service::service(&setup, action),
         Command::Quota(args) => read::quota(&setup, args),

@@ -136,6 +136,8 @@ const sessionRowSchema = z.object({
   last_at: timestampSchema,
   duration_secs: countSchema,
   project: z.string().nullable(),
+  /** `<source id> · <file stem>` of the machine an imported session ran on; `null` here. */
+  machine: z.string().nullable(),
   models: z.array(z.string()),
   tool_calls: countSchema,
   tool_errors: countSchema,
@@ -192,6 +194,8 @@ export const SIGNAL_KINDS = ["api_error", "compaction"] as const;
 
 export const sessionDetailSchema = z.object({
   currency: currencySchema,
+  /** `<source id> · <file stem>` of the machine an imported session ran on; `null` here. */
+  machine: z.string().nullable(),
   events: z.array(sessionEventSchema),
   /** More events exist than were returned. */
   events_truncated: z.boolean(),

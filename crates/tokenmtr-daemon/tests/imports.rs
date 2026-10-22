@@ -141,6 +141,46 @@ async fn a_disabled_source_never_opens_its_files() -> TestResult {
 }
 
 #[tokio::test]
+async fn import_now_reads_a_named_source_and_refuses_an_unknown_or_disabled_one() -> TestResult {
+    let env = Env::new()?;
+    let dir = env.home.join("shared");
+    let off = env.home.join("off");
+    export_to(&off.join("a.db"), "s1")?;
+    env.write_config(&format!(
+        "{}{}",
+        source_config("laptop", &dir, true),
+        source_config("off", &off, false)
+    ))?;
+    let daemon = env.start(fast_timing()).await?;
+    let mut client = env.client().await?;
+
+    // The folder did not exist at start; the file arrives, then the user asks.
+    export_to(&dir.join("a.db"), "s2")?;
+    let summary = client
+        .import_now(Some(SourceId::try_from("laptop")?))
+        .await?;
+    assert_eq!(summary.sources.len(), 1);
+    assert_eq!(imported(&env, "laptop")?, 1);
+    assert!(summary.sources[0].error.is_none());
+
+    assert!(
+        client
+            .import_now(Some(SourceId::try_from("off")?))
+            .await
+            .is_err()
+    );
+    assert!(
+        client
+            .import_now(Some(SourceId::try_from("nope")?))
+            .await
+            .is_err()
+    );
+    assert_eq!(client.import_now(None).await?.sources.len(), 1);
+    daemon.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_reload_enables_a_source_and_disabling_it_stops_the_imports() -> TestResult {
     let env = Env::new()?;
     let dir = env.home.join("shared");

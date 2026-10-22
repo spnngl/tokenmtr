@@ -3,13 +3,14 @@
 use jiff::Timestamp;
 use tokenmtr_app::{budget_specs, query_context};
 use tokenmtr_control::Event;
-use tokenmtr_core::alert::{BudgetState, DriftState, QuotaWindowStatus, SinkState};
+use tokenmtr_core::alert::{BudgetState, DriftState, QuotaWindowStatus, SinkState, SourceState};
 use tokenmtr_core::{AlertInputs, evaluate_alerts};
-use tokenmtr_query::budgets;
+use tokenmtr_query::{SOURCE_HEALTH_RUNS, SourceState as Health, budgets, import_state};
 use tokenmtr_store::{IssueKind, StoreRead};
 
 use crate::ctx::{Active, Ctx, lock};
 use crate::error::DaemonError;
+use crate::import::enabled_imports;
 
 /// What to look at besides the always-checked sinks, backups and format drift.
 #[derive(Debug, Default)]
@@ -60,6 +61,7 @@ impl Ctx {
         {
             let reader = lock(&self.reader);
             inputs.already_fired = reader.fired_alert_keys()?;
+            inputs.sources = Self::source_states(&active, &reader)?;
             inputs.drift = reader
                 .open_parse_issues()?
                 .into_iter()
@@ -82,6 +84,25 @@ impl Ctx {
             }
         }
         Ok(())
+    }
+
+    /// The enabled `sqlite` sources and since when each has been failing, from its run history.
+    fn source_states(
+        active: &Active,
+        reader: &tokenmtr_store::StoreReader,
+    ) -> Result<Vec<SourceState>, DaemonError> {
+        enabled_imports(&active.config)
+            .map(|source| {
+                let runs = reader.import_runs(&source.id, SOURCE_HEALTH_RUNS)?;
+                Ok(SourceState {
+                    id: source.id.clone(),
+                    failing_since: match import_state(&runs) {
+                        Health::Failing { since, .. } => Some(since),
+                        Health::Healthy | Health::Disabled => None,
+                    },
+                })
+            })
+            .collect()
     }
 
     /// Where every configured budget stands now.
