@@ -8,16 +8,13 @@ through the steps in order and finish each one before the next.
 Read first: [export-schema.md](export-schema.md), the rows a source kind reads back, and the crate
 doc of `tokenmtr-import` for the model.
 
-This page is about *import* kinds (`[[sources]]` that hold rows). A kind that only adds hints, like
-`superset`, lives in `tokenmtr-agents` instead.
-
 ## The contract
 
 An `ImportSource` is one opened file. It must:
 
-1. **Never lock or modify the original.** Copy first, read the copy: a sync client rewrites the
-   shared file at any moment. Refuse a copy taken while the file moved (`ImportError::Busy`); the
-   next pass retries it.
+1. **Read through a private copy.** A sync client rewrites the shared file at any moment. Fail a
+   copy taken while the file moved with `ImportError::Busy`; it is recorded as a failed run and
+   read at the next pass.
 2. **Check before it reads.** Reject a schema version the build does not map
    (`ImportError::Version`) and a table that lacks a column of `tokenmtr_export::schema`
    (`ImportError::MissingColumn`). Extra columns are ignored.

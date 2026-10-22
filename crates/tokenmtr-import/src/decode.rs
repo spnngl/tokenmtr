@@ -86,50 +86,51 @@ impl<'a> Cells<'a> {
             .transpose()
     }
 
-    fn integer(&mut self, name: &'static str) -> Result<i64, DecodeError> {
+    fn optional_integer(&mut self, name: &'static str) -> Result<Option<i64>, DecodeError> {
         match self.take(name)? {
-            (_, Value::Integer(n)) => Ok(*n),
-            (column, Value::Null) => Err(DecodeError {
-                column,
-                problem: Problem::Missing,
-            }),
+            (_, Value::Integer(n)) => Ok(Some(*n)),
+            (_, Value::Null) => Ok(None),
             (column, _) => Err(wrong(column)),
         }
     }
 
-    fn count(&mut self, name: &'static str) -> Result<u64, DecodeError> {
-        u64::try_from(self.integer(name)?).map_err(|_| DecodeError {
+    fn integer(&mut self, name: &'static str) -> Result<i64, DecodeError> {
+        self.optional_integer(name)?.ok_or(DecodeError {
             column: name,
-            problem: Problem::OutOfRange,
+            problem: Problem::Missing,
         })
     }
 
+    fn count(&mut self, name: &'static str) -> Result<u64, DecodeError> {
+        u64::try_from(self.integer(name)?).map_err(|_| out_of_range(name))
+    }
+
     fn boolean(&mut self, name: &'static str) -> Result<bool, DecodeError> {
-        match self.integer(name)? {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(DecodeError {
-                column: name,
-                problem: Problem::OutOfRange,
-            }),
-        }
+        self.optional_boolean(name)?.ok_or(DecodeError {
+            column: name,
+            problem: Problem::Missing,
+        })
     }
 
     fn optional_boolean(&mut self, name: &'static str) -> Result<Option<bool>, DecodeError> {
-        if matches!(self.values.get(self.next), Some(Value::Null)) {
-            self.next += 1;
-            return Ok(None);
-        }
-        self.boolean(name).map(Some)
+        self.optional_integer(name)?
+            .map(|n| match n {
+                0 => Ok(false),
+                1 => Ok(true),
+                _ => Err(out_of_range(name)),
+            })
+            .transpose()
     }
 
     fn optional_usd(&mut self, name: &'static str) -> Result<Option<UsdMicros>, DecodeError> {
-        if matches!(self.values.get(self.next), Some(Value::Null)) {
-            self.next += 1;
-            return Ok(None);
-        }
-        self.integer(name)
-            .map(|micros| Some(UsdMicros::new(micros)))
+        self.optional_integer(name)?
+            .map(|micros| {
+                if micros < 0 {
+                    return Err(out_of_range(name));
+                }
+                Ok(UsdMicros::new(micros))
+            })
+            .transpose()
     }
 
     fn instant(&mut self, name: &'static str) -> Result<Timestamp, DecodeError> {
@@ -138,6 +139,13 @@ impl<'a> Cells<'a> {
 
     fn skip(&mut self, name: &'static str) -> Result<(), DecodeError> {
         self.take(name).map(|_| ())
+    }
+}
+
+const fn out_of_range(column: &'static str) -> DecodeError {
+    DecodeError {
+        column,
+        problem: Problem::OutOfRange,
     }
 }
 

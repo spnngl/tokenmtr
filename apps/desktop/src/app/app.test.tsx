@@ -329,13 +329,10 @@ describe("Sessions", () => {
     const user = userEvent.setup();
     await renderApp("/sessions");
     const table = await screen.findByRole("region", { name: "Sessions, newest first" });
-    const cell = (await within(table).findAllByText("laptop · alice"))[0];
-    const row = cell?.closest("tr") ?? null;
+    const cell = first(await within(table).findAllByText("laptop · alice"));
+    const row = cell.closest<HTMLElement>("tr");
     expect(row).not.toBeNull();
-    if (row === null) {
-      return;
-    }
-    await user.click(first(within(row).getAllByRole("link")));
+    await user.click(first(within(row ?? table).getAllByRole("link")));
     expect(await screen.findByRole("heading", { name: "Imported session" })).toBeTruthy();
     expect(screen.getByText("laptop · alice")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy command" })).toBeNull();

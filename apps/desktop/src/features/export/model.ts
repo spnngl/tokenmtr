@@ -5,6 +5,7 @@ import {
   type SinkHealth,
   type SinkRun,
   type SourceHealth,
+  type SystemHealth,
 } from "../../shared/schemas";
 
 /** What each exported dataset (`tokenmtr-export`) holds. */
@@ -64,17 +65,9 @@ export function formatInstant(timestamp: string, timeZone: string): string {
   return `${formatDay(ms, timeZone)} ${formatClock(ms, timeZone)}`;
 }
 
-/** The file name a source run read, or "All files" for a whole pass. */
-export function sourceRunLabel(run: SourceHealth["recent_runs"][number]): string {
-  if (run.path === null) {
-    return "All files";
-  }
-  return run.path.split(/[\\/]/).pop() ?? run.path;
-}
-
-/** Whether a `sqlite` source is enabled: only then "Import now" has something to read. */
-export function canImport(sources: readonly SourceHealth[]): boolean {
-  return sources.some((source) => source.kind === "sqlite" && source.state !== "disabled");
+/** The sources that hold imported rows; a `superset` source only names projects and has no card. */
+export function sqliteSources(health: SystemHealth): readonly SourceHealth[] {
+  return health.sources.filter((source) => source.kind === "sqlite");
 }
 
 /** True when a sink is in a state worth an "Export now" or "Retry". */

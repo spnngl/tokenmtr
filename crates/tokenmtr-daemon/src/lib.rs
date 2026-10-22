@@ -9,7 +9,7 @@
 //!   config file;
 //! - one event-driven **export job per sink** with backoff;
 //! - one **import job per enabled `sqlite` source** (`import`): a pass over the files other
-//!   machines exported, on the source'"'"'s interval and when a file under its folders changes;
+//!   machines exported, on the source's interval and when a file under its folders changes;
 //! - the **metrics outputs** (`metrics`): one event-driven refresh job folding the store into a
 //!   snapshot per output, one scrape server per `[[metrics.exporters]]` entry and one push job
 //!   per `[[metrics.remote_write]]` entry, all armed only while configured;

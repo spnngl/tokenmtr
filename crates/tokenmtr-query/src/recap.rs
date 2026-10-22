@@ -476,10 +476,10 @@ fn live(
     Ok(total)
 }
 
-/// The newest live event; walks `usage_event_at` backwards to the first live row. Extra usage
+/// The newest live event of this machine; walks `usage_event_at` backwards to the first live row. Extra usage
 /// rows sit at local noon of the poll day, possibly ahead of now: they are spend, not activity.
-pub(crate) const LAST_ACTIVITY: &str =
-    "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0 AND kind <> 'extra_usage'";
+pub(crate) const LAST_ACTIVITY: &str = "SELECT MAX(at_us) FROM usage_event WHERE superseded = 0 AND kind <> 'extra_usage' \
+       AND +origin_machine IS NULL";
 
 /// The newest live event of agent `?1`. `agent = ?` alone picks the `(agent, dedup_key)` index
 /// and reads every row of the agent. Instead, this skips from profile to profile on
@@ -491,7 +491,7 @@ pub(crate) const LAST_ACTIVITY_OF_AGENT: &str = "WITH RECURSIVE p(profile) AS ( 
        FROM p WHERE p.profile IS NOT NULL) \
      SELECT MAX((SELECT MAX(at_us) FROM usage_event \
                  WHERE agent = ?1 AND profile = p.profile AND superseded = 0 \
-                   AND kind <> 'extra_usage')) \
+                   AND kind <> 'extra_usage' AND +origin_machine IS NULL)) \
      FROM p WHERE p.profile IS NOT NULL";
 
 fn last_activity(

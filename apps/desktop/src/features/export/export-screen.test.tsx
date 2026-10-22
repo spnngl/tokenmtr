@@ -11,9 +11,8 @@ import {
   SINK_DISABLED,
   SINK_FAILING,
   SINK_HEALTHY,
-  SOURCE_DISABLED,
 } from "./fixtures";
-import { canImport, datasetStatuses, looksLikeProtectedFolder, sourceRunLabel } from "./model";
+import { datasetStatuses, looksLikeProtectedFolder } from "./model";
 
 afterEach(cleanup);
 
@@ -43,27 +42,6 @@ describe("export model", () => {
     );
     expect(looksLikeProtectedFolder(SINK_HEALTHY)).toBe(false);
     expect(looksLikeProtectedFolder(SINK_DISABLED)).toBe(false);
-  });
-
-  it("offers an import only while a sqlite source is enabled", () => {
-    expect(canImport(EXPORT_HEALTH.sources)).toBe(false);
-    expect(canImport(EXPORT_HEALTH_WITH_SOURCES.sources)).toBe(true);
-    expect(canImport([SOURCE_DISABLED])).toBe(false);
-  });
-
-  it("names a source run by its file, or by the whole pass", () => {
-    expect(
-      sourceRunLabel({ path: null, started_at: "", finished_at: "", rows: 0, error: null }),
-    ).toBe("All files");
-    expect(
-      sourceRunLabel({
-        path: "/Users/dev/Dropbox/tokenmtr/laptop.db",
-        started_at: "",
-        finished_at: "",
-        rows: 0,
-        error: null,
-      }),
-    ).toBe("laptop.db");
   });
 
   it("keeps the newest run per dataset", () => {
@@ -125,10 +103,11 @@ describe("ExportScreen", () => {
   it("shows every source state with its error and run history", async () => {
     const { container } = renderScreen({ kind: "ready", data: EXPORT_HEALTH_WITH_SOURCES });
     expect(screen.getByRole("heading", { name: "Sources" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "superset" })).toBeNull();
     expect(screen.getByText(/Failing since .*: database is locked/)).toBeTruthy();
     expect(screen.getByText(/8,420 events, 1,310 tool calls/)).toBeTruthy();
     expect(
-      screen.getByText(/switched off in the config; its imported rows still count/),
+      screen.getByText(/Switched off in the config; its imported rows still count/),
     ).toBeTruthy();
     const runs = screen.getByRole("table", { name: "Run history of workstation", hidden: true });
     expect(within(runs).getByText("Failed")).toBeTruthy();

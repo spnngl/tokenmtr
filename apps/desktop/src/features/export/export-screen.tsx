@@ -4,7 +4,7 @@ import { formatCount } from "../../shared/format";
 import { type Remote, RemoteView } from "../../shared/remote-view";
 import type { SystemHealth } from "../../shared/schemas";
 import { Badge, type Column, DataTable, PageHeader, Section } from "../../shared/ui";
-import { canImport, type DatasetStatus, datasetStatuses, formatInstant } from "./model";
+import { type DatasetStatus, datasetStatuses, formatInstant, sqliteSources } from "./model";
 import { SinkCard } from "./sink-card";
 import { SourceCard } from "./source-card";
 
@@ -65,6 +65,7 @@ function ExportBody({
   readonly timeZone: string;
 }): ReactNode {
   const hasSinks = health.sinks.length > 0;
+  const sources = sqliteSources(health);
   return (
     <div className="flex flex-col gap-8">
       {health.daemon.state === "running" ? null : (
@@ -96,12 +97,12 @@ function ExportBody({
           </ul>
         </Section>
       ) : null}
-      {health.sources.length > 0 ? (
+      {sources.length > 0 ? (
         <Section
           title="Sources"
-          description="Where usage comes from besides this machine's agents. Imported rows count in every total, never in the Live block, and are never exported again."
+          description="Exports of your other machines. Imported rows count in every total, never in the Live block, and are never exported again."
           actions={
-            canImport(health.sources) ? (
+            sources.some((source) => source.state !== "disabled") ? (
               <Button variant="primary" isPending={isImporting} onPress={onImportNow}>
                 Import now
               </Button>
@@ -109,7 +110,7 @@ function ExportBody({
           }
         >
           <ul className="flex flex-col gap-3">
-            {health.sources.map((source) => (
+            {sources.map((source) => (
               <SourceCard key={source.source} source={source} timeZone={timeZone} />
             ))}
           </ul>
@@ -138,7 +139,7 @@ function ExportBody({
   );
 }
 
-/** The Export page: sink and source health, run history, datasets and the "Export now" and "Import now" actions. */
+/** The Export page: sinks, datasets and sources, each with its health and run history. */
 export function ExportScreen({
   remote,
   onExportNow,
@@ -153,7 +154,7 @@ export function ExportScreen({
       <RemoteView
         remote={remote}
         emptyWhen={(health) =>
-          health.sinks.length === 0 && !canImport(health.sources)
+          health.sinks.length === 0 && sqliteSources(health).length === 0
             ? {
                 title: "No export sink configured",
                 hint: "Add a sink in the config to mirror your usage data to a file or a database, or a source to read the exports of your other machines.",

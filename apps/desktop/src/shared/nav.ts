@@ -74,7 +74,7 @@ export const NAV_ITEMS = [
     to: "/export",
     label: "Export",
     icon: Download,
-    summary: "Sink health, run history, and manual export.",
+    summary: "Sink and source health, run history, export and import now.",
   },
   {
     to: "/settings",

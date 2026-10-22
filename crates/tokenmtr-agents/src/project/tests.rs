@@ -11,7 +11,7 @@ fn at() -> Timestamp {
 
 fn resolve(resolver: &ProjectResolver, cwd: &Utf8Path) -> Resolved {
     resolver
-        .resolve(cwd, at(), &mut Hints::off())
+        .resolve(cwd, at(), &mut Hints::superset(Vec::new()))
         .expect("non-blank cwd")
 }
 
@@ -172,7 +172,11 @@ fn a_file_as_cwd_is_unreadable_not_missing() {
 #[test]
 fn blank_cwds_resolve_to_nothing() {
     assert_eq!(
-        ProjectResolver::default().resolve(Utf8Path::new(" "), at(), &mut Hints::off()),
+        ProjectResolver::default().resolve(
+            Utf8Path::new(" "),
+            at(),
+            &mut Hints::superset(Vec::new())
+        ),
         None
     );
 }

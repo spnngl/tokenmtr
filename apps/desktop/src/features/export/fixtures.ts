@@ -68,7 +68,7 @@ export const EXPORT_HEALTH: SystemHealth = {
 
 const SOURCE_BASE = { machines: 1, files: 1, tool_calls: 0 } as const;
 
-export const SOURCE_SUPERSET: SourceHealth = {
+const SOURCE_SUPERSET: SourceHealth = {
   ...SOURCE_BASE,
   state: "healthy",
   source: "superset",
@@ -80,7 +80,7 @@ export const SOURCE_SUPERSET: SourceHealth = {
   recent_runs: [],
 };
 
-export const SOURCE_HEALTHY: SourceHealth = {
+const SOURCE_HEALTHY: SourceHealth = {
   ...SOURCE_BASE,
   state: "healthy",
   source: "laptop",
@@ -131,7 +131,7 @@ export const SOURCE_DISABLED: SourceHealth = {
   recent_runs: [],
 };
 
-/** [`EXPORT_HEALTH`] plus every source state. */
+/** [`EXPORT_HEALTH`] plus every source state; the Superset source never shows on the page. */
 export const EXPORT_HEALTH_WITH_SOURCES: SystemHealth = {
   ...EXPORT_HEALTH,
   sources: [SOURCE_SUPERSET, SOURCE_HEALTHY, SOURCE_FAILING, SOURCE_DISABLED],

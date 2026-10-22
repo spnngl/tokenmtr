@@ -1,4 +1,4 @@
-//! D54: arbitrary cells into the export row decoders must never panic.
+//! Arbitrary cells into the export row decoders must never panic.
 
 #![no_main]
 
