@@ -334,6 +334,8 @@ Rules are tried in file order; the first match names the project. Without a matc
 
 Each filter list is non-empty and unique when present.
 
+A budget counts the rows imported by `[[sources]]` of kind `sqlite` too. Every machine that imports the others fires the same alert.
+
 ### `[pricing]` and `[[pricing.overrides]]`
 
 | Key | Type | Default | Meaning |
@@ -363,6 +365,8 @@ Each filter list is non-empty and unique when present.
 | `end` | date | unset | First day no longer covered; after `start`. |
 
 Two subscriptions with the same provider, a shared agent, a shared profile and overlapping dates are an error.
+
+Events imported by a `sqlite` source bill against these subscriptions like local ones, by agent, profile, provider and day. Declare the same subscriptions on every machine that imports the others.
 
 Paid cost is the API cost of events billed as `api` plus each fee prorated per day over its billing period, anchored on `start`, plus Claude's extra usage (pay-as-you-go spend beyond the plan, also on subscription profiles). Extra usage adds nothing to API value, tokens or the model, project and session views; budgets with `measure = "paid"` count it.
 
@@ -420,7 +424,18 @@ When a database cannot be read as expected (a Superset update changed it), that 
 
 #### Kind `sqlite`
 
-Reads the SQLite files that a `kind = "sqlite"` entry of `[[sinks]]` on another TokenMtr wrote, typically synced to this machine by a file-sync tool. Only a TokenMtr export is accepted: other databases are refused with an issue naming the file.
+Reads the SQLite files that a `kind = "sqlite"` entry of `[[sinks]]` on another TokenMtr wrote, typically synced to this machine by a file-sync tool. Only a TokenMtr export is accepted: any other database, an export of another schema version or a file holding several machines fails its run, which Settings and `tokenmtr sources` show with the file's name; the other files go on.
+
+What is read:
+
+- Usage events and tool calls, as the other machine wrote them: its project, client, costs and pricing version are kept, not re-resolved. Extra-usage rows, quota windows and FX rates are not read. Each file holds one machine; this machine's own export is skipped.
+- Each file is copied to a private temporary file and read from the copy, so a sync tool can keep writing. A file that changes during the copy is retried at the next run. Only a changed file is read again, from where the last run stopped.
+- Imported rows are never exported to your own sinks or metrics, and never move the menubar live rate: each machine exports its own.
+- With `privacy.redact_paths`, the imported `cwd` and `git_branch` are hashed with this machine's key; a session id the other machine already hashed stays as it came.
+- Imported sessions show their machine as `<source id> · <file stem>`; no resume command is offered for them.
+- Removing or disabling a source keeps its rows; `tokenmtr sources forget <id>` deletes them once the source is disabled or removed.
+
+Imported rows count in totals and budgets, so a `[[budgets]]` alert fires on every machine that imports the others. They bill against *this* machine's `[[subscriptions]]`: declare the same subscriptions on every machine, or the same usage bills as `api` on one and as `subscription` on another.
 
 ### `[agents.<agent>]`
 
