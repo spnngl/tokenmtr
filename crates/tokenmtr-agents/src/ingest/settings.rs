@@ -3,8 +3,10 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
-use tokenmtr_config::{Config, Env, GitName, ProfileLocation, ProjectRule, TimeZoneSetting};
-use tokenmtr_core::{AgentId, Override};
+use tokenmtr_config::{
+    Config, Env, GitName, ProfileLocation, ProjectRule, SourceTarget, TimeZoneSetting,
+};
+use tokenmtr_core::{AgentId, Override, SourceId};
 use tokenmtr_platform::Paths;
 
 use crate::project::ProjectResolver;
@@ -39,8 +41,9 @@ pub struct IngestSettings {
     pub protected: Vec<Utf8PathBuf>,
     /// `privacy.redact_paths`: store keyed hashes instead of cwds and git branches.
     pub redact_paths: bool,
-    /// Superset's data directory, read for hints, when `[integrations.superset]` is enabled.
-    pub superset_dir: Option<Utf8PathBuf>,
+    /// The enabled `superset` sources of `[[sources]]` with their data directories, read for
+    /// hints.
+    pub superset: Vec<(SourceId, Utf8PathBuf)>,
     /// The age up to which an event without a logged branch takes its cwd's current HEAD:
     /// two scan intervals ([`super::projects::BranchStamp`]).
     pub live_branch_within: SignedDuration,
@@ -65,11 +68,9 @@ impl IngestSettings {
             .with_default_remote(self.default_remote.clone())
     }
 
-    /// Superset's hints when the integration is on, read on first use.
+    /// The hints of the enabled Superset sources, read on first use.
     pub(crate) fn hints(&self) -> Hints {
-        self.superset_dir
-            .clone()
-            .map_or_else(Hints::off, Hints::superset)
+        Hints::superset(self.superset.clone())
     }
 
     /// Builds the settings for `config`. `env` is read for `CLAUDE_CONFIG_DIR`,
@@ -125,14 +126,21 @@ impl IngestSettings {
             import_claude_stats_cache: config.import.claude_stats_cache,
             protected: paths.protected(),
             redact_paths: config.privacy.redact_paths,
-            superset_dir: config.integrations.superset.enabled.then(|| {
-                config
-                    .integrations
-                    .superset
-                    .dir
-                    .clone()
-                    .unwrap_or_else(|| home.join(".superset"))
-            }),
+            superset: config
+                .sources
+                .iter()
+                .filter(|source| source.enabled)
+                .filter_map(|source| match &source.target {
+                    SourceTarget::Superset(superset) => Some((
+                        source.id.clone(),
+                        superset
+                            .dir
+                            .clone()
+                            .unwrap_or_else(|| home.join(".superset")),
+                    )),
+                    SourceTarget::Sqlite(_) => None,
+                })
+                .collect(),
             live_branch_within: config
                 .daemon
                 .scan_interval

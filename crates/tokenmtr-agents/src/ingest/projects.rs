@@ -19,9 +19,6 @@ use super::error::IngestError;
 use crate::project::superset::Hints;
 use crate::project::{CwdProblem, ProjectResolver};
 
-/// Subject of the `integration_drift` issue about Superset's database.
-const SUPERSET_SUBJECT: &str = "superset";
-
 /// A cwd's project and client, as stored on events.
 pub type Assignment = (ProjectKey, Option<String>);
 
@@ -118,20 +115,20 @@ impl ProjectCache {
         self.hints.for_cwd(cwd)?.branch.clone()
     }
 
-    /// Closes the `integration_drift` issues of `agents` when the hints were read with the
-    /// known schema this scan.
+    /// Closes the `integration_drift` issues of `agents`, per source, when that source's hints
+    /// were read with the known schema this scan.
     pub fn close_drift(
         &self,
         store: &mut Store,
         agents: &[AgentId],
         now: Timestamp,
     ) -> Result<(), IngestError> {
-        if self.hints.read_ok() {
+        for source in self.hints.read_ok() {
             for agent in agents {
                 store.close_parse_issue(
                     *agent,
                     IssueKind::IntegrationDrift,
-                    SUPERSET_SUBJECT,
+                    source.as_str(),
                     now,
                 )?;
             }
@@ -139,23 +136,30 @@ impl ProjectCache {
         Ok(())
     }
 
-    /// One `integration_drift` issue per agent per scan while the hints are off for drift.
-    fn drift_issue(&mut self, agent: AgentId, now: Timestamp) -> Option<ParseIssue> {
-        let message = self.hints.drift()?;
+    /// One `integration_drift` issue per drifted source per agent per scan, its subject the
+    /// source id.
+    fn drift_issues(&mut self, agent: AgentId, now: Timestamp) -> Vec<ParseIssue> {
         if self.drift_reported.contains(&agent) {
-            return None;
+            return Vec::new();
         }
-        self.drift_reported.push(agent);
-        Some(ParseIssue {
-            agent,
-            kind: IssueKind::IntegrationDrift,
-            subject: SUPERSET_SUBJECT.to_owned(),
-            count: std::num::NonZeroU64::MIN,
-            sample: Some(format!(
-                "Superset's database has an unknown shape; deleted worktrees keep their folder name ({message})"
-            )),
-            at: now,
-        })
+        let issues: Vec<ParseIssue> = self
+            .hints
+            .drifts()
+            .map(|(source, message)| ParseIssue {
+                agent,
+                kind: IssueKind::IntegrationDrift,
+                subject: source.to_string(),
+                count: std::num::NonZeroU64::MIN,
+                sample: Some(format!(
+                    "Superset's database (source {source}) has an unknown shape; deleted worktrees keep their folder name ({message})"
+                )),
+                at: now,
+            })
+            .collect();
+        if !issues.is_empty() {
+            self.drift_reported.push(agent);
+        }
+        issues
     }
 
     /// What the store holds for `cwd`: the cwd, or its keyed hash under redaction.
@@ -201,9 +205,11 @@ impl ProjectCache {
         }
         // Resolve from the real cwd, then hide it: rules and git need the real path.
         let found = resolver.resolve(cwd, now, &mut self.hints);
-        if let Some(issue) = self.drift_issue(agent, now) {
-            issues.push(IssueUpdate::Record(issue));
-        }
+        issues.extend(
+            self.drift_issues(agent, now)
+                .into_iter()
+                .map(IssueUpdate::Record),
+        );
         let Some(found) = found else {
             return Ok(None);
         };
@@ -330,7 +336,7 @@ impl ProjectCache {
         let events = store.reassign_projects(&changed)?;
         store.fill_branches(&branches)?;
         for agent in agents {
-            if let Some(issue) = self.drift_issue(*agent, now) {
+            for issue in self.drift_issues(*agent, now) {
                 store.record_parse_issue(&issue)?;
             }
         }

@@ -161,6 +161,10 @@ string_id!(
     SinkId, slug
 );
 string_id!(
+    /// A source id from config (slug).
+    SourceId, slug
+);
+string_id!(
     /// A budget id from config (slug).
     BudgetId, slug
 );
@@ -174,6 +178,14 @@ string_id!(
     /// store keeps from tool arguments.
     SkillName, skill_name
 );
+
+impl SourceId {
+    /// The id of the Superset source a config without one gets.
+    #[must_use]
+    pub fn implicit_superset() -> Self {
+        Self("superset".to_owned())
+    }
+}
 
 impl ProfileId {
     /// The implicit profile every agent has.
@@ -389,6 +401,8 @@ mod tests {
         assert!(ProfileId::try_from("work-2").is_ok());
         assert!(ProfileId::try_from("has space").is_err());
         assert!(SinkId::try_from("a".repeat(65)).is_err());
+        assert!(SourceId::try_from("other-machines").is_ok());
+        assert!(SourceId::try_from("has space").is_err());
         assert!(BudgetId::try_from("").is_err());
     }
 

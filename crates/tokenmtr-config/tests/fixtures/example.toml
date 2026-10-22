@@ -95,10 +95,6 @@ format = "text"                   # text | json
 [privacy]
 redact_paths = false
 
-[integrations.superset]
-enabled = true                 # read-only hints for deleted worktrees, when installed
-# dir = "~/.superset"
-
 [agents.claude]
 enabled = true
 
@@ -140,6 +136,19 @@ kind = "jsonl"
 dir = "~/Library/CloudStorage/Dropbox/tokenmtr"  # protected folder: grant access first
 mode = "append"
 redact = { cwd = "hash", git_branch = "drop" }
+
+[[sources]]
+id = "superset"
+kind = "superset"           # lookup data for deleted worktrees; implicit when no source of this kind is declared
+enabled = true
+# dir = "~/.superset"
+
+[[sources]]
+id = "laptop"
+kind = "sqlite"               # rows from another TokenMtr: files a `kind = "sqlite"` sink wrote
+include = ["~/Library/CloudStorage/Dropbox/tokenmtr/laptop/*.db"]  # absolute globs
+# exclude = ["**/*conflicted*"]
+# interval = "5m"              # at least "30s"
 
 [metrics]
 refresh_interval = "30s"       # min time between snapshot recomputes; at least "5s"

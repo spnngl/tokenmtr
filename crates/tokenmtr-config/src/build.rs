@@ -20,10 +20,9 @@ use crate::model::{
     AccountLabels, AccountName, AdvisorConfig, AgentConfig, AlertSettings, BackupConfig,
     BudgetEntry, BudgetScope, CONFIG_SCHEMA_VERSION, Config, DEFAULT_HEADROOM, DaemonConfig,
     Dataset, DisplayConfig, FileFormat, FileSink, FxConfig, GitConfig, GitName, ImportConfig,
-    IntegrationsConfig, LoggingConfig, MAX_MACHINE_NAME_BYTES, MachineConfig, MenubarConfig,
-    MenubarRing, Percent, PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation,
-    ProjectRule, QuotaConfig, SinkConfig, SinkTarget, SqliteSink, StoreConfig, SupersetConfig,
-    TimeZoneSetting, path_glob,
+    LoggingConfig, MAX_MACHINE_NAME_BYTES, MachineConfig, MenubarConfig, MenubarRing, Percent,
+    PricingConfig, PrivacyConfig, ProfileConfig, ProfileLocation, ProjectRule, QuotaConfig,
+    SinkConfig, SinkTarget, SqliteSink, StoreConfig, TimeZoneSetting, path_glob,
 };
 use crate::raw::{
     Amount, RawAgents, RawBudget, RawConfig, RawDuration, RawOverride, RawProject, RawSink,
@@ -31,6 +30,7 @@ use crate::raw::{
 };
 
 mod metrics;
+mod sources;
 
 type Checked<T> = Result<T, Rejection>;
 
@@ -53,6 +53,12 @@ impl Config {
     /// The first [`Rejection`] found: the offending config path and the rule it breaks.
     pub fn from_raw(raw: &RawConfig, env: &dyn Env) -> Result<Self, Rejection> {
         let root = ConfigPath::root();
+        if raw.integrations.is_some() {
+            return Err(reject(
+                &root.key("integrations"),
+                Violation::RemovedIntegrations,
+            ));
+        }
         if let Some(found) = raw.schema_version
             && found != CONFIG_SCHEMA_VERSION
         {
@@ -83,16 +89,6 @@ impl Config {
             backup: build_backup(raw, env)?,
             import: ImportConfig {
                 claude_stats_cache: raw.import.claude_stats_cache.unwrap_or(true),
-            },
-            integrations: IntegrationsConfig {
-                superset: SupersetConfig {
-                    enabled: raw.integrations.superset.enabled.unwrap_or(true),
-                    dir: optional_path(
-                        env,
-                        raw.integrations.superset.dir.as_deref(),
-                        &root.key("integrations").key("superset").key("dir"),
-                    )?,
-                },
             },
             git: GitConfig {
                 default_remote: raw
@@ -125,6 +121,7 @@ impl Config {
                 redact_paths: raw.privacy.redact_paths.unwrap_or(false),
             },
             sinks: build_sinks(&raw.sinks, env)?,
+            sources: sources::build_sources(raw, env)?,
             metrics: metrics::build_metrics(raw, env)?,
             accounts: build_accounts(raw),
             display,

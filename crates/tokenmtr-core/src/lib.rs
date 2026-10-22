@@ -37,7 +37,7 @@ pub use forecast::{LiveRate, QuotaEta, live_rate, project_period, quota_eta};
 pub use fx::{FxRate, FxTable, SelectedRate, convert};
 pub use ids::{
     AgentId, BudgetId, DedupKey, EventId, IdError, MachineId, ModelId, ProfileId, ProjectKey,
-    ProviderId, SessionId, SinkId, SkillName, SourceFileId, SubscriptionId,
+    ProviderId, SessionId, SinkId, SkillName, SourceFileId, SourceId, SubscriptionId,
 };
 pub use money::{Currency, EurMicros, EurPerUsd, Money, MoneyError, UsdMicros, saturating_micros};
 pub use pricing::{

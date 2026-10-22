@@ -8,10 +8,11 @@
 //!
 //! The database belongs to another app: it is opened read-only, never written, and its schema
 //! may change. A missing table or column turns the hints off and is reported as
-//! [`Hints::drift`]; it never fails a scan.
+//! [`Hints::drifts`]; it never fails a scan.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use rusqlite::{Connection, OpenFlags};
+use tokenmtr_core::SourceId;
 
 /// What Superset knows about one worktree.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,33 +26,48 @@ pub struct WorktreeHint {
     pub branch: Option<String>,
 }
 
-/// The hints of one scan, read on first use.
+/// The hints of one scan: every Superset source, each read on first use.
 #[derive(Debug)]
 pub struct Hints {
+    sources: Vec<Source>,
+}
+
+#[derive(Debug)]
+struct Source {
+    id: SourceId,
     state: State,
 }
 
 #[derive(Debug)]
 enum State {
-    Off,
     Unread(Utf8PathBuf),
     /// Worktree paths, longest first, so the deepest worktree containing a cwd wins.
     Read(Vec<(Utf8PathBuf, WorktreeHint)>),
     Drifted(String),
+    /// Locked or unreadable: no hints from this source this scan, no issue.
+    Unavailable,
 }
 
 impl Hints {
-    /// No hints (the integration is off).
+    /// No hints (no Superset source is enabled).
     #[must_use]
     pub const fn off() -> Self {
-        Self { state: State::Off }
+        Self {
+            sources: Vec::new(),
+        }
     }
 
-    /// Hints read from the Superset data directory `dir` on first use.
+    /// Hints read on first use from the Superset data directory of each source.
     #[must_use]
-    pub const fn superset(dir: Utf8PathBuf) -> Self {
+    pub fn superset(sources: Vec<(SourceId, Utf8PathBuf)>) -> Self {
         Self {
-            state: State::Unread(dir),
+            sources: sources
+                .into_iter()
+                .map(|(id, dir)| Source {
+                    id,
+                    state: State::Unread(dir),
+                })
+                .collect(),
         }
     }
 
@@ -61,44 +77,57 @@ impl Hints {
     pub fn from_worktrees(mut worktrees: Vec<(Utf8PathBuf, WorktreeHint)>) -> Self {
         sort(&mut worktrees);
         Self {
-            state: State::Read(worktrees),
+            sources: vec![Source {
+                id: SourceId::implicit_superset(),
+                state: State::Read(worktrees),
+            }],
         }
     }
 
-    /// The worktree containing `cwd`, the deepest when they nest.
+    /// The worktree containing `cwd`, the deepest across sources when they nest; the first
+    /// source wins a tie.
     pub fn for_cwd(&mut self, cwd: &Utf8Path) -> Option<&WorktreeHint> {
-        if let State::Unread(dir) = &self.state {
-            self.state = match read(dir) {
-                Ok(worktrees) => State::Read(worktrees),
-                Err(Failure::Drift(message)) => State::Drifted(message),
-                Err(Failure::Unavailable(message)) => {
-                    tracing::warn!(error = %message, "superset database unavailable");
-                    State::Off
-                }
+        for source in &mut self.sources {
+            if let State::Unread(dir) = &source.state {
+                source.state = match read(dir) {
+                    Ok(worktrees) => State::Read(worktrees),
+                    Err(Failure::Drift(message)) => State::Drifted(message),
+                    Err(Failure::Unavailable(message)) => {
+                        tracing::warn!(source = %source.id, error = %message, "superset database unavailable");
+                        State::Unavailable
+                    }
+                };
+            }
+        }
+        let mut best: Option<&(Utf8PathBuf, WorktreeHint)> = None;
+        for source in &self.sources {
+            let State::Read(worktrees) = &source.state else {
+                continue;
             };
+            if let Some(found) = worktrees.iter().find(|(path, _)| cwd.starts_with(path))
+                && best.is_none_or(|b| found.0.as_str().len() > b.0.as_str().len())
+            {
+                best = Some(found);
+            }
         }
-        match &self.state {
-            State::Read(worktrees) => worktrees
-                .iter()
-                .find(|(path, _)| cwd.starts_with(path))
-                .map(|(_, hint)| hint),
-            State::Off | State::Unread(_) | State::Drifted(_) => None,
-        }
+        best.map(|(_, hint)| hint)
     }
 
-    /// Why the hints are off, when Superset's schema is not the one this version knows.
-    #[must_use]
-    pub fn drift(&self) -> Option<&str> {
-        match &self.state {
-            State::Drifted(message) => Some(message),
-            State::Off | State::Unread(_) | State::Read(_) => None,
-        }
+    /// The sources whose hints are off because Superset's schema is not the one this version
+    /// knows, with why.
+    pub fn drifts(&self) -> impl Iterator<Item = (&SourceId, &str)> {
+        self.sources.iter().filter_map(|s| match &s.state {
+            State::Drifted(message) => Some((&s.id, message.as_str())),
+            State::Unread(_) | State::Read(_) | State::Unavailable => None,
+        })
     }
 
-    /// Whether the database was read with the known schema.
-    #[must_use]
-    pub const fn read_ok(&self) -> bool {
-        matches!(self.state, State::Read(_))
+    /// The sources whose database was read with the known schema.
+    pub fn read_ok(&self) -> impl Iterator<Item = &SourceId> {
+        self.sources
+            .iter()
+            .filter(|s| matches!(s.state, State::Read(_)))
+            .map(|s| &s.id)
     }
 }
 
@@ -234,7 +263,7 @@ mod tests {
             Utf8Path::new("/gone/worktrees/widgets/brave-otter"),
             Utf8Path::new("/gone/src/widgets"),
         );
-        let mut hints = Hints::superset(dir.to_owned());
+        let mut hints = Hints::superset(vec![(id("ss"), dir.to_owned())]);
         let hint = hints
             .for_cwd(Utf8Path::new("/gone/worktrees/widgets/brave-otter/crates"))
             .cloned();
@@ -246,7 +275,7 @@ mod tests {
                 branch: Some("feat/otter".to_owned()),
             })
         );
-        assert!(hints.read_ok());
+        assert_eq!(hints.read_ok().collect::<Vec<_>>(), [&id("ss")]);
         assert_eq!(hints.for_cwd(Utf8Path::new("/gone/worktrees/other")), None);
     }
 
@@ -254,6 +283,67 @@ mod tests {
     fn a_missing_column_is_drift_not_a_failure() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
+        drifted_superset(dir);
+        let mut hints = Hints::superset(vec![(id("ss"), dir.to_owned())]);
+        assert_eq!(hints.for_cwd(Utf8Path::new("/x")), None);
+        let drifts: Vec<_> = hints.drifts().collect();
+        assert_eq!(drifts.len(), 1);
+        assert_eq!(drifts[0].0, &id("ss"));
+        assert!(drifts[0].1.contains("no such column"));
+        assert_eq!(hints.read_ok().count(), 0);
+    }
+
+    #[test]
+    fn no_superset_directory_means_no_hints() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = Utf8Path::from_path(tmp.path()).unwrap().join("absent");
+        let mut hints = Hints::superset(vec![(id("ss"), dir)]);
+        assert_eq!(hints.for_cwd(Utf8Path::new("/x")), None);
+        assert_eq!(hints.read_ok().count(), 1);
+        assert_eq!(hints.drifts().count(), 0);
+    }
+
+    #[test]
+    fn sources_are_merged_and_one_drifted_source_spares_the_others() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+        fake_superset(
+            &root.join("a"),
+            Utf8Path::new("/gone/worktrees/widgets"),
+            Utf8Path::new("/gone/src/widgets"),
+        );
+        fake_superset(
+            &root.join("b"),
+            Utf8Path::new("/gone/worktrees/widgets/nested"),
+            Utf8Path::new("/gone/src/nested"),
+        );
+        drifted_superset(&root.join("c"));
+        let mut hints = Hints::superset(vec![
+            (id("a"), root.join("a")),
+            (id("b"), root.join("b")),
+            (id("c"), root.join("c")),
+        ]);
+        let deepest = hints
+            .for_cwd(Utf8Path::new("/gone/worktrees/widgets/nested/x"))
+            .and_then(|hint| hint.repo_path.clone());
+        assert_eq!(deepest, Some(Utf8PathBuf::from("/gone/src/nested")));
+        let outer = hints
+            .for_cwd(Utf8Path::new("/gone/worktrees/widgets/other"))
+            .and_then(|hint| hint.repo_path.clone());
+        assert_eq!(outer, Some(Utf8PathBuf::from("/gone/src/widgets")));
+        assert_eq!(hints.read_ok().collect::<Vec<_>>(), [&id("a"), &id("b")]);
+        assert_eq!(
+            hints.drifts().map(|(id, _)| id).collect::<Vec<_>>(),
+            [&id("c")]
+        );
+    }
+
+    fn id(text: &str) -> SourceId {
+        SourceId::try_from(text.to_owned()).unwrap()
+    }
+
+    /// A host database whose `workspaces` table lacks the `branch` column.
+    fn drifted_superset(dir: &Utf8Path) {
         let host = dir.join("host").join("h");
         std::fs::create_dir_all(&host).unwrap();
         Connection::open(host.join("host.db"))
@@ -263,18 +353,5 @@ mod tests {
                  CREATE TABLE workspaces (id TEXT, project_id TEXT, worktree_path TEXT);",
             )
             .unwrap();
-        let mut hints = Hints::superset(dir.to_owned());
-        assert_eq!(hints.for_cwd(Utf8Path::new("/x")), None);
-        assert!(hints.drift().is_some_and(|m| m.contains("no such column")));
-    }
-
-    #[test]
-    fn no_superset_directory_means_no_hints() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = Utf8Path::from_path(tmp.path()).unwrap().join("absent");
-        let mut hints = Hints::superset(dir);
-        assert_eq!(hints.for_cwd(Utf8Path::new("/x")), None);
-        assert!(hints.read_ok());
-        assert_eq!(hints.drift(), None);
     }
 }

@@ -11,8 +11,8 @@ use jiff::SignedDuration;
 use jiff::civil::date;
 use tokenmtr_config::{
     ConfigDocument, ConfigError, ConfigFormat, FileFormat, GitConfig, GitName, LineCol, LogFormat,
-    MAX_MACHINE_NAME_BYTES, MenubarRing, Partition, ProfileLocation, RawProject, SinkTarget,
-    TimeZoneSetting, Violation, load, load_str,
+    MAX_MACHINE_NAME_BYTES, MIN_SOURCE_INTERVAL, MenubarRing, Partition, ProfileLocation,
+    RawProject, SinkTarget, SourceTarget, TimeZoneSetting, Violation, load, load_str,
 };
 use tokenmtr_core::{
     AgentId, BillingPeriod, Currency, EurMicros, ModelId, Money, Override, Plan, ProfileId,
@@ -135,6 +135,20 @@ fn the_example_parses() {
     assert_eq!(sinks[2].redact.len(), 2);
     assert_eq!(sinks[0].datasets.len(), 5);
 
+    let sources = &config.sources;
+    assert_eq!(sources.len(), 2);
+    assert_eq!(sources[0].id.as_str(), "superset");
+    assert!(sources[0].enabled);
+    assert!(matches!(&sources[0].target, SourceTarget::Superset(s) if s.dir.is_none()));
+    assert_eq!(sources[1].id.as_str(), "laptop");
+    assert!(matches!(
+        &sources[1].target,
+        SourceTarget::Sqlite(s)
+            if s.include.patterns() == ["/home/u/Library/CloudStorage/Dropbox/tokenmtr/laptop/*.db"]
+                && s.exclude.is_empty()
+                && s.interval == SignedDuration::from_mins(5)
+    ));
+
     let metrics = &config.metrics;
     assert_eq!(metrics.refresh_interval, SignedDuration::from_secs(30));
     assert_eq!(metrics.session_window, SignedDuration::from_hours(48));
@@ -196,6 +210,7 @@ fn an_empty_file_is_the_default_config() {
     assert_eq!(config.git, GitConfig::default());
     assert_eq!(config.git.default_remote, GitName::origin());
     assert!(config.subscriptions.is_empty() && config.sinks.is_empty());
+    assert_eq!(config.sources.len(), 1, "only the implicit Superset source");
     assert!(config.metrics.exporters.is_empty() && config.metrics.remote_write.is_empty());
     assert_eq!(
         config.metrics.refresh_interval,
@@ -353,6 +368,140 @@ fn sink_keys_must_fit_the_kind() {
             field: "mode"
         }
     ));
+}
+
+// -- sources -------------------------------------------------------------------------------------
+
+const SQLITE_SOURCE: &str =
+    "[[sources]]\nid = \"laptop\"\nkind = \"sqlite\"\ninclude = [\"/sync/laptop/*.db\"]\n";
+
+#[test]
+fn a_config_without_a_superset_source_gets_the_implicit_one() {
+    let config = parse(SQLITE_SOURCE).unwrap();
+    assert_eq!(config.sources.len(), 2);
+    assert_eq!(config.sources[0].id.as_str(), "superset");
+    assert!(config.sources[0].enabled);
+    assert!(matches!(&config.sources[0].target, SourceTarget::Superset(s) if s.dir.is_none()));
+}
+
+#[test]
+fn a_declared_superset_source_replaces_the_implicit_one() {
+    let config =
+        parse("[[sources]]\nid = \"ss\"\nkind = \"superset\"\nenabled = false\ndir = \"~/ss\"\n")
+            .unwrap();
+    assert_eq!(config.sources.len(), 1);
+    assert_eq!(config.sources[0].id.as_str(), "ss");
+    assert!(!config.sources[0].enabled);
+    assert!(matches!(
+        &config.sources[0].target,
+        SourceTarget::Superset(s) if s.dir.as_deref() == Some(Utf8Path::new("/home/u/ss"))
+    ));
+}
+
+#[test]
+fn several_superset_sources_need_distinct_directories() {
+    let one = "[[sources]]\nid = \"a\"\nkind = \"superset\"\ndir = \"/a\"\n\n";
+    let two = "[[sources]]\nid = \"b\"\nkind = \"superset\"\ndir = \"/b\"\n";
+    assert_eq!(parse(&format!("{one}{two}")).unwrap().sources.len(), 2);
+    let same = "[[sources]]\nid = \"b\"\nkind = \"superset\"\ndir = \"/a\"\n";
+    let (path, violation, _) = invalid(&format!("{one}{same}"));
+    assert_eq!(path, "sources[1].kind");
+    assert!(matches!(violation, Violation::SourceTargetClash(id) if id.as_str() == "a"));
+}
+
+#[test]
+fn the_implicit_superset_id_is_reserved() {
+    let (path, violation, _) = invalid(&SQLITE_SOURCE.replace("laptop", "superset"));
+    assert_eq!(path, "sources[0].id");
+    assert!(matches!(violation, Violation::ReservedSourceId));
+}
+
+#[test]
+fn duplicate_source_id_is_rejected() {
+    let (path, violation, _) = invalid(&format!("{SQLITE_SOURCE}\n{SQLITE_SOURCE}"));
+    assert_eq!(path, "sources[1].id");
+    assert!(matches!(violation, Violation::DuplicateSourceId(id) if id.as_str() == "laptop"));
+}
+
+#[test]
+fn sqlite_sources_sharing_a_pattern_are_rejected() {
+    let other = SQLITE_SOURCE.replace("id = \"laptop\"", "id = \"desktop\"");
+    let (path, violation, _) = invalid(&format!("{SQLITE_SOURCE}\n{other}"));
+    assert_eq!(path, "sources[1].kind");
+    assert!(matches!(violation, Violation::SourceTargetClash(id) if id.as_str() == "laptop"));
+    let distinct = other.replace("/sync/laptop", "/sync/desktop");
+    assert!(parse(&format!("{SQLITE_SOURCE}\n{distinct}")).is_ok());
+}
+
+#[test]
+fn sqlite_sources_need_absolute_includes() {
+    let (path, violation, _) = invalid(&SQLITE_SOURCE.replace("/sync", "sync"));
+    assert_eq!(path, "sources[0].include[0]");
+    assert!(matches!(violation, Violation::RelativePath { .. }));
+    let config = parse(&SQLITE_SOURCE.replace("/sync", "~/sync")).unwrap();
+    assert!(matches!(
+        &config.sources[1].target,
+        SourceTarget::Sqlite(s) if s.include.patterns() == ["/home/u/sync/laptop/*.db"]
+    ));
+}
+
+#[test]
+fn sqlite_sources_need_include() {
+    let (path, violation, _) = invalid("[[sources]]\nid = \"a\"\nkind = \"sqlite\"\n");
+    assert_eq!(path, "sources[0]");
+    assert!(matches!(
+        violation,
+        Violation::SourceFieldRequired {
+            kind: "sqlite",
+            field: "include"
+        }
+    ));
+    let (path, ..) = invalid(&SQLITE_SOURCE.replace("[\"/sync/laptop/*.db\"]", "[]"));
+    assert_eq!(path, "sources[0].include");
+}
+
+#[test]
+fn sqlite_source_interval_has_a_floor() {
+    let (path, violation, _) = invalid(&format!("{SQLITE_SOURCE}interval = \"10s\"\n"));
+    assert_eq!(path, "sources[0].interval");
+    assert!(matches!(violation, Violation::IntervalTooShort { .. }));
+    let config = parse(&format!("{SQLITE_SOURCE}interval = \"30s\"\n")).unwrap();
+    assert!(matches!(
+        &config.sources[1].target,
+        SourceTarget::Sqlite(s) if s.interval == MIN_SOURCE_INTERVAL
+    ));
+}
+
+#[test]
+fn source_keys_must_fit_the_kind() {
+    let (path, violation, _) = invalid(&format!("{SQLITE_SOURCE}dir = \"/x\"\n"));
+    assert_eq!(path, "sources[0].dir");
+    assert!(matches!(
+        violation,
+        Violation::SourceFieldNotAllowed {
+            kind: "sqlite",
+            field: "dir"
+        }
+    ));
+    let (path, violation, _) =
+        invalid("[[sources]]\nid = \"a\"\nkind = \"superset\"\ninclude = [\"/x\"]\n");
+    assert_eq!(path, "sources[0].include");
+    assert!(matches!(
+        violation,
+        Violation::SourceFieldNotAllowed {
+            kind: "superset",
+            field: "include"
+        }
+    ));
+}
+
+#[test]
+fn the_integrations_table_is_gone() {
+    let (path, violation, position) = invalid("[integrations.superset]\nenabled = false\n");
+    assert_eq!(path, "integrations");
+    assert!(matches!(violation, Violation::RemovedIntegrations));
+    assert_eq!(position.line, 1);
+    assert!(violation.to_string().contains("[[sources]]"));
 }
 
 const SUBSCRIPTION: &str = "\
