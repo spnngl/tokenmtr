@@ -132,6 +132,18 @@ function OriginSection(props: { readonly agent: string; readonly session: string
   );
 }
 
+/** An imported session ran on another machine: nothing to resume or reveal here. */
+function ImportedCard({ machine }: { readonly machine: string }): ReactNode {
+  return (
+    <Card title="Imported session">
+      <p className="text-sm">
+        This session ran on <strong>{machine}</strong>. Only its recorded usage is here; resume it
+        on that machine.
+      </p>
+    </Card>
+  );
+}
+
 /** Drilldown of one session: resume command, per-event rows, tool calls, signals. */
 export function SessionDetailScreen(props: {
   readonly agent: string;
@@ -205,7 +217,11 @@ export function SessionDetailScreen(props: {
       >
         {(detail) => (
           <>
-            <OriginSection agent={props.agent} session={props.session} />
+            {detail.machine === null ? (
+              <OriginSection agent={props.agent} session={props.session} />
+            ) : (
+              <ImportedCard machine={detail.machine} />
+            )}
             <SessionChartsPanel
               agent={props.agent}
               session={props.session}

@@ -327,6 +327,12 @@ pub async fn export_now(shell: State<'_, Shell>) -> Reply<()> {
     actions::export_now(&shell.backend).await
 }
 
+/// Imports the `sqlite` sources now.
+#[tauri::command]
+pub async fn import_now(shell: State<'_, Shell>) -> Reply<()> {
+    actions::import_now(&shell.backend).await
+}
+
 /// Writes a backup now.
 #[tauri::command]
 pub async fn backup_now(shell: State<'_, Shell>) -> Reply<()> {
@@ -614,6 +620,7 @@ command_table!(
     fx_rates,
     scan_now,
     export_now,
+    import_now,
     backup_now,
     open_dashboard,
     fit_recap,

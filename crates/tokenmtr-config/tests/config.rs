@@ -3,7 +3,7 @@
 #![expect(
     clippy::unwrap_used,
     clippy::panic,
-    reason = "clippy''s allow-*-in-tests covers #[test] functions, not the shared helpers"
+    reason = "clippy's allow-*-in-tests covers #[test] functions, not the shared helpers"
 )]
 
 use camino::Utf8Path;

@@ -1,5 +1,11 @@
 import { formatClock, formatDay } from "../../shared/format";
-import { type Dataset, datasetSchema, type SinkHealth, type SinkRun } from "../../shared/schemas";
+import {
+  type Dataset,
+  datasetSchema,
+  type SinkHealth,
+  type SinkRun,
+  type SourceHealth,
+} from "../../shared/schemas";
 
 /** What each exported dataset (`tokenmtr-export`) holds. */
 const DESCRIPTIONS: Readonly<Record<Dataset, string>> = {
@@ -56,6 +62,19 @@ export function looksLikeProtectedFolder(sink: SinkHealth): boolean {
 export function formatInstant(timestamp: string, timeZone: string): string {
   const ms = Date.parse(timestamp);
   return `${formatDay(ms, timeZone)} ${formatClock(ms, timeZone)}`;
+}
+
+/** The file name a source run read, or "All files" for a whole pass. */
+export function sourceRunLabel(run: SourceHealth["recent_runs"][number]): string {
+  if (run.path === null) {
+    return "All files";
+  }
+  return run.path.split(/[\\/]/).pop() ?? run.path;
+}
+
+/** Whether a `sqlite` source is enabled: only then "Import now" has something to read. */
+export function canImport(sources: readonly SourceHealth[]): boolean {
+  return sources.some((source) => source.kind === "sqlite" && source.state !== "disabled");
 }
 
 /** True when a sink is in a state worth an "Export now" or "Retry". */

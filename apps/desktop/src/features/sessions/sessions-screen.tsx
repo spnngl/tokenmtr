@@ -60,6 +60,11 @@ function columns(timeZone: string, currency: SessionPage["currency"]): Column<Se
       cell: (row) => row.project ?? PLACEHOLDER,
       sortValue: (row) => row.project ?? "",
     },
+    {
+      header: "Machine",
+      cell: (row) => row.machine ?? "This machine",
+      sortValue: (row) => row.machine ?? "",
+    },
     { header: "Models", cell: (row) => row.models.join(", ") },
     {
       header: "Tokens",

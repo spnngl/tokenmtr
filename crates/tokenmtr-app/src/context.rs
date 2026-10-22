@@ -644,7 +644,7 @@ impl AppContext {
     }
 }
 
-/// The folders outside the agents'' roots the config points at, checked against protected
+/// The folders outside the agents' roots the config points at, checked against protected
 /// folders: the directories of the configured sinks, and the folders the enabled `sqlite`
 /// sources read.
 #[must_use]

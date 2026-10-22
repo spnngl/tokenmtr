@@ -217,6 +217,7 @@ describe("command bindings", () => {
       tauri.fxRates(),
       tauri.scanNow(),
       tauri.exportNow(),
+      tauri.importNow(),
       tauri.backupNow(),
       tauri.openDashboard({ route: "/", agent: null }),
       tauri.fitRecap(600),

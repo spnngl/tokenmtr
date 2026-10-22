@@ -53,7 +53,7 @@ enum Command {
     Scan(data::ScanArgs),
     /// Re-estimate stored events with the active pricing snapshot.
     Reprice(data::RepriceArgs),
-    /// Show the sources, import other machines'' exports now, or forget a source'"''"'s rows.
+    /// Show the sources, import other machines' exports now, or forget a source's rows.
     Sources(sources::SourcesArgs),
     /// Check the config, the store, the daemon and the agents' files.
     Doctor(system::DoctorArgs),

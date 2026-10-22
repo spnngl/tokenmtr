@@ -338,6 +338,7 @@ export function createMockDataSource(options: MockOptions = {}): DataSource {
 
     scanNow: () => act("scanNow"),
     exportNow: () => act("exportNow"),
+    importNow: () => act("importNow"),
     backupNow: () => act("backupNow"),
     openDashboard: (target) => act("openDashboard", target),
     // The browser has no popover window to resize.

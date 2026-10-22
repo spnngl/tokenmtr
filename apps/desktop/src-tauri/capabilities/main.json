@@ -41,6 +41,7 @@
     "allow-fx-rates",
     "allow-scan-now",
     "allow-export-now",
+    "allow-import-now",
     "allow-backup-now",
     "allow-open-dashboard",
     "allow-install-daemon",

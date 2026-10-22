@@ -40,7 +40,7 @@ pub enum AlertKind {
         /// When it started failing.
         since: Timestamp,
     },
-    /// A source (imports of other machines'' exports) has been failing for longer than allowed.
+    /// A source (imports of other machines' exports) has been failing for longer than allowed.
     SourceFailing {
         /// The source.
         source: SourceId,
