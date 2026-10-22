@@ -188,7 +188,8 @@ pub(crate) fn reassign(
     let mut changed = 0_u64;
     let mut stale = conn.prepare_cached(
         "SELECT id FROM usage_event \
-         WHERE cwd = ?1 AND (project, client) IS NOT (?2, ?3) ORDER BY id",
+         WHERE cwd = ?1 AND origin_machine IS NULL AND (project, client) IS NOT (?2, ?3) \
+         ORDER BY id",
     )?;
     let mut rewrite = conn.prepare_cached(
         "UPDATE usage_event SET project = ?1, client = ?2, revision = ?3, updated_at_us = ?4 \
@@ -237,7 +238,8 @@ pub(crate) fn fill_branches(
     let mut revision = versioned::head(conn, Dataset::UsageEvents)?;
     let mut changed = 0_u64;
     let mut missing = conn.prepare_cached(
-        "SELECT id FROM usage_event WHERE cwd = ?1 AND git_branch IS NULL ORDER BY id",
+        "SELECT id FROM usage_event \
+         WHERE cwd = ?1 AND origin_machine IS NULL AND git_branch IS NULL ORDER BY id",
     )?;
     let mut fill = conn.prepare_cached(
         "UPDATE usage_event SET git_branch = ?1, revision = ?2, updated_at_us = ?3 WHERE id = ?4",
@@ -261,12 +263,14 @@ pub(crate) fn fill_branches(
     Ok(changed)
 }
 
-/// Distinct unresolved working directories. `SELECT DISTINCT cwd` reads every entry of
-/// `usage_event_cwd`; skipping from one directory to the next costs one seek per directory.
+/// Distinct unresolved working directories of local events, which lead `usage_event_cwd`.
+/// `SELECT DISTINCT cwd` reads every entry of it; skipping from one directory to the next costs
+/// one seek per directory.
 pub(crate) const UNRESOLVED: &str = "WITH RECURSIVE c(cwd) AS ( \
-       SELECT MIN(cwd) FROM usage_event \
+       SELECT MIN(cwd) FROM usage_event WHERE origin_machine IS NULL \
        UNION ALL \
-       SELECT (SELECT MIN(cwd) FROM usage_event WHERE cwd > c.cwd) FROM c \
+       SELECT (SELECT MIN(cwd) FROM usage_event \
+               WHERE cwd > c.cwd AND origin_machine IS NULL) FROM c \
        WHERE c.cwd IS NOT NULL) \
      SELECT cwd FROM c \
      WHERE cwd IS NOT NULL AND cwd NOT IN (SELECT cwd FROM project_map) ORDER BY cwd";

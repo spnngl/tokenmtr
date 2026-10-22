@@ -3,7 +3,9 @@
 //! Every exported row carries a `revision` taken from its dataset's counter. A row gets a
 //! new revision only when an upsert changes one of its value columns, so re-ingesting a file is a
 //! no-op for sinks. The comparison is done by `SQLite` in the `UPDATE ... WHERE` clause; the
-//! counter advances once per changed row, so revisions are unique and gap-free.
+//! counter advances once per changed row, so revisions are unique and gap-free. Rows imported
+//! from other machines draw from the same counters but are never exported, so what a sink
+//! reads has gaps.
 //!
 //! Each row is written by two statements, prepared once and cached: `INSERT ... ON CONFLICT DO
 //! NOTHING`, and when that inserts nothing, `UPDATE ... WHERE <values differ>`. Neither has a
@@ -202,16 +204,21 @@ pub(crate) fn head(conn: &Connection, dataset: Dataset) -> Result<Revision, Stor
     )?)
 }
 
-/// Rows past `after`: how many, and when the oldest was written.
+/// Rows past `after` that a sink would export: how many, and when the oldest was written.
+/// Imported rows are never exported, so they are not pending.
 pub(crate) fn pending(
     conn: &Connection,
     dataset: Dataset,
     after: Revision,
 ) -> Result<crate::types::Pending, StoreError> {
     use crate::codec::from_us;
+    let local = match dataset {
+        Dataset::UsageEvents | Dataset::ToolCalls => " AND +origin_machine IS NULL",
+        Dataset::Subscriptions | Dataset::QuotaSnapshots | Dataset::FxRates => "",
+    };
     let (rows, oldest): (i64, Option<i64>) = conn.query_row(
         &format!(
-            "SELECT COUNT(*), MIN(updated_at_us) FROM {} WHERE revision > ?1",
+            "SELECT COUNT(*), MIN(updated_at_us) FROM {} WHERE revision > ?1{local}",
             crate::types::table(dataset)
         ),
         [after],

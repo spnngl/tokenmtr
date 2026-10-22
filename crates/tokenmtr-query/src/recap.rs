@@ -358,6 +358,9 @@ fn system_health(
     })
 }
 
+/// This machine's events of the last `window`: imported rows lag by up to the source's
+/// interval, so they would make the rate and the active sessions lie. The unary `+` keeps the
+/// planner on `usage_event_at`.
 fn live_events(
     reader: &StoreReader,
     now: Timestamp,
@@ -367,7 +370,8 @@ fn live_events(
     let mut statement = reader.connection().prepare_cached(
         "SELECT agent, session, at_us, input_uncached, cache_read, cache_write_5m, \
          cache_write_1h, output, reasoning, cost_api_usd_micros FROM usage_event \
-         WHERE at_us > ? AND at_us <= ? AND kind NOT IN ('daily_aggregate', 'extra_usage')",
+         WHERE at_us > ? AND at_us <= ? AND kind NOT IN ('daily_aggregate', 'extra_usage') \
+           AND +origin_machine IS NULL",
     )?;
     let mut rows = statement.query([since.as_microsecond(), now.as_microsecond()])?;
     let (Ok(dedup_key), Ok(model), Ok(_)) = (

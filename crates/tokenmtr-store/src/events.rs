@@ -69,10 +69,16 @@ macro_rules! select {
     };
 }
 
-const AFTER: &str = select!("WHERE revision > ?1 ORDER BY revision LIMIT ?2");
+/// What sinks export: local rows only, imported ones stay home. The unary `+` keeps the planner
+/// on the revision index instead of `usage_event_cwd (origin_machine, cwd)`, which a plain
+/// `origin_machine IS NULL` would pick; every filter of a walk by another key does the same.
+pub(crate) const AFTER: &str =
+    select!("WHERE revision > ?1 AND +origin_machine IS NULL ORDER BY revision LIMIT ?2");
 const BY_KEY: &str = select!("WHERE agent = ?1 AND dedup_key = ?2");
 const BY_ID: &str = select!("WHERE event_id = ?1");
-const BY_CWD: &str = select!("WHERE cwd = ?1 AND id > ?2 ORDER BY id LIMIT ?3");
+/// Local rows only: the directory belongs to this machine's file system.
+pub(crate) const BY_CWD: &str =
+    select!("WHERE cwd = ?1 AND origin_machine IS NULL AND id > ?2 ORDER BY id LIMIT ?3");
 
 /// Inserts or updates events by `(agent, dedup_key)`, last write wins.
 pub(crate) fn upsert(
@@ -88,43 +94,78 @@ pub(crate) fn upsert(
         now,
         &rows,
         |upsert, event, revision, now_us| {
-            let t = &event.tokens;
-            let cost = &event.cost;
-            upsert.bind(named_params! {
-                        ":event_id": event.id.as_bytes(),
-                        ":agent": event.agent.as_str(),
-                        ":dedup_key": event.dedup_key.as_str(),
-                        ":revision": revision,
-                        ":updated_at_us": now_us,
-                        ":profile": event.profile.as_str(),
-                        ":at_us": to_us(event.at),
-                        ":session": event.session.as_str(),
-                        ":parent_session": event.parent_session.as_ref().map(SessionId::as_str),
-                        ":subagent": event.subagent,
-                        ":is_sidechain": event.is_sidechain,
-                        ":cwd": event.cwd.as_ref().map(|c| c.as_str()),
-                        ":git_branch": event.git_branch,
-                        ":project": event.project.as_ref().map(ProjectKey::as_str),
-                        ":client": event.client,
-                        ":source_file_id": event.source_file.map(SourceFileId::get),
-                        ":approximate": event.approximate,
-                        ":provider": event.provider.as_ref().map(ProviderId::as_str),
-                        ":model": event.model.as_str(),
-                        ":kind": enum_text(&event.kind)?,
-                        ":input_uncached": to_i64(t.input_uncached, "input_uncached")?,
-                        ":cache_read": to_i64(t.cache_read, "cache_read")?,
-                        ":cache_write_5m": to_i64(t.cache_write_5m, "cache_write_5m")?,
-                        ":cache_write_1h": to_i64(t.cache_write_1h, "cache_write_1h")?,
-                        ":output": to_i64(t.output, "output")?,
-                        ":reasoning": to_i64(t.reasoning, "reasoning")?,
-                        ":cost_reported_usd_micros": cost.reported().map(UsdMicros::get),
-                        ":cost_estimated_usd_micros": cost.estimated().map(|e| e.usd.get()),
-                        ":pricing_version": cost.estimated().map(|e| e.pricing_version.as_str()),
-                        ":service_tier": event.service_tier,
-            })
+            bind(upsert, event, event.dedup_key.as_str(), revision, now_us)
         },
     )
 }
+
+/// Binds every parameter of an event upsert but the origin columns, under `dedup_key`.
+pub(crate) fn bind(
+    upsert: &mut versioned::Upsert<'_>,
+    event: &UsageEvent,
+    dedup_key: &str,
+    revision: Revision,
+    now_us: i64,
+) -> Result<(), StoreError> {
+    let t = &event.tokens;
+    let cost = &event.cost;
+    upsert.bind(named_params! {
+                ":event_id": event.id.as_bytes(),
+                ":agent": event.agent.as_str(),
+                ":dedup_key": dedup_key,
+                ":revision": revision,
+                ":updated_at_us": now_us,
+                ":profile": event.profile.as_str(),
+                ":at_us": to_us(event.at),
+                ":session": event.session.as_str(),
+                ":parent_session": event.parent_session.as_ref().map(SessionId::as_str),
+                ":subagent": event.subagent,
+                ":is_sidechain": event.is_sidechain,
+                ":cwd": event.cwd.as_ref().map(|c| c.as_str()),
+                ":git_branch": event.git_branch,
+                ":project": event.project.as_ref().map(ProjectKey::as_str),
+                ":client": event.client,
+                ":source_file_id": event.source_file.map(SourceFileId::get),
+                ":approximate": event.approximate,
+                ":provider": event.provider.as_ref().map(ProviderId::as_str),
+                ":model": event.model.as_str(),
+                ":kind": enum_text(&event.kind)?,
+                ":input_uncached": to_i64(t.input_uncached, "input_uncached")?,
+                ":cache_read": to_i64(t.cache_read, "cache_read")?,
+                ":cache_write_5m": to_i64(t.cache_write_5m, "cache_write_5m")?,
+                ":cache_write_1h": to_i64(t.cache_write_1h, "cache_write_1h")?,
+                ":output": to_i64(t.output, "output")?,
+                ":reasoning": to_i64(t.reasoning, "reasoning")?,
+                ":cost_reported_usd_micros": cost.reported().map(UsdMicros::get),
+                ":cost_estimated_usd_micros": cost.estimated().map(|e| e.usd.get()),
+                ":pricing_version": cost.estimated().map(|e| e.pricing_version.as_str()),
+                ":service_tier": event.service_tier,
+    })
+}
+
+/// The upsert of imported events: every value column replaces, plus the origin columns and the
+/// `superseded` flag the origin set.
+pub(crate) static UPSERT_IMPORTED: LazyLock<UpsertSql> = LazyLock::new(|| {
+    let values: Vec<(&str, Merge)> = VALUES
+        .iter()
+        .map(|&(column, _)| (column, Merge::Replace))
+        .chain(
+            [
+                "superseded",
+                "origin_machine",
+                "origin_source",
+                "origin_revision",
+            ]
+            .map(|column| (column, Merge::Replace)),
+        )
+        .collect();
+    UpsertSql::new(
+        "usage_event",
+        &["agent", "dedup_key"],
+        &["event_id", "agent", "dedup_key"],
+        &values,
+    )
+});
 
 /// The event stored under `(agent, dedup_key)`.
 pub(crate) fn by_key(
@@ -175,7 +216,8 @@ pub(crate) fn earliest_transcript(
     let at: Option<i64> = conn
         .prepare_cached(
             "SELECT MIN(at_us) FROM usage_event \
-             WHERE agent = ?1 AND profile = ?2 AND kind NOT IN (?3, ?4)",
+             WHERE agent = ?1 AND profile = ?2 AND kind NOT IN (?3, ?4) \
+             AND +origin_machine IS NULL",
         )?
         .query_row(
             params![
@@ -202,7 +244,7 @@ pub(crate) fn supersede_aggregates_from(
     let ids = conn
         .prepare_cached(
             "SELECT id FROM usage_event WHERE agent = ?1 AND profile = ?2 AND kind = ?3 \
-             AND at_us >= ?4 AND superseded = 0 ORDER BY id",
+             AND at_us >= ?4 AND superseded = 0 AND +origin_machine IS NULL ORDER BY id",
         )?
         .query_map(
             params![

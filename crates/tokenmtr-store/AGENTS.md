@@ -6,7 +6,8 @@ The crate doc in `src/lib.rs` is the model: connections, schema version, units, 
 
 - One writer at a time: the daemon, or a `tokenmtr-app` action (direct scan, backup, reprice, erase, restore) that holds the daemon lock while no daemon runs. Everything else reads through `StoreReader`.
 - Shipped migrations are immutable: installed stores already ran them, and `PRAGMA user_version` counts them. Change the schema by appending a migration.
-- Exported datasets lose no row. Retract by updating a flag column (`superseded`, `removed_at_us`) so sinks receive the change as a new revision; sinks have no delete channel.
+- Exported datasets lose no row. Retract by updating a flag column (`superseded`, `removed_at_us`) so sinks receive the change as a new revision; sinks have no delete channel. The one exception: rows with `origin_source` (imported from another machine's export, `src/import.rs`) are never exported, and `forget_source` deletes them.
+- Every query that serves this machine alone filters `origin_machine IS NULL`: export reads, `pending`, ingest maintenance (re-resolution, branch stamping, repricing, stats-cache superseding), metrics, the recap Live block. Write it as `+origin_machine IS NULL` in walks by another index: the plain form makes the planner pick `usage_event_cwd (origin_machine, cwd)`. Queries that serve the user's totals leave imported rows in.
 - A value column of an exported dataset is listed in its module's `VALUES` table (for example `src/events.rs`) with its `Merge` rule. The upsert compares those columns to decide whether a row earns a new revision: a column left out never reaches sinks when it changes.
 - Store instants as UTC `*_us`, money as `*_usd_micros`. Zone buckets and EUR are computed by `tokenmtr-query`, so a zone or rate change never rewrites rows.
 

@@ -30,7 +30,11 @@ fn in_dir(machine: &MachineId, key: &str, cwd: &str) -> UsageEvent {
     e
 }
 
-fn resolution(cwd: &str, project: &str, client: Option<&str>) -> crate::ProjectResolution {
+pub(super) fn resolution(
+    cwd: &str,
+    project: &str,
+    client: Option<&str>,
+) -> crate::ProjectResolution {
     crate::ProjectResolution {
         cwd: Utf8PathBuf::from(cwd),
         project: project.to_owned().try_into().unwrap(),
@@ -413,8 +417,8 @@ fn events_page_by_cwd_through_the_index() {
         .store
         .raw()
         .query_row(
-            "EXPLAIN QUERY PLAN SELECT id FROM usage_event WHERE cwd = '/a' AND id > 0 ORDER BY id",
-            [],
+            &format!("EXPLAIN QUERY PLAN {}", crate::events::BY_CWD),
+            rusqlite::params!["/a", 0, 10],
             |r| r.get(3),
         )
         .unwrap();
@@ -613,7 +617,7 @@ fn unresolved_cwds_skip_from_directory_to_directory() {
         .unwrap()
         .join("\n");
     assert!(
-        plan.contains("COVERING INDEX usage_event_cwd (cwd>?)"),
+        plan.contains("COVERING INDEX usage_event_cwd (origin_machine=? AND cwd>?)"),
         "{plan}"
     );
     assert!(!plan.contains("SCAN usage_event"), "{plan}");

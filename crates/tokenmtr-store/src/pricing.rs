@@ -196,7 +196,7 @@ pub(crate) fn versions(conn: &Connection) -> Result<BTreeSet<PricingVersion>, St
 }
 
 /// Selects one page of [`RepriceScope`] events. Extra-usage rows carry a reported cost and are
-/// never priced.
+/// never priced; imported rows keep the estimate of the machine that wrote them.
 const fn select_sql(scope: RepriceScope) -> &'static str {
     match scope {
         RepriceScope::Unpriced => {
@@ -204,12 +204,14 @@ const fn select_sql(scope: RepriceScope) -> &'static str {
              cache_write_1h, output, reasoning, service_tier, cost_estimated_usd_micros, \
              pricing_version FROM usage_event \
              WHERE id > ?1 AND cost_reported_usd_micros IS NULL \
-             AND cost_estimated_usd_micros IS NULL ORDER BY id LIMIT ?2"
+             AND cost_estimated_usd_micros IS NULL AND +origin_machine IS NULL \
+             ORDER BY id LIMIT ?2"
         }
         RepriceScope::All => {
             "SELECT id, revision, model, provider, input_uncached, cache_read, cache_write_5m, \
              cache_write_1h, output, reasoning, service_tier, cost_estimated_usd_micros, \
-             pricing_version FROM usage_event WHERE id > ?1 AND kind <> 'extra_usage' \
+             pricing_version FROM usage_event \
+             WHERE id > ?1 AND kind <> 'extra_usage' AND +origin_machine IS NULL \
              ORDER BY id LIMIT ?2"
         }
     }

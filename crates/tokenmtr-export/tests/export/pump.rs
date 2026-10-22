@@ -7,12 +7,14 @@ use std::num::NonZeroUsize;
 use camino::{Utf8Path, Utf8PathBuf};
 use tempfile::TempDir;
 use tokenmtr_config::{FileFormat, FileMode, Partition, RedactColumn, RedactMode};
-use tokenmtr_core::{FxRate, SinkId};
+use tokenmtr_core::{FxRate, MachineId, SinkId, SourceId};
 use tokenmtr_export::{
     ConfiguredSink, FileTarget, PumpOptions, Redactor, RowEncoder, Sink, SinkKind, SinkSpec,
     SqliteTarget, Target, export_pending, fetch_batch, hash_value,
 };
-use tokenmtr_store::{Dataset, FxSource, Revision, Store, StoreRead, StoreReader};
+use tokenmtr_store::{
+    Dataset, FxSource, ImportPage, ImportedEvent, Revision, Store, StoreRead, StoreReader,
+};
 
 use crate::fixtures::{
     TestResult, changed, clock, open_store, path_in, quota_poll, subscription, tool_call, usage,
@@ -345,5 +347,44 @@ fn a_sqlite_sink_exports_through_the_pump() -> TestResult {
     }
     assert!(matches!(sinks[0].kind, SinkKind::Sqlite(_)));
     assert_eq!(sinks[0].kind.id().as_str(), "db");
+    Ok(())
+}
+
+#[test]
+fn imported_rows_are_never_delivered() -> TestResult {
+    let tmp = TempDir::new()?;
+    let mut store = open_store(&tmp)?;
+    seed(&mut store)?;
+    let origin: MachineId = "0190a6f2-7c1e-7b4a-9d3e-1a2b3c4d5e6f".parse()?;
+    let imported = ImportedEvent {
+        event: usage(&origin, "r", "2026-05-01T12:00:00Z", None)?,
+        superseded: false,
+        origin_revision: Revision::new(1),
+    };
+    let source = SourceId::try_from("laptop")?;
+    store.import_page(&ImportPage {
+        source: &source,
+        path: Utf8Path::new("/x/laptop.db"),
+        machine: origin,
+        events: &[imported],
+        tool_calls: &[],
+    })?;
+    let out = path_in(&tmp, "out")?;
+    let mut sinks = vec![ConfiguredSink::new(spec(
+        "files",
+        files(&out, FileMode::Append, Partition::Month),
+    )?)];
+
+    let outcomes = export_pending(&mut store, &mut sinks, &options(10));
+    assert!(outcomes[0].error.is_none(), "{:?}", outcomes[0].error);
+    assert_eq!(outcomes[0].delivered[&Dataset::UsageEvents], 3);
+    assert_eq!(line_count(&out, "usage_events-2026-05.csv")?, 3);
+    let id = SinkId::try_from("files")?;
+    assert!(
+        store.sink_cursor(&id, Dataset::UsageEvents)?
+            < store.head_revision(Dataset::UsageEvents)?
+    );
+    let again = export_pending(&mut store, &mut sinks, &options(10));
+    assert_eq!(again[0].rows(), 0, "the imported row is not pending");
     Ok(())
 }

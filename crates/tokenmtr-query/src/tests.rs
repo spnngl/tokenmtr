@@ -2129,7 +2129,11 @@ fn project_models_split_each_project_and_sum_to_the_projects_breakdown() {
         .map(|m| (m.model.as_str(), m.usage.api_value_micros))
         .collect();
     assert_eq!(p1, [("m1", 3_000_000), ("m2", 1_000_000)]);
-    assert_eq!(split.rows[0].name, None);
+    assert_eq!(
+        split.rows[0].name.as_deref(),
+        Some("p1"),
+        "unmapped: the key"
+    );
 
     let projects = projects(&reader, &c, &f, ProjectGrouping::Project).unwrap();
     for row in &projects.rows {
@@ -2372,4 +2376,85 @@ fn activity_calendar_counts_a_session_on_its_first_day_passing_the_billing_filte
         [date(2026, 3, 1), date(2026, 3, 3)],
         "a session counts on its first covered day"
     );
+}
+
+/// Imports `events` as another machine's export, under source `laptop`.
+fn import(seed: &Seed, events: Vec<UsageEvent>) {
+    let origin: MachineId = "0190a6f2-7c1e-7b4a-9d3e-1a2b3c4d5e6f".parse().unwrap();
+    let imported: Vec<_> = events
+        .into_iter()
+        .zip(1..)
+        .map(|(mut event, revision)| {
+            event.id = EventId::new(&origin, event.agent, &event.dedup_key);
+            tokenmtr_store::ImportedEvent {
+                event,
+                superseded: false,
+                origin_revision: tokenmtr_store::Revision::new(revision),
+            }
+        })
+        .collect();
+    let source = tokenmtr_core::SourceId::try_from("laptop".to_owned()).unwrap();
+    seed.store()
+        .import_page(&tokenmtr_store::ImportPage {
+            source: &source,
+            path: camino::Utf8Path::new("/x/laptop.db"),
+            machine: origin,
+            events: &imported,
+            tool_calls: &[],
+        })
+        .unwrap();
+}
+
+#[test]
+fn imported_rows_count_in_totals_and_budgets_but_not_in_the_live_block() {
+    let seed = Seed::new();
+    let now = ts("2026-02-02T12:00:00Z");
+    let recent = now.checked_sub(SignedDuration::from_secs(60)).unwrap();
+    let mut local = reported(seed.ev("local", recent), 1_200_000);
+    local.tokens.output = 600;
+    seed.put(&[local]);
+    let mut remote = reported(seed.ev("remote", recent), 2_400_000);
+    remote.tokens.output = 1_200;
+    remote.session = SessionId::try_from("remote".to_owned()).unwrap();
+    remote.project = Some(ProjectKey::try_from("github.com/acme/tool".to_owned()).unwrap());
+    let mut folder = reported(seed.ev("folder", recent), 600_000);
+    folder.project = Some(ProjectKey::try_from("/home/me/src/widgets".to_owned()).unwrap());
+    import(&seed, vec![remote, folder]);
+    seed.store().set_heartbeat().unwrap();
+    let reader = seed.reader();
+    let c = usd_ctx("UTC", "2026-02-02T12:00:00Z");
+    let budget = BudgetSpec {
+        budget: Budget::new(
+            BudgetId::try_from("daily".to_owned()).unwrap(),
+            BudgetPeriod::Day,
+            Money::from_micros(Currency::Usd, 4_800_000),
+            BudgetMeasure::ApiValue,
+        )
+        .unwrap(),
+        scope: BudgetScope::default(),
+    };
+    let cfg = RecapConfig {
+        daemon_stale_after: SignedDuration::from_secs(i64::MAX / 4),
+        ..recap_config(Vec::new(), vec![budget])
+    };
+
+    let r = recap(&reader, &c, &cfg, Selection::All, Period::Today).unwrap();
+    // Totals and the budget count every machine ...
+    assert_eq!(r.recap.totals.usage.api_value_micros, 4_200_000);
+    assert_eq!(r.recap.budgets[0].percent, 87);
+    // ... the live rate only this one: 600 tokens over five minutes.
+    let live = r.recap.live.unwrap();
+    assert_eq!((live.tokens_per_minute, live.active_sessions), (120, 1));
+
+    // A project only imports know is named the way a local resolution would.
+    let range = days(date(2026, 2, 2), date(2026, 2, 3));
+    let rows = projects(&reader, &c, &range, ProjectGrouping::Project)
+        .unwrap()
+        .rows;
+    let named: Vec<_> = rows
+        .iter()
+        .filter_map(|row| row.project.clone().zip(row.name.clone()))
+        .collect();
+    assert!(named.contains(&("github.com/acme/tool".to_owned(), "acme/tool".to_owned())));
+    assert!(named.contains(&("/home/me/src/widgets".to_owned(), "widgets".to_owned())));
 }

@@ -598,7 +598,8 @@ pub struct SessionOrigin {
     pub transcript_exists: bool,
 }
 
-/// The origin of one session.
+/// The origin of one session on this machine: an imported session has no directory or
+/// transcript here, so it has none to open.
 ///
 /// # Errors
 ///
@@ -614,7 +615,8 @@ pub fn session_origin(
         .query_row(
             "SELECT e.cwd, f.path FROM usage_event e \
              LEFT JOIN source_file f ON f.id = e.source_file_id \
-             WHERE e.agent = ?1 AND e.session = ?2 ORDER BY e.at_us DESC LIMIT 1",
+             WHERE e.agent = ?1 AND e.session = ?2 AND +e.origin_machine IS NULL \
+             ORDER BY e.at_us DESC LIMIT 1",
             rusqlite::params![agent_id.as_str(), session.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
