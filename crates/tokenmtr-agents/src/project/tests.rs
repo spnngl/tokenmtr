@@ -1,5 +1,7 @@
 use std::fs;
 
+use tokenmtr_core::SourceId;
+
 use super::*;
 use crate::testkit::{add_remote, add_worktree, init_repo, rules, utf8_dir};
 
@@ -199,7 +201,7 @@ fn a_protected_cwd_falls_back_and_is_reported() {
 fn superset_hints(root: &Utf8Path, worktree: &Utf8Path, repo: &Utf8Path) -> Hints {
     let dir = root.join("superset");
     superset::fixture::fake_superset(&dir, worktree, repo);
-    Hints::superset(dir)
+    Hints::superset(vec![(SourceId::implicit_superset(), dir)])
 }
 
 #[test]

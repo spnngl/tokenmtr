@@ -11,11 +11,11 @@ use jiff::civil::Date;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use secrecy::SecretString;
-use serde::de::{self, Visitor};
+use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokenmtr_core::{
     AgentId, BillingPeriod, BudgetId, BudgetMeasure, BudgetPeriod, Currency, ModelId, Plan,
-    ProfileId, ProjectKey, ProviderId, SinkId, SubscriptionId, SubscriptionSpec,
+    ProfileId, ProjectKey, ProviderId, SinkId, SourceId, SubscriptionId, SubscriptionSpec,
 };
 
 use crate::model::{
@@ -160,7 +160,8 @@ pub struct RawConfig {
     pub advisor: RawAdvisor,
     pub backup: RawBackup,
     pub import: RawImport,
-    pub integrations: RawIntegrations,
+    /// The removed `[integrations]` table, kept only to reject it with a pointer to `[[sources]]`.
+    pub integrations: Option<IgnoredAny>,
     pub git: RawGit,
     pub projects: Vec<RawProject>,
     pub budgets: Vec<RawBudget>,
@@ -172,6 +173,7 @@ pub struct RawConfig {
     pub privacy: RawPrivacy,
     pub agents: RawAgents,
     pub sinks: Vec<RawSink>,
+    pub sources: Vec<RawSource>,
     pub metrics: RawMetrics,
 }
 
@@ -241,19 +243,6 @@ pub struct RawBackup {
 #[serde(deny_unknown_fields, default)]
 pub struct RawImport {
     pub claude_stats_cache: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct RawIntegrations {
-    pub superset: RawSuperset,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct RawSuperset {
-    pub enabled: Option<bool>,
-    pub dir: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -443,6 +432,27 @@ pub struct RawSink {
     pub path: Option<String>,
     pub mode: Option<FileMode>,
     pub partition: Option<Partition>,
+}
+
+/// The `kind` of a source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RawSourceKind {
+    Superset,
+    Sqlite,
+}
+
+/// One `[[sources]]` entry. Kind-specific keys are checked against `kind` during validation.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawSource {
+    pub id: SourceId,
+    pub kind: RawSourceKind,
+    pub enabled: Option<bool>,
+    pub dir: Option<String>,
+    pub include: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    pub interval: Option<RawDuration>,
 }
 
 /// `[metrics]`: the Prometheus outputs and what they share.

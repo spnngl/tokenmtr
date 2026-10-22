@@ -7,7 +7,7 @@ use camino::Utf8PathBuf;
 use tokenmtr_core::billing::{BillingError, PlanCatalogError};
 use tokenmtr_core::budget::BudgetError;
 use tokenmtr_core::{
-    AgentId, BillingPeriod, Currency, MoneyError, Plan, PricingError, ProfileId, SinkId,
+    AgentId, BillingPeriod, Currency, MoneyError, Plan, PricingError, ProfileId, SinkId, SourceId,
     SubscriptionId,
 };
 
@@ -168,6 +168,39 @@ pub enum Violation {
         /// The sink kind.
         kind: &'static str,
         /// The offending key.
+        field: &'static str,
+    },
+    /// The `[integrations]` table was replaced by `[[sources]]`.
+    #[error(
+        "`[integrations]` is gone: declare `[[sources]]` with `id = \"superset\"`, `kind = \"superset\"` and the old `enabled` and `dir` keys"
+    )]
+    RemovedIntegrations,
+    /// Two sources share an id.
+    #[error("duplicate source id {0}")]
+    DuplicateSourceId(SourceId),
+    /// No source of kind `superset` is declared, so the implicit one takes the id `superset`.
+    #[error(
+        "id `superset` is taken by the implicit Superset source; declare a `kind = \"superset\"` source or pick another id"
+    )]
+    ReservedSourceId,
+    /// The source reads the same files as an earlier one: the same Superset directory (unset
+    /// means `~/.superset`) or an `include` pattern in common.
+    #[error("reads the same files as source {0}")]
+    SourceTargetClash(SourceId),
+    /// A source sets a key its kind does not use.
+    #[error("source kind `{kind}` does not accept `{field}`")]
+    SourceFieldNotAllowed {
+        /// The source kind.
+        kind: &'static str,
+        /// The offending key.
+        field: &'static str,
+    },
+    /// A source omits a key its kind needs.
+    #[error("source kind `{kind}` needs `{field}`")]
+    SourceFieldRequired {
+        /// The source kind.
+        kind: &'static str,
+        /// The missing key.
         field: &'static str,
     },
     /// A metrics output reuses an id of a sink or of another output.

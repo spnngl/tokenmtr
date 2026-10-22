@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub use tokenmtr_core::Dataset;
 use tokenmtr_core::{
     AgentId, AlertConfig, Budget, Currency, EurPerUsd, Override, ProfileId, ProjectKey, SinkId,
-    Subscription,
+    SourceId, Subscription,
 };
 use url::Url;
 
@@ -663,21 +663,47 @@ pub struct ImportConfig {
     pub claude_stats_cache: bool,
 }
 
-/// `[integrations]`: other apps' data, read-only, for hints.
+/// The `kind`-specific part of a source.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IntegrationsConfig {
-    /// `[integrations.superset]`.
-    pub superset: SupersetConfig,
+pub enum SourceTarget {
+    /// Superset's database: lookup data for project resolution, not rows.
+    Superset(SupersetSource),
+    /// TokenMtr SQLite exports of other machines: rows.
+    Sqlite(SqliteSource),
 }
 
-/// `[integrations.superset]`: Superset's database names the repository and branch of a
-/// worktree that no longer exists.
+/// Settings of a Superset source: its database names the repository and branch of a worktree
+/// that no longer exists.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SupersetConfig {
-    /// Whether Superset's database is read.
-    pub enabled: bool,
+pub struct SupersetSource {
     /// Superset's data directory; `None` is `~/.superset`.
     pub dir: Option<Utf8PathBuf>,
+}
+
+/// Settings of a SQLite source: the files a `kind = "sqlite"` sink of other machines wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqliteSource {
+    /// Files to read: non-empty, `~` expanded.
+    pub include: GlobList,
+    /// Files to skip among the included ones.
+    pub exclude: GlobList,
+    /// Time between import runs, at least [`MIN_SOURCE_INTERVAL`]; the safety net behind file
+    /// events.
+    pub interval: SignedDuration,
+}
+
+/// The shortest `interval` of a SQLite source.
+pub const MIN_SOURCE_INTERVAL: SignedDuration = SignedDuration::from_secs(30);
+
+/// One `[[sources]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceConfig {
+    /// Unique id.
+    pub id: SourceId,
+    /// Whether the source is read.
+    pub enabled: bool,
+    /// Kind-specific settings.
+    pub target: SourceTarget,
 }
 
 /// `[git]`: how a repository becomes a project.
@@ -835,8 +861,6 @@ pub struct Config {
     pub backup: BackupConfig,
     /// `[import]`.
     pub import: ImportConfig,
-    /// `[integrations]`.
-    pub integrations: IntegrationsConfig,
     /// `[git]`.
     pub git: GitConfig,
     /// `[[projects]]`, in match order.
@@ -861,6 +885,8 @@ pub struct Config {
     pub accounts: AccountLabels,
     /// `[[sinks]]`: ids unique.
     pub sinks: Vec<SinkConfig>,
+    /// `[[sources]]`: ids unique; holds a Superset source (declared or implicit).
+    pub sources: Vec<SourceConfig>,
     /// `[metrics]`.
     pub metrics: MetricsConfig,
 }

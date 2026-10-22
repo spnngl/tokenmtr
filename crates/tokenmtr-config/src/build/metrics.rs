@@ -90,7 +90,7 @@ pub(super) fn build_metrics(raw: &RawConfig, env: &dyn Env) -> Checked<MetricsCo
 }
 
 /// `value`, or `default`, when it is at least `min` (the duration and how config spells it).
-fn at_least(
+pub(super) fn at_least(
     value: Option<RawDuration>,
     default: SignedDuration,
     (min, written): (SignedDuration, &'static str),
@@ -218,7 +218,11 @@ fn build_filter(
     })
 }
 
-fn globs(patterns: Option<&[String]>, env: &dyn Env, at: &ConfigPath) -> Checked<GlobList> {
+pub(super) fn globs(
+    patterns: Option<&[String]>,
+    env: &dyn Env,
+    at: &ConfigPath,
+) -> Checked<GlobList> {
     let mut expanded = Vec::new();
     for (i, pattern) in patterns.unwrap_or_default().iter().enumerate() {
         expanded.push(expand_tilde(env, pattern, &at.index(i))?);

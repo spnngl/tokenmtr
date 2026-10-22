@@ -135,7 +135,10 @@ fn keyed_ingestor(
         import_claude_stats_cache: true,
         protected: vec![root.join("protected")],
         redact_paths,
-        superset_dir: Some(root.join("superset")),
+        superset: vec![(
+            tokenmtr_core::SourceId::implicit_superset(),
+            root.join("superset"),
+        )],
         live_branch_within: jiff::SignedDuration::from_mins(10),
     };
     Ingestor::open(settings, &root.join("store.db")).unwrap()
