@@ -36,6 +36,18 @@ pub fn matching_files(
     (files.into_iter().collect(), failures)
 }
 
+/// The folders to watch for changes to the files `include` names: the literal prefix of each
+/// pattern, which may not exist yet.
+#[must_use]
+pub fn include_roots(include: &GlobList) -> Vec<Utf8PathBuf> {
+    let roots: BTreeSet<_> = include
+        .patterns()
+        .iter()
+        .map(|pattern| walk_plan(pattern).0)
+        .collect();
+    roots.into_iter().collect()
+}
+
 fn has_meta(segment: &str) -> bool {
     segment.contains(['*', '?', '[', ']', '{', '}'])
 }

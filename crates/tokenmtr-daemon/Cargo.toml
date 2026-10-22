@@ -16,6 +16,7 @@ tokenmtr-config.workspace = true
 tokenmtr-control.workspace = true
 tokenmtr-core.workspace = true
 tokenmtr-export.workspace = true
+tokenmtr-import.workspace = true
 tokenmtr-metrics.workspace = true
 tokenmtr-platform.workspace = true
 tokenmtr-query.workspace = true

@@ -7,13 +7,15 @@ use camino::Utf8Path;
 use tokenmtr_agents::AgentSource;
 use tokenmtr_agents::ingest::{IngestSettings, Ingestor};
 use tokenmtr_app::{load_config, store_path};
-use tokenmtr_config::Config;
+use tokenmtr_config::{Config, SourceTarget};
+use tokenmtr_import::include_roots;
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_store::StoreRead;
 
 use crate::changes::std_duration;
-use crate::ctx::{Active, Ctx, Job, WatchPlan, lock};
+use crate::ctx::{Active, Ctx, ImportWatch, Job, WatchPlan, lock};
 use crate::error::DaemonError;
+use crate::import::enabled_imports;
 
 /// What the watcher should watch for `config`; empty when `daemon.watch` is off.
 pub(crate) fn watch_plan(
@@ -24,9 +26,26 @@ pub(crate) fn watch_plan(
     if !config.daemon.watch {
         return WatchPlan::default();
     }
+    let mut roots = ingestor.roots();
+    let mut imports = Vec::new();
+    for source in enabled_imports(config) {
+        if let SourceTarget::Sqlite(sqlite) = &source.target {
+            for root in include_roots(&sqlite.include) {
+                if !roots.contains(&root) {
+                    roots.push(root);
+                }
+            }
+            imports.push(ImportWatch {
+                source: source.id.clone(),
+                include: sqlite.include.clone(),
+                exclude: sqlite.exclude.clone(),
+            });
+        }
+    }
     WatchPlan {
-        roots: ingestor.roots(),
+        roots,
         owner: Some(ingest.clone()),
+        imports,
     }
 }
 
@@ -199,6 +218,7 @@ impl Ctx {
         }
 
         self.arm_metrics(o, c);
+        self.arm_imports(o, c);
 
         for sink in &c.sinks {
             if o.is_none_or(|o| !o.sinks.iter().any(|s| s.id == sink.id)) {

@@ -25,6 +25,9 @@ pub struct Timing {
     pub event_coalesce: Duration,
     /// A config file event triggers a reload this long after the first event.
     pub reload_debounce: Duration,
+    /// A file event in a source folder triggers its import this long after the first event:
+    /// a sync client writes a file in several steps.
+    pub import_debounce: Duration,
     /// Smallest slack of a periodic job (10% of its period, at least this): jobs due within it
     /// share one wakeup.
     pub min_slack: Duration,
@@ -54,6 +57,7 @@ impl Default for Timing {
             root_poll: Duration::from_secs(60),
             event_coalesce: Duration::from_secs(1),
             reload_debounce: Duration::from_millis(500),
+            import_debounce: Duration::from_secs(2),
             min_slack: Duration::from_secs(1),
             export_retry_cap: Duration::from_secs(300),
             metrics_backoff: Duration::from_secs(1),

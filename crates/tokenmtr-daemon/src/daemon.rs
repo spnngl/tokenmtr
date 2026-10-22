@@ -148,15 +148,16 @@ async fn build(
     let open_ingest = ingest.clone();
     let stopping = Arc::new(AtomicBool::new(false));
     let open_stopping = Arc::clone(&stopping);
-    let (store, beat, exports, reader, ingestor, metrics) =
+    let (store, beat, exports, imports, reader, ingestor, metrics) =
         tokio::task::spawn_blocking(move || {
             let store = Store::open(&open_path)?;
             let beat = Store::open(&open_path)?;
             let exports = Store::open(&open_path)?;
+            let imports = Store::open(&open_path)?;
             let reader = StoreReader::open(&open_path)?;
             let ingestor = Ingestor::open(open_ingest, &open_path)?.with_stop(open_stopping);
             let metrics = Metrics::new(Store::open(&open_path)?, StoreReader::open(&open_path)?);
-            Ok::<_, DaemonError>((store, beat, exports, reader, ingestor, metrics))
+            Ok::<_, DaemonError>((store, beat, exports, imports, reader, ingestor, metrics))
         })
         .await??;
 
@@ -171,6 +172,7 @@ async fn build(
         store: Mutex::new(store),
         beat: Mutex::new(beat),
         exports: Mutex::new(exports),
+        imports: Mutex::new(imports),
         metrics,
         reader: Mutex::new(reader),
         ingestor: Mutex::new(ingestor),
@@ -347,6 +349,7 @@ async fn run_job(ctx: Arc<Ctx>, job: Job) {
                 tracing::warn!(%error, "export task failed");
             }
         }
+        Job::Import(source) => ctx.run_import(source).await,
         Job::MetricsRefresh => ctx.refresh_metrics().await,
         Job::RemoteWrite(output) => ctx.push_remote_write(output).await,
         Job::ExporterBind(output) => ctx.bind_exporter(output).await,

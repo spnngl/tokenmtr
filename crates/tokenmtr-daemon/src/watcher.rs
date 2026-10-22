@@ -275,12 +275,37 @@ fn feed(ctx: &Ctx, live: &Live, core: &mut WatchCore, event: Raw) {
     };
     let raw = match raw {
         Some(RawEvent::Changed(paths)) => {
-            RawEvent::Changed(paths.into_iter().map(|path| live.remapped(path)).collect())
+            let paths: Vec<Utf8PathBuf> =
+                paths.into_iter().map(|path| live.remapped(path)).collect();
+            wake_imports(ctx, Some(&paths));
+            RawEvent::Changed(paths)
         }
-        Some(other) => other,
+        Some(RawEvent::Rescan) => {
+            wake_imports(ctx, None);
+            RawEvent::Rescan
+        }
         None => return,
     };
     core.feed(raw, Instant::now(), &|path| owned(ctx, path));
+}
+
+/// Schedules the import of every source a changed path belongs to; `None` (events were lost)
+/// wakes them all. The debounce lets a sync client finish writing the file.
+fn wake_imports(ctx: &Ctx, changed: Option<&[Utf8PathBuf]>) {
+    for watch in &ctx.watch_plan.borrow().imports {
+        let hit = changed.is_none_or(|paths| {
+            paths.iter().any(|path| {
+                watch.include.is_match(path.as_str()) && !watch.exclude.is_match(path.as_str())
+            })
+        });
+        if hit {
+            ctx.scheduler.schedule_in(
+                Job::Import(watch.source.clone()),
+                ctx.settings.timing.import_debounce,
+                std::time::Duration::ZERO,
+            );
+        }
+    }
 }
 
 #[cfg(test)]
