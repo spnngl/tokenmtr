@@ -12,7 +12,7 @@ use jiff::Timestamp;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use tokenmtr_core::{
     AgentId, Alert, DedupKey, EventId, FxRate, MachineId, PricingVersion, ProfileId, ProjectKey,
-    SinkId, SourceFileId, Subscription, UsageEvent,
+    SinkId, SourceFileId, SourceId, Subscription, UsageEvent,
 };
 
 use crate::account::{self, AccountRecord};
@@ -22,6 +22,9 @@ use crate::checkpoint::{self, Checkpoint, StoredCheckpoint};
 use crate::error::StoreError;
 use crate::events;
 use crate::fx::{self, FxRateRow, FxSource};
+use crate::import::{
+    self, ImportCursor, ImportFingerprint, ImportPage, ImportPageStats, ImportRun, ImportedRows,
+};
 use crate::ingest::{self, IngestWrite, IngestWriteReport};
 use crate::issue::{self, IssueKind, OpenParseIssue, ParseIssue};
 use crate::meta::{self, Identity};
@@ -417,6 +420,42 @@ pub trait StoreRead: sealed::Sealed {
         sink::runs(self.connection(), sink, limit)
     }
 
+    /// Where the export file `path` stands for `source`; `None` when it was never read.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn import_cursor(
+        &self,
+        source: &SourceId,
+        path: &Utf8Path,
+    ) -> Result<Option<ImportCursor>, StoreError> {
+        import::cursor(self.connection(), source, path)
+    }
+
+    /// Every export file `source` has read, by path, with its cursor.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn import_cursors(&self, source: &SourceId) -> Result<Vec<(String, ImportCursor)>, StoreError> {
+        import::cursors(self.connection(), source)
+    }
+
+    /// The newest runs of `source`, newest first.
+    ///
+    /// # Errors
+    /// `SQLite` failures or a corrupt row.
+    fn import_runs(&self, source: &SourceId, limit: usize) -> Result<Vec<ImportRun>, StoreError> {
+        import::runs(self.connection(), source, limit)
+    }
+
+    /// How many rows `source` imported and still holds.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    fn imported_rows(&self, source: &SourceId) -> Result<ImportedRows, StoreError> {
+        import::counts(self.connection(), source)
+    }
+
     /// The working directories of stored events that have no resolution yet, ordered.
     ///
     /// # Errors
@@ -567,6 +606,63 @@ impl Store {
     /// `SQLite` failures (the transaction is rolled back) or values outside `SQLite`'s integers.
     pub fn upsert_events(&mut self, events: &[UsageEvent]) -> Result<UpsertStats, StoreError> {
         self.in_transaction(|conn, now| events::upsert(conn, now, events))
+    }
+
+    /// Stores one page of an export file read by an import source, and moves the file's cursor,
+    /// in one transaction: a cursor never runs ahead of its rows. A row is written only when its
+    /// origin revision is higher than the stored one, and then gets a new revision of this store.
+    ///
+    /// # Errors
+    /// `SQLite` failures (the transaction is rolled back) or values outside `SQLite`'s integers.
+    pub fn import_page(&mut self, page: &ImportPage<'_>) -> Result<ImportPageStats, StoreError> {
+        self.in_transaction(|conn, now| import::page(conn, now, page))
+    }
+
+    /// Records that the whole file was read as `fingerprint` describes.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    pub fn set_import_fingerprint(
+        &mut self,
+        source: &SourceId,
+        path: &Utf8Path,
+        machine: MachineId,
+        fingerprint: &ImportFingerprint,
+    ) -> Result<(), StoreError> {
+        import::set_fingerprint(&self.conn, source, path, machine, fingerprint)
+    }
+
+    /// Forgets where the file stood: the next run reads it from the start. The rows stay (a second
+    /// read changes none that is unchanged).
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    pub fn reset_import_cursor(
+        &mut self,
+        source: &SourceId,
+        path: &Utf8Path,
+    ) -> Result<(), StoreError> {
+        import::reset(&self.conn, source, path)
+    }
+
+    /// Appends one attempt to the history of an import source. The history keeps the newest
+    /// 1000 runs per source.
+    ///
+    /// # Errors
+    /// `SQLite` failures.
+    pub fn record_import_run(&mut self, run: &ImportRun) -> Result<(), StoreError> {
+        self.in_transaction(|conn, _| import::record_run(conn, run, import::RUN_HISTORY))
+    }
+
+    /// Deletes the rows `source` imported with its cursors and runs, and returns the rows
+    /// deleted. The one place a row of an exported dataset is deleted: no sink ever received an
+    /// imported row. A source still configured imports everything again on its next run, so
+    /// callers refuse enabled sources.
+    ///
+    /// # Errors
+    /// `SQLite` failures (the transaction is rolled back).
+    pub fn forget_source(&mut self, source: &SourceId) -> Result<ImportedRows, StoreError> {
+        self.in_transaction(|conn, _| import::forget(conn, source))
     }
 
     /// Inserts or updates tool calls by `(agent, tool_use_id)`. The event link and the error flag

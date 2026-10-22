@@ -1430,3 +1430,65 @@ fn open_parse_issues_are_counted_per_kind() {
         ]
     );
 }
+
+#[test]
+fn imported_rows_never_reach_the_metrics() {
+    use tokenmtr_core::SourceId;
+    use tokenmtr_store::{ImportPage, ImportedEvent, ImportedToolCall, Revision};
+
+    let mut seed = Seed::new();
+    let local = seed.ev("a", "2026-02-28T00:00:00Z");
+    seed.put(std::slice::from_ref(&local));
+    seed.call("t1", Some(&local), "s1", "Read");
+    let before = everything(&seed, &take(&seed));
+
+    // Another machine's event in a session of its own, its tool call, and a stray one in `s1`.
+    let origin: MachineId = "0190a6f2-7c1e-7b4a-9d3e-1a2b3c4d5e6f".parse().unwrap();
+    let mut foreign = seed.ev("b", "2026-02-28T01:00:00Z");
+    foreign.id = EventId::new(&origin, AgentId::CLAUDE, &foreign.dedup_key);
+    foreign.session = SessionId::try_from("remote".to_owned()).unwrap();
+    foreign.cwd = Some(Utf8PathBuf::from("/remote"));
+    let call = |tool_use: &str, session: &str| ImportedToolCall {
+        id: EventId::new(
+            &origin,
+            AgentId::CLAUDE,
+            &DedupKey::try_from(format!("tool_call:{tool_use}")).unwrap(),
+        ),
+        call: ProfiledToolCall {
+            profile: ProfileId::default_profile(),
+            call: ToolCall {
+                agent: AgentId::CLAUDE,
+                tool_use_id: tool_use.to_owned(),
+                event: None,
+                session: SessionId::try_from(session.to_owned()).unwrap(),
+                at: now(),
+                tool_name: "Bash".to_owned(),
+                mcp_server: None,
+                is_error: Some(false),
+                skill: None,
+            },
+        },
+        origin_revision: Revision::new(1),
+    };
+    let events = [ImportedEvent {
+        event: foreign,
+        superseded: false,
+        origin_revision: Revision::new(1),
+    }];
+    let calls = [call("r1", "remote"), call("r2", "s1")];
+    let source = SourceId::try_from("laptop".to_owned()).unwrap();
+    seed.store
+        .import_page(&ImportPage {
+            source: &source,
+            path: camino::Utf8Path::new("/x/laptop.db"),
+            machine: origin,
+            events: &events,
+            tool_calls: &calls,
+        })
+        .unwrap();
+
+    let after = everything(&seed, &take(&seed));
+    assert_eq!(after.series, before.series);
+    assert_eq!(sum(&after, Family::Events, &[]), 1);
+    assert_eq!(sum(&after, Family::ToolCalls, &[]), 1);
+}

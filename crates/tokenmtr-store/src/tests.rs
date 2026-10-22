@@ -12,7 +12,7 @@ use tokenmtr_core::quota::{QuotaWindowState, Utilization};
 use tokenmtr_core::{
     AgentId, Alert, AlertKind, DedupKey, Estimate, EurPerUsd, EventCost, EventId, ExtraUsage,
     FxRate, MachineId, ModelId, PricingVersion, ProfileId, QuotaWindow, SessionId, SinkId,
-    SkillName, SourceFileId, TokenCounts, UsageEvent, UsdMicros, WindowId,
+    SkillName, SourceFileId, SourceId, TokenCounts, UsageEvent, UsdMicros, WindowId,
 };
 use tokenmtr_core::{BillingPeriod, Currency, Money, Plan, Subscription, SubscriptionSpec};
 
@@ -105,6 +105,7 @@ fn revisions(store: &impl StoreRead) -> Vec<(u64, String)> {
 }
 
 mod api;
+mod import;
 mod perf;
 
 #[test]

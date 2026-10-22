@@ -305,7 +305,10 @@ impl RowNames {
     pub(crate) fn of(&self, key: Option<&String>) -> Option<String> {
         let key = key?;
         match self {
-            Self::Projects(names) => names.get(key).cloned().flatten(),
+            Self::Projects(names) => match names.get(key) {
+                Some(name) => name.clone(),
+                None => Some(fallback_name(key)),
+            },
             Self::Folders => {
                 let trimmed = key.trim_end_matches('/');
                 let last = trimmed.rsplit('/').next().unwrap_or(trimmed);
@@ -315,12 +318,26 @@ impl RowNames {
     }
 }
 
+/// The name of a project key the project map does not know, as a local resolution would have
+/// named it: the last folder of a path key (`/a/b/tool` is `tool`), the URL path after the host
+/// of a remote key (`github.com/acme/tool` is `acme/tool`), else the key itself. Keys that only
+/// imported rows carry fall here: their directories belong to another machine.
+fn fallback_name(key: &str) -> String {
+    if key.starts_with('/') || key.contains('\\') || key.as_bytes().get(1) == Some(&b':') {
+        let trimmed = key.trim_end_matches(['/', '\\']);
+        let last = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
+        return if last.is_empty() { key } else { last }.to_owned();
+    }
+    key.split_once('/').map_or(key, |(_, path)| path).to_owned()
+}
+
 /// One project (or folder, per [`ProjectGrouping`]) of the projects screen.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProjectRow {
     /// Project key, or folder path; absent for events no rule, repository or cwd could place.
     pub project: Option<String>,
-    /// Display name: from the project map, or the folder's last component.
+    /// Display name: from the project map, else derived from the key (see `fallback_name`); for a
+    /// folder, its last component.
     pub name: Option<String>,
     /// Client label.
     pub client: Option<String>,

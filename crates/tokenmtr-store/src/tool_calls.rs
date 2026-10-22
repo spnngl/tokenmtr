@@ -58,9 +58,10 @@ static UPSERT: LazyLock<UpsertSql> = LazyLock::new(|| {
     )
 });
 
-const AFTER: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
+/// What sinks export: local rows only, imported ones stay home.
+pub(crate) const AFTER: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
     tool_name, mcp_server, is_error, skill \
-    FROM tool_call WHERE revision > ?1 ORDER BY revision LIMIT ?2";
+    FROM tool_call WHERE revision > ?1 AND +origin_machine IS NULL ORDER BY revision LIMIT ?2";
 
 const BY_KEY: &str = "SELECT revision, agent, tool_use_id, profile, event_id, session, at_us, \
     tool_name, mcp_server, is_error, skill \
@@ -113,25 +114,53 @@ pub(crate) fn upsert(
         &UPSERT,
         now,
         &rows,
-        |upsert, row, revision, now_us| {
-            let call = &row.call;
-            upsert.bind(named_params! {
-                        ":agent": call.agent.as_str(),
-                        ":tool_use_id": call.tool_use_id,
-                        ":revision": revision,
-                        ":updated_at_us": now_us,
-                        ":profile": row.profile.as_str(),
-                        ":event_id": call.event.as_ref().map(EventId::as_bytes),
-                        ":session": call.session.as_str(),
-                        ":at_us": to_us(call.at),
-                        ":tool_name": call.tool_name,
-                        ":mcp_server": call.mcp_server,
-                        ":is_error": call.is_error,
-                        ":skill": call.skill.as_ref().map(SkillName::as_str),
-            })
-        },
+        |upsert, row, revision, now_us| bind(upsert, row, &row.call.tool_use_id, revision, now_us),
     )
 }
+
+/// Binds every parameter of a tool-call upsert but the origin columns, under `tool_use_id`.
+pub(crate) fn bind(
+    upsert: &mut versioned::Upsert<'_>,
+    row: &ProfiledToolCall,
+    tool_use_id: &str,
+    revision: Revision,
+    now_us: i64,
+) -> Result<(), StoreError> {
+    let call = &row.call;
+    upsert.bind(named_params! {
+                ":agent": call.agent.as_str(),
+                ":tool_use_id": tool_use_id,
+                ":revision": revision,
+                ":updated_at_us": now_us,
+                ":profile": row.profile.as_str(),
+                ":event_id": call.event.as_ref().map(EventId::as_bytes),
+                ":session": call.session.as_str(),
+                ":at_us": to_us(call.at),
+                ":tool_name": call.tool_name,
+                ":mcp_server": call.mcp_server,
+                ":is_error": call.is_error,
+                ":skill": call.skill.as_ref().map(SkillName::as_str),
+    })
+}
+
+/// The upsert of imported tool calls: every value column replaces (the origin is the authority),
+/// plus the origin columns.
+pub(crate) static UPSERT_IMPORTED: LazyLock<UpsertSql> = LazyLock::new(|| {
+    let values: Vec<(&str, Merge)> = VALUES
+        .iter()
+        .map(|&(column, _)| (column, Merge::Replace))
+        .chain(
+            ["origin_machine", "origin_source", "origin_revision"]
+                .map(|column| (column, Merge::Replace)),
+        )
+        .collect();
+    UpsertSql::new(
+        "tool_call",
+        &["agent", "tool_use_id"],
+        &["agent", "tool_use_id"],
+        &values,
+    )
+});
 
 /// Sets the error flag of a stored call from its tool result, bumping the revision only when the
 /// flag changes.

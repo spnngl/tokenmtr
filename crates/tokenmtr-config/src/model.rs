@@ -668,7 +668,7 @@ pub struct ImportConfig {
 pub enum SourceTarget {
     /// Superset's database: lookup data for project resolution, not rows.
     Superset(SupersetSource),
-    /// TokenMtr SQLite exports of other machines: rows.
+    /// `TokenMtr` SQLite exports of other machines: rows.
     Sqlite(SqliteSource),
 }
 

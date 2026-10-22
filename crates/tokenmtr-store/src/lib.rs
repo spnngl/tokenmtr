@@ -36,14 +36,24 @@
 //!
 //! Each exported dataset ([`Dataset`]) has one counter in `dataset_revision`. An upsert gives a
 //! row the next revision only when a value column differs from the stored row; rewriting identical
-//! data changes nothing and costs no revision. Revisions are unique per dataset and gap-free.
-//! Rows of exported datasets are never deleted (events are kept forever, and sinks have no delete
-//! channel): stats-cache aggregates that transcripts cover are flagged `superseded` instead
-//! ([`Store::supersede_daily_aggregates_covered_by_transcripts`]) and subscriptions removed from
-//! config get `removed_at`. An exporter reads `revision > cursor ORDER BY revision LIMIT n` through
+//! data changes nothing and costs no revision. Revisions are unique per dataset and gap-free
+//! in the store; what an exporter reads has gaps where imported rows (below) took a revision.
+//! Local rows of exported datasets are never deleted (events are kept forever, and sinks have no
+//! delete channel): stats-cache aggregates that transcripts cover are flagged `superseded`
+//! instead ([`Store::supersede_daily_aggregates_covered_by_transcripts`]) and subscriptions
+//! removed from config get `removed_at`. An exporter reads `revision > cursor ORDER BY revision LIMIT n` through
 //! [`StoreRead::usage_events_after`] and its siblings, then moves its cursor with
 //! [`Store::set_sink_cursor`]. `updated_at_us` records when the revision was assigned, which is
 //! what sink lag is measured from.
+//!
+//! # Imported rows
+//!
+//! `usage_event` and `tool_call` also hold rows read from the SQLite exports of other machines
+//! ([`Store::import_page`]): `origin_machine`, `origin_source` and `origin_revision` are set on
+//! them and NULL on local rows. They draw revisions from the same counters (a change is a
+//! change), but sinks, `pending` and everything that concerns only this machine's own files
+//! select `origin_machine IS NULL`. They are the one exception to "no row is deleted":
+//! [`Store::forget_source`], safe because no sink ever received them.
 //!
 //! # Layout
 //!
@@ -53,6 +63,8 @@
 //!   writer and reader.
 //! - one module per bookkeeping table (`checkpoint`, `signal`, `project`, `alert`, `sink`, `runs`,
 //!   `issue`, `pricing`, `account`, `metrics_run`, `meta`).
+//! - `import`: imported rows, import cursors and runs.
+
 //! - `ingest`: [`Store::commit_ingest`], the atomic write of one ingest flush.
 //! - `backup`: online backup and [`restore`].
 //! - `temp`: [`TempStore`], a writer plus readers on a temporary file, for tests.
@@ -67,6 +79,7 @@ mod db;
 mod error;
 mod events;
 mod fx;
+mod import;
 mod ingest;
 mod issue;
 mod meta;
@@ -93,6 +106,10 @@ pub use checkpoint::{Checkpoint, StoredCheckpoint};
 pub use db::{Store, StoreRead, StoreReader};
 pub use error::{CodecError, StoreError};
 pub use fx::{FxRateRow, FxSource};
+pub use import::{
+    ImportCursor, ImportFingerprint, ImportPage, ImportPageStats, ImportRun, ImportedEvent,
+    ImportedRows, ImportedToolCall,
+};
 pub use ingest::{IngestWrite, IngestWriteReport, IssueUpdate, ToolResultFlag};
 pub use issue::{IssueKind, OpenParseIssue, ParseIssue};
 pub use metrics_run::MetricsRun;

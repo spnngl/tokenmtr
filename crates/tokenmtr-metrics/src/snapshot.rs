@@ -25,10 +25,12 @@ use tokenmtr_store::{StoreRead as _, StoreReader};
 use crate::catalog::TOKEN_TYPES;
 use crate::error::MetricsError;
 
-/// Rows that count: not a superseded row, never a daily aggregate (a re-import would move it) or
-/// an extra-usage row (money, no tokens).
+/// Rows that count: this machine's own (another machine exports its own metrics; imported rows
+/// would count twice), not a superseded row, never a daily aggregate (a re-import would move it)
+/// or an extra-usage row (money, no tokens). The unary `+` keeps the planner off
+/// `usage_event_cwd (origin_machine, cwd)`, which `origin_machine IS NULL` would otherwise pick.
 pub(crate) const COUNTED: &str =
-    "superseded = 0 AND kind NOT IN ('daily_aggregate', 'extra_usage')";
+    "+origin_machine IS NULL AND superseded = 0 AND kind NOT IN ('daily_aggregate', 'extra_usage')";
 
 /// What a snapshot needs besides the store.
 #[derive(Debug, Clone)]
@@ -530,7 +532,8 @@ pub(crate) fn usage_sql(segments: &Segments, sessions: bool) -> String {
          {columns}, {segment}, u.at_us, u.input_uncached, u.cache_read, u.cache_write_5m, \
          u.cache_write_1h, u.output, u.reasoning \
          FROM usage_event u \
-         WHERE u.superseded = 0 AND u.kind NOT IN ('daily_aggregate', 'extra_usage'){filter}"
+         WHERE +u.origin_machine IS NULL AND u.superseded = 0 \
+           AND u.kind NOT IN ('daily_aggregate', 'extra_usage'){filter}"
     )
 }
 
@@ -773,7 +776,7 @@ pub(crate) fn tools_sql(sessions: bool) -> String {
         (
             "t.session",
             format!(
-                " WHERE t.session IN (SELECT session FROM usage_event \
+                " AND t.session IN (SELECT session FROM usage_event \
                  WHERE at_us >= ?1 AND {COUNTED})"
             ),
         )
@@ -785,7 +788,8 @@ pub(crate) fn tools_sql(sessions: bool) -> String {
          CASE WHEN t.is_error IS NULL THEN 'unknown' WHEN t.is_error = 0 THEN 'false' \
               ELSE 'true' END, \
          t.skill, e.cwd, e.project, CASE WHEN e.cwd IS NULL AND e.project IS NULL THEN t.session END, {column}, t.at_us \
-         FROM tool_call t LEFT JOIN usage_event e ON e.event_id = t.event_id{filter}"
+         FROM tool_call t LEFT JOIN usage_event e ON e.event_id = t.event_id \
+         WHERE +t.origin_machine IS NULL{filter}"
     )
 }
 
@@ -890,7 +894,7 @@ fn origin_of(
 /// The origin lookup of [`Fallback`]; rides `usage_event_session (session, at_us)`.
 pub(crate) const FALLBACK_SQL: &str = "SELECT u.cwd, u.project, m.name, m.remote \
      FROM usage_event u LEFT JOIN project_map m ON m.cwd = u.cwd \
-     WHERE u.session = ?1 AND u.agent = ?2 AND u.superseded = 0 \
+     WHERE u.session = ?1 AND u.agent = ?2 AND +u.origin_machine IS NULL AND u.superseded = 0 \
        AND u.kind NOT IN ('daily_aggregate', 'extra_usage') \
        AND (u.cwd IS NOT NULL OR u.project IS NOT NULL) \
      ORDER BY u.at_us LIMIT 1";
