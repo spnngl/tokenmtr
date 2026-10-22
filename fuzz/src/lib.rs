@@ -6,9 +6,11 @@
 
 use jiff::Timestamp;
 use jiff::tz::{TimeZone, offset};
+use rusqlite::types::Value;
 use tokenmtr_agents::{ParseBatch, SourceFile, claude, pi};
 use tokenmtr_config::{ConfigFormat, Env, TomlCodec, load_str};
-use tokenmtr_core::ProfileId;
+use tokenmtr_core::{MachineId, ProfileId};
+use tokenmtr_import::{tool_call, usage_event};
 use tokenmtr_platform::{HostInfo, parse_os_release, parse_system_version_plist};
 use tokenmtr_remote::{ClaudeCredentials, parse_profile_response};
 
@@ -30,6 +32,7 @@ pub const TARGETS: &[(&str, Entry)] = &[
     ("config", config),
     ("accept_header", accept_header),
     ("host_files", host_files),
+    ("export_row", export_row),
 ];
 
 /// One Claude transcript line.
@@ -110,6 +113,32 @@ pub fn accept_header(data: &[u8]) {
     };
     let _ = tokenmtr_metrics::text::Format::negotiate(Some(text));
     let _ = tokenmtr_remote::scrape::accepts_gzip(Some(text));
+}
+
+/// One cell of an `export_row` input: empty is NULL, `#n` an integer, `~x` a real, else text.
+fn cell(text: &str) -> Value {
+    if text.is_empty() {
+        Value::Null
+    } else if let Some(number) = text.strip_prefix('#') {
+        Value::Integer(number.parse().unwrap_or_default())
+    } else if let Some(number) = text.strip_prefix('~') {
+        Value::Real(number.parse().unwrap_or_default())
+    } else {
+        Value::Text(text.to_owned())
+    }
+}
+
+/// Rows of another machine's `SQLite` export, as lines of tab-separated cells, each read as a
+/// `usage_events` row and as a `tool_calls` row of machine `...0001`.
+pub fn export_row(data: &[u8]) {
+    let Ok(machine) = "00000000-0000-0000-0000-000000000001".parse::<MachineId>() else {
+        return;
+    };
+    for line in String::from_utf8_lossy(data).lines() {
+        let cells: Vec<Value> = line.split('\t').map(cell).collect();
+        let _ = usage_event(&machine, &cells);
+        let _ = tool_call(&machine, &cells);
+    }
 }
 
 /// An `os-release` file and a macOS `SystemVersion.plist`, decoded lossily as

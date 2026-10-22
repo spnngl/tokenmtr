@@ -6682,6 +6682,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokenmtr-import"
+version = "0.3.0"
+dependencies = [
+ "camino",
+ "jiff",
+ "rusqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokenmtr-config",
+ "tokenmtr-core",
+ "tokenmtr-export",
+ "tokenmtr-store",
+ "tracing",
+]
+
+[[package]]
 name = "tokenmtr-metrics"
 version = "0.3.0"
 dependencies = [

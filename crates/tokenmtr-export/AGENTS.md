@@ -12,6 +12,7 @@ The crate doc in `src/lib.rs` maps the pipeline; `docs/export-schema.md` is the 
 1. Edit the dataset's column list in `src/schema.rs` and its mapping in `src/project.rs`.
 2. Raise `EXPORT_SCHEMA_VERSION` for any column added, removed, renamed or retyped: an `SQLite` sink refuses a file of another version.
 3. Replace the table between the `schema:start` and `schema:end` markers in `docs/export-schema.md` with the text `export_schema_doc_matches_the_code` prints.
-4. Review the changed snapshots in `tests/export/snapshots/`.
+4. Map the column back in `crates/tokenmtr-import/src/decode.rs` and add the new version to `SUPPORTED_VERSIONS` (`crates/tokenmtr-import/src/sqlite.rs`): another machine's export is read by `[[sources]]`, and `supported_versions_cover_the_current_export_schema` fails until you do.
+5. Review the changed snapshots in `tests/export/snapshots/`.
 
 Done when `cargo test -p tokenmtr-export` passes.

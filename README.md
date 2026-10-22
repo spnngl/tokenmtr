@@ -82,6 +82,7 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | [docs/metrics.md](docs/metrics.md) | Prometheus exporter and remote write: the metric catalog, exclusions, redaction. |
 | [docs/control-protocol.md](docs/control-protocol.md) | How the CLI and the app talk to the daemon, and how the daemon watches files and shuts down. |
 | [docs/adding-a-sink.md](docs/adding-a-sink.md) | Steps to add an export sink. |
+| [docs/adding-a-source.md](docs/adding-a-source.md) | Steps to add a source kind (rows read from other machines). |
 | [docs/adding-a-platform.md](docs/adding-a-platform.md) | Steps to port TokenMtr to another OS. |
 | [docs/release.md](docs/release.md) | Build, sign and ship a release. |
 

@@ -19,6 +19,7 @@ Read `PLAN.md` before any task: it holds every numbered decision, the phase orde
 - Before adding an agent or changing a parser or ingest, read `crates/tokenmtr-agents/AGENTS.md`.
 - Before changing a query result's JSON shape, read `crates/tokenmtr-query/AGENTS.md`.
 - Before adding a sink or changing an export column, read `crates/tokenmtr-export/AGENTS.md`.
+- Before adding a source kind or changing how other machines' exports are read, read `crates/tokenmtr-import/AGENTS.md`.
 - Before changing a metric, label or the snapshot queries, read `crates/tokenmtr-metrics/AGENTS.md`.
 - Before adding or changing a config key, read `crates/tokenmtr-config/AGENTS.md`.
 - Before changing daemon jobs or scheduling, read `crates/tokenmtr-daemon/AGENTS.md`.

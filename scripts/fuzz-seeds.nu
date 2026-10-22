@@ -49,6 +49,23 @@ def main [] {
     write-seeds $root config (whole-files [($root | path join crates tokenmtr-config tests fixtures example.toml)])
     write-seeds $root host_files (whole-files (glob ($root | path join crates tokenmtr-platform tests fixtures *)))
 
+    # Tab-separated cells in schema order: empty is NULL, `#n` an integer, anything else text.
+    let tab = (char tab)
+    let event_id = "0123456789abcdef0123456789abcdef"
+    let machine = "00000000-0000-0000-0000-000000000001"
+    let usage = [
+        $event_id "#1" $machine claude default anthropic claude-sonnet-4 standard s1 "" acme-api Acme /work/acme main "2026-05-01T10:00:00Z" message "#0"
+        "#100" "#2000" "#30" "#4" "#500" "#0" "#2634" "#1500000" "#1234567" reported "0123456789ab" "#0"
+    ] | str join $tab
+    let call = [
+        $event_id "#1" $machine claude default s1 "" "2026-05-01T10:00:00Z" search docs "#0" git-commit
+    ] | str join $tab
+    write-seeds $root export_row [
+        {name: usage, body: $usage}
+        {name: call, body: $call}
+        {name: sparse, body: ([$event_id "#1" $machine claude default "" m "" "" "" "" "" "" "" "2026-05-01T10:00:00Z" extra_usage] | str join $tab)}
+    ]
+
     write-seeds $root accept_header [
         {name: prometheus, body: 'application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1'}
         {name: gzip, body: 'gzip;q=0.5, deflate, *;q=0'}
