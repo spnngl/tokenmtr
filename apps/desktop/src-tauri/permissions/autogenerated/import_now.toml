@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-import-now"
+description = "Enables the import_now command without any pre-configured scope."
+commands.allow = ["import_now"]
+
+[[permission]]
+identifier = "deny-import-now"
+description = "Denies the import_now command without any pre-configured scope."
+commands.deny = ["import_now"]

@@ -1,4 +1,10 @@
-import type { Dataset, SinkHealth, SinkRun, SystemHealth } from "../../shared/schemas";
+import type {
+  Dataset,
+  SinkHealth,
+  SinkRun,
+  SourceHealth,
+  SystemHealth,
+} from "../../shared/schemas";
 
 function run(
   dataset: Dataset,
@@ -58,4 +64,75 @@ export const EXPORT_HEALTH: SystemHealth = {
   sinks: [SINK_HEALTHY, SINK_LAGGING, SINK_FAILING, SINK_DISABLED],
   metrics: [],
   sources: [],
+};
+
+const SOURCE_BASE = { machines: 1, files: 1, tool_calls: 0 } as const;
+
+export const SOURCE_SUPERSET: SourceHealth = {
+  ...SOURCE_BASE,
+  state: "healthy",
+  source: "superset",
+  kind: "superset",
+  files: 0,
+  machines: 0,
+  events: 0,
+  last_success_at: null,
+  recent_runs: [],
+};
+
+export const SOURCE_HEALTHY: SourceHealth = {
+  ...SOURCE_BASE,
+  state: "healthy",
+  source: "laptop",
+  kind: "sqlite",
+  events: 8_420,
+  tool_calls: 1_310,
+  last_success_at: "2026-05-21T12:00:00Z",
+  recent_runs: [
+    {
+      path: null,
+      started_at: "2026-05-21T12:00:00Z",
+      finished_at: "2026-05-21T12:00:02Z",
+      rows: 40,
+      error: null,
+    },
+  ],
+};
+
+export const SOURCE_FAILING: SourceHealth = {
+  ...SOURCE_BASE,
+  state: "failing",
+  since: "2026-05-21T10:00:00Z",
+  last_error: "database is locked",
+  source: "workstation",
+  kind: "sqlite",
+  events: 3_050,
+  tool_calls: 402,
+  last_success_at: "2026-05-21T10:00:00Z",
+  recent_runs: [
+    {
+      path: null,
+      started_at: "2026-05-21T12:00:00Z",
+      finished_at: "2026-05-21T12:00:01Z",
+      rows: 0,
+      error: "database is locked",
+    },
+  ],
+};
+
+export const SOURCE_DISABLED: SourceHealth = {
+  ...SOURCE_BASE,
+  state: "disabled",
+  source: "old-desktop",
+  kind: "sqlite",
+  events: 910,
+  tool_calls: 88,
+  last_success_at: "2026-04-21T12:00:00Z",
+  recent_runs: [],
+};
+
+/** [`EXPORT_HEALTH`] plus every source state. */
+export const EXPORT_HEALTH_WITH_SOURCES: SystemHealth = {
+  ...EXPORT_HEALTH,
+  sources: [SOURCE_SUPERSET, SOURCE_HEALTHY, SOURCE_FAILING, SOURCE_DISABLED],
 };

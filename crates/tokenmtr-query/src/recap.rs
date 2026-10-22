@@ -351,7 +351,7 @@ fn system_health(
     } else {
         HealthLevel::Ok
     };
-    // A failing import is a warning at worst: it never blocks this machine'"''"'s own tracking. A
+    // A failing import is a warning at worst: it never blocks this machine's own tracking. A
     // drifted integration only lowers attribution, like its informational parse issue.
     let sources_level = if sources
         .iter()

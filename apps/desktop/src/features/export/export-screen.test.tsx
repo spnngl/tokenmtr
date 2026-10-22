@@ -5,17 +5,31 @@ import { axeViolations } from "../../shared/axe";
 import type { Remote } from "../../shared/remote-view";
 import type { SystemHealth } from "../../shared/schemas";
 import { ExportScreen } from "./export-screen";
-import { EXPORT_HEALTH, SINK_DISABLED, SINK_FAILING, SINK_HEALTHY } from "./fixtures";
-import { datasetStatuses, looksLikeProtectedFolder } from "./model";
+import {
+  EXPORT_HEALTH,
+  EXPORT_HEALTH_WITH_SOURCES,
+  SINK_DISABLED,
+  SINK_FAILING,
+  SINK_HEALTHY,
+  SOURCE_DISABLED,
+} from "./fixtures";
+import { canImport, datasetStatuses, looksLikeProtectedFolder, sourceRunLabel } from "./model";
 
 afterEach(cleanup);
 
-function renderScreen(remote: Remote<SystemHealth>, onExportNow = vi.fn(), isExporting = false) {
+function renderScreen(
+  remote: Remote<SystemHealth>,
+  onExportNow = vi.fn(),
+  isExporting = false,
+  onImportNow = vi.fn(),
+) {
   return render(
     <ExportScreen
       remote={remote}
       onExportNow={onExportNow}
       isExporting={isExporting}
+      onImportNow={onImportNow}
+      isImporting={false}
       timeZone="UTC"
     />,
   );
@@ -29,6 +43,27 @@ describe("export model", () => {
     );
     expect(looksLikeProtectedFolder(SINK_HEALTHY)).toBe(false);
     expect(looksLikeProtectedFolder(SINK_DISABLED)).toBe(false);
+  });
+
+  it("offers an import only while a sqlite source is enabled", () => {
+    expect(canImport(EXPORT_HEALTH.sources)).toBe(false);
+    expect(canImport(EXPORT_HEALTH_WITH_SOURCES.sources)).toBe(true);
+    expect(canImport([SOURCE_DISABLED])).toBe(false);
+  });
+
+  it("names a source run by its file, or by the whole pass", () => {
+    expect(
+      sourceRunLabel({ path: null, started_at: "", finished_at: "", rows: 0, error: null }),
+    ).toBe("All files");
+    expect(
+      sourceRunLabel({
+        path: "/Users/dev/Dropbox/tokenmtr/laptop.db",
+        started_at: "",
+        finished_at: "",
+        rows: 0,
+        error: null,
+      }),
+    ).toBe("laptop.db");
   });
 
   it("keeps the newest run per dataset", () => {
@@ -49,6 +84,13 @@ describe("ExportScreen", () => {
   it("empty explains how to add a sink", () => {
     renderScreen({ kind: "ready", data: { ...EXPORT_HEALTH, sinks: [] } });
     expect(screen.getByText("No export sink configured")).toBeTruthy();
+  });
+
+  it("a source-only config is not empty", () => {
+    renderScreen({ kind: "ready", data: { ...EXPORT_HEALTH_WITH_SOURCES, sinks: [] } });
+    expect(screen.queryByText("No export sink configured")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Sources" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Sinks" })).toBeNull();
   });
 
   it("error retries", async () => {
@@ -78,6 +120,31 @@ describe("ExportScreen", () => {
     expect(within(failing).getByText("Failed")).toBeTruthy();
     expect(screen.getByRole("table", { name: "Exported datasets", hidden: true })).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("shows every source state with its error and run history", async () => {
+    const { container } = renderScreen({ kind: "ready", data: EXPORT_HEALTH_WITH_SOURCES });
+    expect(screen.getByRole("heading", { name: "Sources" })).toBeTruthy();
+    expect(screen.getByText(/Failing since .*: database is locked/)).toBeTruthy();
+    expect(screen.getByText(/8,420 events, 1,310 tool calls/)).toBeTruthy();
+    expect(
+      screen.getByText(/switched off in the config; its imported rows still count/),
+    ).toBeTruthy();
+    const runs = screen.getByRole("table", { name: "Run history of workstation", hidden: true });
+    expect(within(runs).getByText("Failed")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Import now runs the import", async () => {
+    const onImportNow = vi.fn();
+    renderScreen({ kind: "ready", data: EXPORT_HEALTH_WITH_SOURCES }, vi.fn(), false, onImportNow);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Import now" }));
+    expect(onImportNow).toHaveBeenCalledOnce();
+  });
+
+  it("has no Import now without an enabled sqlite source", () => {
+    renderScreen({ kind: "ready", data: EXPORT_HEALTH });
+    expect(screen.queryByRole("button", { name: "Import now" })).toBeNull();
   });
 
   it("Export now and Retry on a failing sink run the export", async () => {

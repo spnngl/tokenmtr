@@ -94,7 +94,7 @@ fn list(setup: &Setup, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// One line of words for a source''s state.
+/// One line of words for a source's state.
 pub fn state_text(state: &SourceState) -> String {
     match state {
         SourceState::Healthy => "healthy".to_owned(),

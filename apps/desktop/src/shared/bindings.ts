@@ -51,6 +51,7 @@ export const COMMANDS = [
   "fx_rates",
   "scan_now",
   "export_now",
+  "import_now",
   "backup_now",
   "open_dashboard",
   "fit_recap",

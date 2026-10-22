@@ -325,6 +325,23 @@ describe("Sessions", () => {
     expect(resume.textContent).toMatch(/^cd \/Users\/dev\/src\/\S+ && pi --session /);
   });
 
+  it("names the machine of an imported session and offers no resume", async () => {
+    const user = userEvent.setup();
+    await renderApp("/sessions");
+    const table = await screen.findByRole("region", { name: "Sessions, newest first" });
+    const cell = (await within(table).findAllByText("laptop · alice"))[0];
+    const row = cell?.closest("tr") ?? null;
+    expect(row).not.toBeNull();
+    if (row === null) {
+      return;
+    }
+    await user.click(first(within(row).getAllByRole("link")));
+    expect(await screen.findByRole("heading", { name: "Imported session" })).toBeTruthy();
+    expect(screen.getByText("laptop · alice")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy command" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reveal transcript" })).toBeNull();
+  });
+
   it("goes back to the list keeping the filters", async () => {
     const user = userEvent.setup();
     const { router } = await renderApp("/sessions?agent=claude");

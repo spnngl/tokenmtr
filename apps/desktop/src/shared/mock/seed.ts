@@ -290,6 +290,8 @@ export interface SessionSeed {
   readonly durationSecs: number;
   readonly project: string | null;
   readonly client: string | null;
+  /** The machine an imported session ran on; `null` for this one. */
+  readonly machine: string | null;
   readonly billing: BillingKind;
   readonly models: readonly string[];
   readonly toolCalls: number;
@@ -332,6 +334,8 @@ function buildSessions(): SessionSeed[] {
       durationSecs,
       project: project.project,
       client: project.client,
+      // Every eleventh session came in through a `[[sources]]` import.
+      machine: index % 11 === 10 ? "laptop · alice" : null,
       billing: seed.billing,
       models:
         second === undefined || second.model === first.model

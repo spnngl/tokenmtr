@@ -59,6 +59,21 @@ pub async fn export_now(backend: &Backend) -> Result<(), CommandError> {
         .map_err(Into::into)
 }
 
+/// Imports every enabled `sqlite` source now. Needs the daemon: sources are its job.
+///
+/// # Errors
+///
+/// No daemon answers, or a source failed to start its pass (a file that cannot be read is in the
+/// source's health, not an error).
+pub async fn import_now(backend: &Backend) -> Result<(), CommandError> {
+    connect(backend)
+        .await?
+        .import_now(None)
+        .await
+        .map(drop)
+        .map_err(Into::into)
+}
+
 /// Writes a backup now.
 ///
 /// # Errors
@@ -516,6 +531,10 @@ mod tests {
         export_now(&fixture.backend).await.map_or_else(
             |error| assert_eq!(error.kind, ErrorKind::DaemonOffline),
             |()| panic!("export needs a daemon"),
+        );
+        import_now(&fixture.backend).await.map_or_else(
+            |error| assert_eq!(error.kind, ErrorKind::DaemonOffline),
+            |()| panic!("import needs a daemon"),
         );
         Ok(())
     }

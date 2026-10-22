@@ -55,6 +55,13 @@ export const useExportNow = () =>
     success: () => "Export finished",
   });
 
+/** Import every enabled `sqlite` source now. */
+export const useImportNow = () =>
+  useDataAction((ds) => ds.importNow(), {
+    failure: "Import failed",
+    success: () => "Import finished",
+  });
+
 /** Write a database backup now. */
 export const useBackupNow = () =>
   useDataAction((ds) => ds.backupNow(), {

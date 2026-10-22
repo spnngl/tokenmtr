@@ -120,7 +120,7 @@ pub struct DoctorReport {
     pub unresolved_cwds: Vec<Utf8PathBuf>,
     /// Working directories under a macOS protected folder.
     pub protected_cwds: Vec<Utf8PathBuf>,
-    /// Directories outside the agents'' roots that the config makes the daemon read or write
+    /// Directories outside the agents' roots that the config makes the daemon read or write
     /// (sink folders, source include folders) under a macOS protected folder.
     pub protected_external: Vec<Utf8PathBuf>,
 }

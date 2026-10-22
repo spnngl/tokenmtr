@@ -148,6 +148,8 @@ export interface DataSource {
   // Actions
   scanNow(): Promise<void>;
   exportNow(): Promise<void>;
+  /** Imports every enabled `sqlite` source now (the daemon does the work). */
+  importNow(): Promise<void>;
   backupNow(): Promise<void>;
   openDashboard(target: DashboardTarget): Promise<void>;
   /** Resizes the recap popover to show `height` CSS pixels of content (within the screen). */

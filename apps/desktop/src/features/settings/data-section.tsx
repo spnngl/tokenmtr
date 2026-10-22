@@ -23,7 +23,7 @@ const ISSUE_LABELS: Record<ParseIssue["kind"], string> = {
   protected_folder: "Protected folder",
   missing_cwd: "Missing working directory",
   parse_error: "Parse error",
-  integration_drift: "Superset data unreadable",
+  integration_drift: "Source data unreadable",
 };
 
 /** "Open" for a failure; an informational issue leaves the totals complete. */

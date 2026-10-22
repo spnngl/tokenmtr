@@ -39,7 +39,7 @@ function rowOf(session: SessionSeed, currency: Currency): SessionRow {
     last_at: iso(session.startedAtMs + session.durationSecs * 1000),
     duration_secs: session.durationSecs,
     project: session.project,
-    machine: null,
+    machine: session.machine,
     models: [...session.models],
     tool_calls: session.toolCalls,
     tool_errors: session.toolErrors,
@@ -124,7 +124,7 @@ export function sessionDetailOf(agent: string, session: string, currency: Curren
   ]);
   return {
     currency,
-    machine: null,
+    machine: seed.machine,
     events,
     events_truncated: seed.usage.events > MAX_EVENTS,
     tool_calls: toolCalls,
