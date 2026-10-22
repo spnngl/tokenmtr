@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, CSV/JSONL/SQLite exports and a Prometheus exporter or remote write (tokens, never money; per-project exclusions). Session data stays on your machine; only quota, FX-rate and price-list lookups use the network, plus the Prometheus remote-write endpoints you configure (token counts only, and off unless configured).
+Tracks what your coding agents cost. A background daemon reads the agents' local session files, prices every request at API rates, compares that with what you actually pay (subscription fees included), and shows the result in a menu-bar app, a CLI, CSV/JSONL/SQLite exports (other machines can import them) and a Prometheus exporter or remote write (tokens, never money; per-project exclusions). Session data stays on your machine; only quota, FX-rate and price-list lookups use the network, plus the Prometheus remote-write endpoints you configure (token counts only, and off unless configured).
 
 Screenshots: not added yet.
 
@@ -47,6 +47,26 @@ kind = "csv"
 
 Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md).
 
+## Several machines
+
+Each machine keeps its own store and exports its own usage; a `sqlite` source reads the exports of the others, so every machine can show the total. Put one folder in a file-sync tool (Dropbox, Syncthing, iCloud Drive), then on every machine, with its own file name:
+
+```toml
+[[sinks]]
+id = "shared"
+kind = "sqlite"
+path = "~/Dropbox/tokenmtr/laptop.db"   # this machine's file: name it after the machine
+
+[[sources]]
+id = "others"
+kind = "sqlite"
+include = ["~/Dropbox/tokenmtr/*.db"]
+```
+
+Never let two machines write one file. A machine skips its own file, so the glob can cover the whole folder. Declare the same `[[subscriptions]]` and `[[budgets]]` on every machine: imported rows count in totals and budgets, never in your own exports or metrics. `tokenmtr sources` shows each source's health and `tokenmtr sources import` reads now. Details: [docs/config.md](docs/config.md#sources).
+
+Privacy: an export holds usage metadata only (tokens, costs, model, project, working directory, git branch; never prompts or transcripts), and so does what you import. Turn on `privacy.redact_paths` to hash imported paths too.
+
 ## CLI
 
 | Command | What it does |
@@ -61,6 +81,7 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | `erase` | Delete the store, its backups and the logs (`--delete-config` also the config, `--service` also the background service). |
 | `scan` | Ingest the agents' files now. |
 | `reprice` | Re-estimate unpriced events with the active pricing snapshot (`--all`: every event). |
+| `sources` | List the sources and their health, import them now, or forget the rows of a removed one. |
 | `doctor` | Check the config, the store, the daemon and the agents' files. |
 | `service` | Install, remove or inspect the background service. |
 | `quota` | Show the latest quota windows and the detected plans; `quota connect` lets the daemon read the Claude credentials in the Keychain. |
@@ -68,7 +89,7 @@ Check it with `tokenmtr config check`. All keys: [docs/config.md](docs/config.md
 | `pricing` | Show the active pricing snapshot and the models it cannot price. |
 | `config` | Validate or edit the config file. |
 
-`tokenmtr <command> --help` lists each command's options. `status`, `recap`, `alerts`, `backup`, `doctor`, `quota`, `fx`, `pricing` and `reprice` take `--json`; only `status` and `recap` have a stable format ([docs/cli-json.md](docs/cli-json.md)).
+`tokenmtr <command> --help` lists each command's options. `status`, `recap`, `alerts`, `backup`, `doctor`, `sources`, `quota`, `fx`, `pricing` and `reprice` take `--json`; only `status` and `recap` have a stable format ([docs/cli-json.md](docs/cli-json.md)).
 
 ## Docs
 
