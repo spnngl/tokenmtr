@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
+Sources: usage from other machines, next to the ones this machine records.
+
+### Added
+
+- `[[sources]]`, the input counterpart of `[[sinks]]`. Kind `sqlite` imports the SQLite exports (`[[sinks]] kind = "sqlite"`) that other TokenMtr machines write, typically synced by a file-sync tool: `include` and `exclude` globs, `interval` (default 5 minutes). Each file is read from a private copy, from where the last pass stopped; a bad file fails alone and shows in the source's run history. Imported rows count in every total and budget, never in exports, metrics or the menu-bar Live block, and are never exported again ([docs/config.md](docs/config.md#sources)).
+- `tokenmtr sources` lists sources with their health, `tokenmtr sources import [id]` imports now and `tokenmtr sources forget <id>` deletes a source's imported rows (the source must be disabled or removed, the daemon stopped).
+- Export page: a Sources section with each `sqlite` source's health, imported rows, run history and an **Import now** button. Sessions from another machine show their machine (`<source id> · <file stem>`) and offer no resume command.
+- `status --json` gains `system.sources`; a failing `sqlite` source is a warning and raises a `source_failing` alert after `[alerts] source_failing_after` (default 30 minutes). Control protocol 4 adds the alert kind and the `import_now` request.
+- Store schema 10: imported rows carry their origin; new `import_cursor` and `import_run` tables. The migration runs on open.
+
+### Changed
+
+- **Breaking:** `[integrations.superset]` is replaced by `[[sources]] kind = "superset"`; the old table is rejected with an error naming the new one. Without a `superset` source the implicit one (id `superset`) stays on, so a config that never mentioned Superset keeps working. Several `superset` sources can read different directories; a source whose database changed shape raises its own `integration_drift` issue, named after the source id.
+- macOS folder checks cover the folders `sqlite` sources read, as they do sink folders.
 ## [0.3.0] - 2026-10-21
 
 A daily activity calendar, session and machine metrics, and Claude quota that follows token refreshes.
@@ -84,7 +100,8 @@ First release: macOS app (universal, Apple Silicon and Intel) plus the `tokenmtr
 - `[menubar] title` is gone: the menu bar shows rings instead of a text title. Remove the key, or the config is rejected.
 - `tokenmtr erase` deletes the config with `--delete-config` (`--config <path>` is the global flag that picks the file).
 
-[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/spnngl/tokenmtr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spnngl/tokenmtr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spnngl/tokenmtr/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spnngl/tokenmtr/releases/tag/v0.1.0

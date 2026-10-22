@@ -6445,7 +6445,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokenmtr"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -6478,7 +6478,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-agents"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "divan",
@@ -6504,7 +6504,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-app"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "jiff",
@@ -6525,11 +6525,11 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-brand"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "tokenmtr-config"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "globset",
@@ -6547,7 +6547,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-control"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "jiff",
@@ -6563,7 +6563,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "camino",
@@ -6581,7 +6581,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-daemon"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "jiff",
@@ -6611,7 +6611,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-desktop"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "jiff",
@@ -6646,7 +6646,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-e2e"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "csv",
@@ -6664,7 +6664,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-export"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "csv",
@@ -6685,7 +6685,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-import"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "jiff",
@@ -6701,7 +6701,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-metrics"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "divan",
@@ -6721,7 +6721,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-platform"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "libc",
@@ -6737,7 +6737,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-query"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "divan",
@@ -6754,7 +6754,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-remote"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -6785,7 +6785,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-report"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "csv",
  "insta",
@@ -6798,7 +6798,7 @@ dependencies = [
 
 [[package]]
 name = "tokenmtr-store"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "camino",
