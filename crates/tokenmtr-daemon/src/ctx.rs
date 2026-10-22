@@ -8,9 +8,9 @@ use std::time::Duration;
 use camino::Utf8PathBuf;
 use jiff::Timestamp;
 use tokenmtr_agents::ingest::{IngestSettings, Ingestor};
-use tokenmtr_config::Config;
+use tokenmtr_config::{Config, GlobList};
 use tokenmtr_control::EventBus;
-use tokenmtr_core::{AgentId, ProfileId, SinkId, WindowId};
+use tokenmtr_core::{AgentId, ProfileId, SinkId, SourceId, WindowId};
 use tokenmtr_export::{ConfiguredSink, SinkSpec};
 use tokenmtr_platform::{Paths, ThreadPriority, set_thread_priority};
 use tokenmtr_remote::{Endpoints, Validators, build_client};
@@ -45,6 +45,8 @@ pub(crate) enum Job {
     ExporterBind(SinkId),
     /// Export pending rows to one sink.
     Export(SinkId),
+    /// Import the new rows of one `sqlite` source.
+    Import(SourceId),
     /// Push coalesced `StoreChanged` events to subscribers.
     Publish,
     /// Reload the config file.
@@ -60,10 +62,20 @@ pub(crate) struct Active {
 /// What the file watcher should watch.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WatchPlan {
-    /// Agent roots; empty when `daemon.watch` is off.
+    /// Agent roots and the folders of the `sqlite` sources; empty when `daemon.watch` is off.
     pub roots: Vec<Utf8PathBuf>,
     /// Decides which changed paths an agent owns; `None` when `daemon.watch` is off.
     pub owner: Option<IngestSettings>,
+    /// The enabled `sqlite` sources: a changed file they include runs their import.
+    pub imports: Vec<ImportWatch>,
+}
+
+/// The files of one `sqlite` source, as the watcher matches them.
+#[derive(Debug, Clone)]
+pub(crate) struct ImportWatch {
+    pub source: SourceId,
+    pub include: GlobList,
+    pub exclude: GlobList,
 }
 
 /// The network clients, built when the first network task runs.
@@ -113,7 +125,7 @@ pub(crate) struct Runtime {
 /// Shared by every task; always behind an [`Arc`].
 ///
 /// Lock order, outermost first: `ingestor`, `sinks`, `store`, and `sinks`, `exports`.
-/// `reader`, `beat`, `run` and `active` are leaf locks: never hold one while taking another
+/// `reader`, `beat`, `imports`, `run` and `active` are leaf locks: never hold one while taking another
 /// lock.
 pub(crate) struct Ctx {
     pub settings: Settings,
@@ -128,6 +140,9 @@ pub(crate) struct Ctx {
     /// A fourth connection for sink exports: cursors and run history are written in short
     /// transactions, and the slow sink I/O between them never holds `store`.
     pub exports: Mutex<Store>,
+    /// A fifth connection for source imports: a pass reads files for as long as it takes and
+    /// writes pages in short transactions, so it never holds `store`.
+    pub imports: Mutex<Store>,
     /// The metrics outputs: their snapshot, servers and push state.
     pub metrics: crate::metrics::Metrics,
     pub ingestor: Mutex<Ingestor>,

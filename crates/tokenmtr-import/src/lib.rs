@@ -39,7 +39,7 @@ mod sqlite;
 
 pub use decode::{tool_call, usage_event};
 pub use error::{DecodeError, ImportError, Problem};
-pub use files::matching_files;
+pub use files::{include_roots, matching_files};
 pub use run::{
     DEFAULT_PAGE_SIZE, FileFailure, ImportOptions, ImportReport, ImportSpec, import_pending,
 };
