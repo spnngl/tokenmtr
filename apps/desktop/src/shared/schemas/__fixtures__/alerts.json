@@ -27,6 +27,13 @@
     "since": "2026-05-02T08:00:00Z"
   },
   {
+    "fired_at": "2026-05-02T08:10:00Z",
+    "dedup_key": "source_failing:workstation",
+    "kind": "source_failing",
+    "source": "workstation",
+    "since": "2026-05-02T07:40:00Z"
+  },
+  {
     "fired_at": "2026-05-02T08:00:00Z",
     "dedup_key": "sink_failing:warehouse",
     "kind": "sink_failing",

@@ -9,6 +9,7 @@ import type {
   ParseIssue,
   Settings,
   SinkHealth,
+  SourceHealth,
   SystemHealth,
 } from "../schemas";
 import {
@@ -137,12 +138,72 @@ const SINKS: readonly SinkHealth[] = [
   },
 ];
 
+function sourceRuns(failing: boolean): SourceHealth["recent_runs"] {
+  return [0, 1, 2].map((index) => ({
+    path: null,
+    started_at: iso(NOW_MS - (index + 1) * 5 * MINUTE_MS),
+    finished_at: iso(NOW_MS - (index + 1) * 5 * MINUTE_MS + 2_000),
+    rows: failing ? 0 : 40 - index * 10,
+    error: failing ? "database is locked" : null,
+  }));
+}
+
+const SOURCES: readonly SourceHealth[] = [
+  {
+    state: "healthy",
+    source: "superset",
+    kind: "superset",
+    files: 0,
+    machines: 0,
+    events: 0,
+    tool_calls: 0,
+    last_success_at: null,
+    recent_runs: [],
+  },
+  {
+    state: "healthy",
+    source: "laptop",
+    kind: "sqlite",
+    files: 1,
+    machines: 1,
+    events: 8_420,
+    tool_calls: 1_310,
+    last_success_at: iso(NOW_MS - 4 * MINUTE_MS),
+    recent_runs: sourceRuns(false),
+  },
+  {
+    state: "failing",
+    since: iso(NOW_MS - 2 * HOUR_MS),
+    last_error: "database is locked",
+    source: "workstation",
+    kind: "sqlite",
+    files: 1,
+    machines: 1,
+    events: 3_050,
+    tool_calls: 402,
+    last_success_at: iso(NOW_MS - 2 * HOUR_MS),
+    recent_runs: sourceRuns(true),
+  },
+  {
+    state: "disabled",
+    source: "old-desktop",
+    kind: "sqlite",
+    files: 1,
+    machines: 1,
+    events: 910,
+    tool_calls: 88,
+    last_success_at: iso(NOW_MS - 30 * 24 * HOUR_MS),
+    recent_runs: [],
+  },
+];
+
 export function systemHealthOf(): SystemHealth {
   return {
     level: "error",
     daemon: { state: "running", last_heartbeat: iso(NOW_MS - 5_000), age_secs: 5 },
     sinks: [...SINKS],
     metrics: [],
+    sources: [...SOURCES],
   };
 }
 

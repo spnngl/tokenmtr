@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tokenmtr.dev/schema/status/1.json",
   "title": "tokenmtr status --json (status_schema = 1)",
-  "description": "Daemon, sink and metrics output health plus a recap of every followed agent. Fields may be added within status_schema 1; none are renamed, retyped or removed. Money fields are integer micros of `currency`; timestamps are RFC 3339 UTC; dates are YYYY-MM-DD.",
+  "description": "Daemon, sink, metrics output and source health plus a recap of every followed agent. Fields may be added within status_schema 1; none are renamed, retyped or removed. Money fields are integer micros of `currency`; timestamps are RFC 3339 UTC; dates are YYYY-MM-DD.",
   "type": "object",
   "required": ["status_schema", "generated_at", "system", "agents"],
   "properties": {
@@ -31,8 +31,44 @@
           }
         },
         "sinks": { "type": "array", "items": { "$ref": "#/$defs/sink" } },
-        "metrics": { "type": "array", "items": { "$ref": "#/$defs/metrics_output" } }
+        "metrics": { "type": "array", "items": { "$ref": "#/$defs/metrics_output" } },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } }
       }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "source", "kind", "state", "files", "machines", "events", "tool_calls",
+        "last_success_at", "recent_runs"
+      ],
+      "properties": {
+        "source": { "type": "string" },
+        "kind": { "enum": ["superset", "sqlite"] },
+        "state": { "enum": ["healthy", "failing", "disabled"] },
+        "since": { "$ref": "#/$defs/timestamp" },
+        "last_error": { "type": "string" },
+        "files": { "type": "integer", "minimum": 0 },
+        "machines": { "type": "integer", "minimum": 0 },
+        "events": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "last_success_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+        "recent_runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "started_at", "finished_at", "rows", "error"],
+            "properties": {
+              "path": { "type": ["string", "null"] },
+              "started_at": { "$ref": "#/$defs/timestamp" },
+              "finished_at": { "$ref": "#/$defs/timestamp" },
+              "rows": { "type": "integer", "minimum": 0 },
+              "error": { "type": ["string", "null"] }
+            }
+          }
+        }
+      },
+      "if": { "properties": { "state": { "const": "failing" } } },
+      "then": { "required": ["since", "last_error"] }
     },
     "metrics_output": {
       "type": "object",

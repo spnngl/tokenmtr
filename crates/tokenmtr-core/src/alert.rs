@@ -7,7 +7,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::forecast::RESET_TOLERANCE;
-use crate::ids::{AgentId, BudgetId, ProfileId, SinkId};
+use crate::ids::{AgentId, BudgetId, ProfileId, SinkId, SourceId};
 use crate::quota::{Utilization, WindowId};
 
 /// What an alert is about.
@@ -40,6 +40,13 @@ pub enum AlertKind {
         /// When it started failing.
         since: Timestamp,
     },
+    /// A source (imports of other machines'' exports) has been failing for longer than allowed.
+    SourceFailing {
+        /// The source.
+        source: SourceId,
+        /// When it started failing.
+        since: Timestamp,
+    },
     /// A metrics output (exporter or remote write) has been failing for longer than allowed.
     MetricsFailing {
         /// The output.
@@ -67,6 +74,8 @@ pub struct AlertConfig {
     pub budget_thresholds: Vec<u8>,
     /// How long a sink may fail before alerting.
     pub sink_failing_after: SignedDuration,
+    /// How long a source may fail before alerting.
+    pub source_failing_after: SignedDuration,
 }
 
 impl Default for AlertConfig {
@@ -76,6 +85,7 @@ impl Default for AlertConfig {
             quota_reset: true,
             budget_thresholds: vec![80, 100],
             sink_failing_after: SignedDuration::from_mins(30),
+            source_failing_after: SignedDuration::from_mins(30),
         }
     }
 }
@@ -135,6 +145,15 @@ pub struct SinkState {
     pub failing_since: Option<Timestamp>,
 }
 
+/// The failure state of a source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceState {
+    /// The source.
+    pub id: SourceId,
+    /// Since when its imports have been failing; `None` when healthy.
+    pub failing_since: Option<Timestamp>,
+}
+
 /// An open format-drift issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DriftState {
@@ -157,6 +176,8 @@ pub struct AlertInputs {
     pub sinks: Vec<SinkState>,
     /// Metrics outputs.
     pub metrics: Vec<SinkState>,
+    /// Sources.
+    pub sources: Vec<SourceState>,
     /// Open drift issues.
     pub drift: Vec<DriftState>,
     /// When the last backup failed, if it did.
@@ -175,6 +196,7 @@ impl AlertInputs {
             budgets: Vec::new(),
             sinks: Vec::new(),
             metrics: Vec::new(),
+            sources: Vec::new(),
             drift: Vec::new(),
             backup_failed_at: None,
             already_fired: HashSet::new(),
@@ -239,6 +261,52 @@ fn failing_past_grace<'a>(
     })
 }
 
+/// Fires the alerts of the sinks, metrics outputs and sources failing past their grace period.
+fn fire_failures(
+    inputs: &AlertInputs,
+    config: &AlertConfig,
+    fire: &mut impl FnMut(AlertKind, String),
+) {
+    let now = inputs.now;
+    for (id, since) in failing_past_grace(&inputs.sinks, now, config) {
+        fire(
+            AlertKind::SinkFailing {
+                sink: id.clone(),
+                since,
+            },
+            format!("sink_failing|{id}|{since}"),
+        );
+    }
+
+    for (id, since) in failing_past_grace(&inputs.metrics, now, config) {
+        fire(
+            AlertKind::MetricsFailing {
+                output: id.clone(),
+                since,
+            },
+            format!("metrics_failing|{id}|{since}"),
+        );
+    }
+
+    for state in &inputs.sources {
+        let Some(since) = state.failing_since else {
+            continue;
+        };
+        if since
+            .checked_add(config.source_failing_after)
+            .is_ok_and(|due| due <= now)
+        {
+            fire(
+                AlertKind::SourceFailing {
+                    source: state.id.clone(),
+                    since,
+                },
+                format!("source_failing|{}|{since}", state.id),
+            );
+        }
+    }
+}
+
 /// The alerts that should fire now, skipping dedup keys in `already_fired`.
 ///
 /// Each quota threshold fires once per agent, profile and window instance and again after the
@@ -246,7 +314,7 @@ fn failing_past_grace<'a>(
 /// window, by the local month); budgets likewise per period; a sink alert once
 /// per failure streak; drift once per issue; backup failure once per failure time. When one
 /// evaluation crosses several thresholds, each fires. Output order is deterministic: quota,
-/// budgets, sinks, metrics outputs, drift, backup.
+/// budgets, sinks, metrics outputs, sources, drift, backup.
 #[must_use]
 pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert> {
     let now = inputs.now;
@@ -322,25 +390,7 @@ pub fn evaluate_alerts(inputs: &AlertInputs, config: &AlertConfig) -> Vec<Alert>
         }
     }
 
-    for (id, since) in failing_past_grace(&inputs.sinks, now, config) {
-        fire(
-            AlertKind::SinkFailing {
-                sink: id.clone(),
-                since,
-            },
-            format!("sink_failing|{id}|{since}"),
-        );
-    }
-
-    for (id, since) in failing_past_grace(&inputs.metrics, now, config) {
-        fire(
-            AlertKind::MetricsFailing {
-                output: id.clone(),
-                since,
-            },
-            format!("metrics_failing|{id}|{since}"),
-        );
-    }
+    fire_failures(inputs, config, &mut fire);
 
     for d in &inputs.drift {
         fire(
@@ -650,6 +700,36 @@ mod tests {
         assert_eq!(a.len(), 1);
         assert!(matches!(&a[0].kind, AlertKind::MetricsFailing { since: s, .. } if *s == since));
         assert!(a[0].dedup_key.starts_with("metrics_failing|grafana|"));
+        Ok(())
+    }
+
+    #[test]
+    fn sources_alert_after_their_own_grace_period_once_per_streak() -> TestResult {
+        let since: Timestamp = "2026-03-01T12:00:00Z".parse()?;
+        let config = AlertConfig {
+            source_failing_after: SignedDuration::from_mins(10),
+            ..AlertConfig::default()
+        };
+        let run = |now: &str, fired: &[Alert]| -> Result<Vec<Alert>, Box<dyn std::error::Error>> {
+            Ok(evaluate_alerts(
+                &AlertInputs {
+                    now: now.parse()?,
+                    sources: vec![SourceState {
+                        id: SourceId::try_from("laptop")?,
+                        failing_since: Some(since),
+                    }],
+                    already_fired: fired.iter().map(|a| a.dedup_key.clone()).collect(),
+                    ..AlertInputs::new(Timestamp::UNIX_EPOCH)
+                },
+                &config,
+            ))
+        };
+        assert_eq!(run("2026-03-01T12:09:59Z", &[])?, Vec::new());
+        let first = run("2026-03-01T12:10:00Z", &[])?;
+        assert_eq!(first.len(), 1);
+        assert!(matches!(&first[0].kind, AlertKind::SourceFailing { since: s, .. } if *s == since));
+        assert!(first[0].dedup_key.starts_with("source_failing|laptop|"));
+        assert_eq!(run("2026-03-01T13:00:00Z", &first)?, Vec::new());
         Ok(())
     }
 

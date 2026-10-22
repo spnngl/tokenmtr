@@ -48,6 +48,8 @@ function alertText(alert: Alert): string {
       return `Sink ${alert.sink} is failing`;
     case "metrics_failing":
       return `Metrics output ${alert.output} is failing`;
+    case "source_failing":
+      return `Source ${alert.source} is failing`;
     case "format_drift":
       return `${alert.agent} changed its log format`;
     case "backup_failed":

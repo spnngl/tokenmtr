@@ -114,7 +114,11 @@ fn render_diagnosis(diagnosis: &Diagnosis) {
                 issue.agent, issue.kind, issue.subject, issue.occurrences
             );
         }
-        for path in ingest.protected_cwds.iter().chain(&ingest.protected_sinks) {
+        for path in ingest
+            .protected_cwds
+            .iter()
+            .chain(&ingest.protected_external)
+        {
             println!("protected folder in use: {path}");
         }
     }

@@ -5,14 +5,15 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tokenmtr_config::{
     Config, ConfigDocument, ConfigError, ConfigFormat, Env, GitName, MenubarRing, RawProject,
-    TimeZoneSetting, TomlCodec,
+    SourceTarget, TimeZoneSetting, TomlCodec,
 };
 use tokenmtr_core::{ProfileId, SubscriptionSpec};
 use tokenmtr_platform::Paths;
 use tokenmtr_platform::fs::replace_atomically;
 use tokenmtr_query::{
     BudgetScope, BudgetSpec, ClientName, FxPolicy, MetricsKind, MetricsSpec, QueryContext,
-    QueryError, RecapConfig, SinkSpec, WeekStart, load_fx_rates, load_subscriptions,
+    QueryError, RecapConfig, SinkSpec, SourceKind, SourceSpec, WeekStart, load_fx_rates,
+    load_subscriptions,
 };
 use tokenmtr_store::StoreReader;
 
@@ -124,6 +125,23 @@ pub fn metrics_specs(config: &Config) -> Vec<MetricsSpec> {
     exporters.chain(remote_write).collect()
 }
 
+/// The configured sources, as the health queries see them.
+#[must_use]
+pub fn source_specs(config: &Config) -> Vec<SourceSpec> {
+    config
+        .sources
+        .iter()
+        .map(|source| SourceSpec {
+            id: source.id.clone(),
+            kind: match source.target {
+                SourceTarget::Superset(_) => SourceKind::Superset,
+                SourceTarget::Sqlite(_) => SourceKind::Sqlite,
+            },
+            enabled: source.enabled,
+        })
+        .collect()
+}
+
 /// Everything the recap and status queries take from the config.
 #[must_use]
 pub fn recap_config(config: &Config) -> RecapConfig {
@@ -131,6 +149,7 @@ pub fn recap_config(config: &Config) -> RecapConfig {
         budgets: budget_specs(config),
         sinks: sink_specs(config),
         metrics: metrics_specs(config),
+        sources: source_specs(config),
         live_window: config.menubar.live_window,
         daemon_stale_after: config.alerts.daemon_stale_after,
     }

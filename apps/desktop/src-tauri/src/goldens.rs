@@ -29,9 +29,9 @@ use tokenmtr_query::{
     Series, SeriesPoint, SessionAnalytics, SessionCompactions, SessionDay, SessionDetail,
     SessionEvent, SessionModel, SessionPage, SessionPoint, SessionRow, SessionStartCell,
     SessionTimeline, SessionToolCall, SignalDay, SignalModel, SignalsReport, SinkHealth,
-    SinkRunView, SinkState, SparkPoint, Status, SubscriptionLine, SystemHealth, TimelineEvent,
-    TimelineSignal, TimelineTool, ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd,
-    Usage,
+    SinkRunView, SinkState, SourceHealth, SourceKind, SourceRunView, SourceState, SparkPoint,
+    Status, SubscriptionLine, SystemHealth, TimelineEvent, TimelineSignal, TimelineTool,
+    ToolModelCalls, ToolRow, ToolsReport, Totals, UnresolvedCwd, Usage,
 };
 use tokenmtr_store::{IssueKind, QuotaStatus};
 
@@ -536,6 +536,7 @@ fn sessions() -> Value {
                 last_at: at("2026-05-03T14:09:52Z"),
                 duration_secs: 7715,
                 project: Some("tokenmtr".to_owned()),
+                machine: None,
                 models: vec!["claude-opus-4-1".to_owned(), "claude-sonnet-4-5".to_owned()],
                 tool_calls: 214,
                 tool_errors: 9,
@@ -556,6 +557,7 @@ fn sessions() -> Value {
                 last_at: at("2026-05-02T09:20:00Z"),
                 duration_secs: 360,
                 project: None,
+                machine: Some("laptop · alice".to_owned()),
                 models: vec!["gpt-5".to_owned()],
                 tool_calls: 12,
                 tool_errors: 0,
@@ -592,6 +594,7 @@ fn session_detail() -> Value {
     };
     json(SessionDetail {
         currency: Currency::Usd,
+        machine: None,
         events: vec![
             event(
                 "2026-05-03T12:01:20Z",
@@ -1318,6 +1321,14 @@ fn alerts() -> Value {
             },
         ),
         alert(
+            "2026-05-02T08:10:00Z",
+            "source_failing:workstation",
+            AlertKind::SourceFailing {
+                source: "workstation".parse().unwrap(),
+                since: at("2026-05-02T07:40:00Z"),
+            },
+        ),
+        alert(
             "2026-05-02T08:00:00Z",
             "sink_failing:warehouse",
             AlertKind::SinkFailing {
@@ -1609,12 +1620,107 @@ fn metrics_outputs() -> Vec<MetricsHealth> {
     ]
 }
 
+fn sources() -> Vec<SourceHealth> {
+    let run =
+        |path: Option<&str>, started_at, finished_at, rows, error: Option<&str>| SourceRunView {
+            path: path.map(str::to_owned),
+            started_at: at(started_at),
+            finished_at: at(finished_at),
+            rows,
+            error: error.map(str::to_owned),
+        };
+    let laptop = "/Users/ada/Library/CloudStorage/Dropbox/tokenmtr/laptop/export.db";
+    vec![
+        SourceHealth {
+            source: "superset".parse().unwrap(),
+            kind: SourceKind::Superset,
+            state: SourceState::Healthy,
+            files: 0,
+            machines: 0,
+            events: 0,
+            tool_calls: 0,
+            last_success_at: None,
+            recent_runs: Vec::new(),
+        },
+        SourceHealth {
+            source: "laptop".parse().unwrap(),
+            kind: SourceKind::Sqlite,
+            state: SourceState::Healthy,
+            files: 1,
+            machines: 1,
+            events: 1842,
+            tool_calls: 311,
+            last_success_at: Some(at("2026-05-03T14:05:03Z")),
+            recent_runs: vec![
+                run(
+                    None,
+                    "2026-05-03T14:05:00Z",
+                    "2026-05-03T14:05:03Z",
+                    12,
+                    None,
+                ),
+                run(
+                    None,
+                    "2026-05-03T14:00:00Z",
+                    "2026-05-03T14:00:01Z",
+                    0,
+                    None,
+                ),
+            ],
+        },
+        SourceHealth {
+            source: "workstation".parse().unwrap(),
+            kind: SourceKind::Sqlite,
+            state: SourceState::Failing {
+                since: at("2026-05-03T13:40:00Z"),
+                last_error: "the file has a version of the export this build cannot read"
+                    .to_owned(),
+            },
+            files: 0,
+            machines: 0,
+            events: 0,
+            tool_calls: 0,
+            last_success_at: None,
+            recent_runs: vec![
+                run(
+                    Some(laptop),
+                    "2026-05-03T14:10:00Z",
+                    "2026-05-03T14:10:00Z",
+                    0,
+                    Some("the file has a version of the export this build cannot read"),
+                ),
+                run(
+                    None,
+                    "2026-05-03T14:10:00Z",
+                    "2026-05-03T14:10:00Z",
+                    0,
+                    Some(
+                        "1 of the files failed; first: the file has a version of the export this build cannot read",
+                    ),
+                ),
+            ],
+        },
+        SourceHealth {
+            source: "old-desktop".parse().unwrap(),
+            kind: SourceKind::Sqlite,
+            state: SourceState::Disabled,
+            files: 2,
+            machines: 1,
+            events: 9120,
+            tool_calls: 1450,
+            last_success_at: Some(at("2026-04-20T09:00:04Z")),
+            recent_runs: Vec::new(),
+        },
+    ]
+}
+
 fn system_health() -> Value {
     json(SystemHealth {
         level: HealthLevel::Warning,
         daemon: daemon_health(),
         sinks: sinks(),
         metrics: metrics_outputs(),
+        sources: sources(),
     })
 }
 
@@ -1751,6 +1857,7 @@ fn recap() -> Value {
             daemon: daemon_health(),
             sinks: system_sinks,
             metrics: Vec::new(),
+            sources: Vec::new(),
         },
         agents: vec![claude, pi],
     };

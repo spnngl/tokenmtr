@@ -1,5 +1,6 @@
 {
   "currency": "USD",
+  "machine": null,
   "events": [
     {
       "at": "2026-05-03T12:01:20Z",

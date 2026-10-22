@@ -238,6 +238,7 @@ describe("golden command responses", () => {
       "quota_reset",
       "budget_threshold",
       "metrics_failing",
+      "source_failing",
       "sink_failing",
       "format_drift",
       "backup_failed",

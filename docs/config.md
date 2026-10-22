@@ -48,6 +48,7 @@ quota_thresholds = [80, 95]    # percent
 quota_reset = true
 budget_thresholds = [80, 100]  # percent
 sink_failing_after = "30m"
+source_failing_after = "30m"
 daemon_stale_after = "15m"
 
 [advisor]
@@ -272,6 +273,7 @@ When the account has extra usage switched on (Claude's pay-as-you-go spend beyon
 | `quota_reset` | bool | `true` | Announce quota resets. Extra usage has no reset time and never announces one. |
 | `budget_thresholds` | `[percent]` | `[80, 100]` | Budget consumption levels that raise an alert, once per period and level. Stored sorted and unique. |
 | `sink_failing_after` | duration | `"30m"` | How long a sink may fail before alerting. |
+| `source_failing_after` | duration | `"30m"` | How long a `sqlite` source may fail to import before alerting. |
 | `daemon_stale_after` | duration | `"15m"` | Heartbeat age that raises `daemon_stale`. |
 
 ### `[advisor]`

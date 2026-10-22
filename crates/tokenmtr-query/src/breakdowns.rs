@@ -509,6 +509,8 @@ pub struct SessionRow {
     pub duration_secs: i64,
     /// Most frequent project key.
     pub project: Option<String>,
+    /// The machine an imported session ran on (`<source id> · <file stem>`); `null` on this one.
+    pub machine: Option<String>,
     /// Models used, sorted.
     pub models: Vec<String>,
     /// Tool calls recorded for the session.
@@ -590,6 +592,7 @@ pub fn sessions(
             last_at: acc.last,
             duration_secs: acc.last.as_second() - acc.first.as_second(),
             project: meta.project,
+            machine: meta.machine,
             models: meta.models,
             tool_calls: meta.tool_calls,
             tool_errors: meta.tool_errors,
@@ -609,10 +612,32 @@ pub fn sessions(
 #[derive(Default)]
 struct SessionMeta {
     project: Option<String>,
+    machine: Option<String>,
     models: Vec<String>,
     tool_calls: u64,
     tool_errors: u64,
     api_errors: u64,
+}
+
+/// The machine of the imported session `p` (an alias with `agent` and `session`): the source and
+/// the first export file of its origin, joined by a unit separator; NULL for a local session.
+const MACHINE_SQL: &str = "SELECT u.origin_source || char(31) || COALESCE(\
+     (SELECT c.path FROM import_cursor c WHERE c.source = u.origin_source \
+      AND c.machine_id = u.origin_machine ORDER BY c.path LIMIT 1), '') \
+     FROM usage_event u WHERE u.agent = p.agent AND u.session = p.session \
+     AND u.origin_machine IS NOT NULL LIMIT 1";
+
+/// `<source id> · <file stem>` from [`MACHINE_SQL`]'s answer; the source id alone when its file
+/// is gone from the cursors.
+fn machine_label(raw: &str) -> String {
+    let (source, path) = raw.split_once('\u{1f}').unwrap_or((raw, ""));
+    let name = path.rsplit(['/', '\\']).next().unwrap_or_default();
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    if stem.is_empty() {
+        source.to_owned()
+    } else {
+        format!("{source} · {stem}")
+    }
 }
 
 /// Sessions per metadata query: two parameters each, far below `SQLite`'s parameter limit.
@@ -635,7 +660,8 @@ fn session_metas(
              (SELECT COALESCE(SUM(is_error = 1), 0) FROM tool_call t \
               WHERE t.agent = p.agent AND t.session = p.session), \
              (SELECT COUNT(*) FROM session_signal s WHERE s.agent = p.agent \
-              AND s.session = p.session AND s.kind = 'api_error') \
+              AND s.session = p.session AND s.kind = 'api_error'), \
+             ({MACHINE_SQL}) \
              FROM page p",
             vec!["(?, ?)"; chunk.len()].join(", ")
         );
@@ -662,6 +688,9 @@ fn session_metas(
                 ),
                 SessionMeta {
                     project: row.get(2)?,
+                    machine: row
+                        .get::<_, Option<String>>(7)?
+                        .map(|raw| machine_label(&raw)),
                     models,
                     tool_calls: to_count(row.get(4)?)?,
                     tool_errors: to_count(row.get(5)?)?,
@@ -712,6 +741,8 @@ pub struct SessionToolCall {
 pub struct SessionDetail {
     /// Currency of the money fields.
     pub currency: Currency,
+    /// The machine an imported session ran on (`<source id> · <file stem>`); `null` on this one.
+    pub machine: Option<String>,
     /// Events in time order (at most 2000).
     pub events: Vec<SessionEvent>,
     /// True when more events exist than returned.
@@ -796,8 +827,14 @@ pub fn session_detail(
             closed("signal kind", &row.get::<_, String>(1)?)?,
         ));
     }
+    let machine: Option<String> = conn.query_row(
+        &format!("WITH p(agent, session) AS (VALUES (?1, ?2)) SELECT ({MACHINE_SQL}) FROM p"),
+        params_from_iter(params.iter()),
+        |row| row.get(0),
+    )?;
     Ok(SessionDetail {
         currency: ctx.currency(),
+        machine: machine.map(|raw| machine_label(&raw)),
         events,
         events_truncated,
         tool_calls,

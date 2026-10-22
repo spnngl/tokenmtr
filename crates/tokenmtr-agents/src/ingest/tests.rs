@@ -1087,7 +1087,7 @@ fn doctor_reports_roots_checkpoints_retention_and_protected_paths() {
         report.protected_cwds,
         [machine.root.join("protected").join("app")]
     );
-    assert_eq!(report.protected_sinks, [sink]);
+    assert_eq!(report.protected_external, [sink]);
     assert_eq!(report.unresolved_cwds, Vec::<Utf8PathBuf>::new());
 }
 

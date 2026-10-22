@@ -18,11 +18,12 @@ use tokenmtr_core::{
     AgentId, Alert, AlertKind, BillingPeriod, Budget, BudgetId, BudgetMeasure, BudgetPeriod,
     Currency, DedupKey, Estimate, EurPerUsd, EventCost, EventId, EventKind, ExtraUsage, FxRate,
     MachineId, ModelId, Money, Plan, PlanCatalog, PricingCatalog, PricingVersion, ProfileId,
-    ProjectKey, ProviderId, QuotaEta, QuotaWindow, SessionId, SignalKind, SinkId, Subscription,
-    SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, UsdMicros, Utilization, WindowId,
+    ProjectKey, ProviderId, QuotaEta, QuotaWindow, SessionId, SignalKind, SinkId, SourceId,
+    Subscription, SubscriptionId, SubscriptionSpec, TokenCounts, UsageEvent, UsdMicros,
+    Utilization, WindowId,
 };
 use tokenmtr_store::{
-    Dataset, FxSource, IngestRun, MetricsRun, ProfiledToolCall, QuotaOutcome, QuotaPoll,
+    Dataset, FxSource, ImportRun, IngestRun, MetricsRun, ProfiledToolCall, QuotaOutcome, QuotaPoll,
     SessionSignal, SinkRun, Store, StoreRead, StoreReader,
 };
 
@@ -1265,6 +1266,7 @@ fn recap_config(sinks: Vec<SinkSpec>, budgets: Vec<BudgetSpec>) -> RecapConfig {
         budgets,
         sinks,
         metrics: Vec::new(),
+        sources: Vec::new(),
         live_window: SignedDuration::from_mins(5),
         daemon_stale_after: SignedDuration::from_secs(60),
     }
@@ -1397,6 +1399,108 @@ fn month_budget_projects_from_the_recent_daily_burn() {
         (b.period_start, b.period_end),
         (date(2026, 2, 1), date(2026, 3, 1))
     );
+}
+
+#[test]
+fn an_import_fails_from_the_start_of_the_trailing_streak_of_failed_passes() {
+    let seed = Seed::new();
+    let spec = |name: &str, kind, enabled| SourceSpec {
+        id: SourceId::try_from(name.to_owned()).unwrap(),
+        kind,
+        enabled,
+    };
+    let run = |source: &str, path: Option<&str>, at: &str, error: Option<&str>| ImportRun {
+        source: SourceId::try_from(source.to_owned()).unwrap(),
+        path: path.map(str::to_owned),
+        dataset: None,
+        started: ts(at),
+        finished: ts(at),
+        rows: 3,
+        error: error.map(str::to_owned),
+    };
+    for r in [
+        run("laptop", None, "2026-02-02T08:00:00Z", None),
+        run(
+            "laptop",
+            None,
+            "2026-02-02T09:00:00Z",
+            Some("1 of the files failed"),
+        ),
+        // A file that failed inside a pass that went on does not make the source fail.
+        run(
+            "laptop",
+            Some("/a.db"),
+            "2026-02-02T09:30:00Z",
+            Some("busy"),
+        ),
+        run(
+            "laptop",
+            None,
+            "2026-02-02T10:00:00Z",
+            Some("1 of the files failed"),
+        ),
+        run("desk", Some("/b.db"), "2026-02-02T09:00:00Z", Some("busy")),
+        run("desk", None, "2026-02-02T09:00:00Z", None),
+    ] {
+        seed.store().record_import_run(&r).unwrap();
+    }
+    let specs = [
+        spec("laptop", SourceKind::Sqlite, true),
+        spec("desk", SourceKind::Sqlite, true),
+        spec("never", SourceKind::Sqlite, true),
+        spec("off", SourceKind::Sqlite, false),
+        spec("superset", SourceKind::Superset, true),
+    ];
+    let health = source_health(&seed.reader(), &specs).unwrap();
+    assert_eq!(
+        health[0].state,
+        SourceState::Failing {
+            since: ts("2026-02-02T09:00:00Z"),
+            last_error: "1 of the files failed".to_owned()
+        }
+    );
+    assert_eq!(health[0].last_success_at, Some(ts("2026-02-02T08:00:00Z")));
+    assert_eq!(health[0].recent_runs.len(), 4);
+    assert_eq!(health[1].state, SourceState::Healthy);
+    assert_eq!(health[2].state, SourceState::Healthy);
+    assert!(health[2].recent_runs.is_empty());
+    assert_eq!(health[3].state, SourceState::Disabled);
+    assert_eq!(health[4].state, SourceState::Healthy);
+    assert_eq!(
+        json(&health[0])["state"],
+        "failing",
+        "the state is tagged and flattened"
+    );
+    assert_eq!(json(&health[0])["source"], "laptop");
+}
+
+#[test]
+fn a_superset_source_fails_while_its_drift_issue_is_open() {
+    let seed = Seed::new();
+    seed.store()
+        .record_parse_issue(&tokenmtr_store::ParseIssue {
+            agent: AgentId::CLAUDE,
+            kind: tokenmtr_store::IssueKind::IntegrationDrift,
+            subject: "work".to_owned(),
+            count: std::num::NonZeroU64::MIN,
+            sample: Some("worktree: no such column".to_owned()),
+            at: ts("2026-02-02T08:00:00Z"),
+        })
+        .unwrap();
+    let spec = |name: &str| SourceSpec {
+        id: SourceId::try_from(name.to_owned()).unwrap(),
+        kind: SourceKind::Superset,
+        enabled: true,
+    };
+    let health = source_health(&seed.reader(), &[spec("work"), spec("superset")]).unwrap();
+    assert_eq!(
+        health[0].state,
+        SourceState::Failing {
+            since: ts("2026-02-02T08:00:00Z"),
+            last_error: "worktree: no such column".to_owned()
+        }
+    );
+    assert_eq!(health[1].state, SourceState::Healthy);
 }
 
 #[test]
@@ -2457,4 +2561,43 @@ fn imported_rows_count_in_totals_and_budgets_but_not_in_the_live_block() {
         .collect();
     assert!(named.contains(&("github.com/acme/tool".to_owned(), "acme/tool".to_owned())));
     assert!(named.contains(&("/home/me/src/widgets".to_owned(), "widgets".to_owned())));
+}
+
+#[test]
+fn an_imported_session_names_its_machine_and_a_local_one_does_not() {
+    let seed = Seed::new();
+    let at = ts("2026-02-02T11:00:00Z");
+    seed.put(&[reported(seed.ev("local", at), 1_000_000)]);
+    let mut remote = reported(seed.ev("remote", at), 2_000_000);
+    remote.session = SessionId::try_from("remote".to_owned()).unwrap();
+    import(&seed, vec![remote]);
+    let reader = seed.reader();
+    let c = usd_ctx("UTC", "2026-02-03T00:00:00Z");
+    let f = Filters::new(DateRange::day(date(2026, 2, 2)).unwrap());
+
+    let page = sessions(&reader, &c, &f, 0, 50).unwrap();
+    let machine_of = |session: &str| {
+        page.rows
+            .iter()
+            .find(|row| row.session == session)
+            .map(|row| row.machine.clone())
+    };
+    assert_eq!(
+        machine_of("remote"),
+        Some(Some("laptop · laptop".to_owned()))
+    );
+    assert_eq!(machine_of("s1"), Some(None));
+
+    let detail = |session: &str| {
+        session_detail(
+            &reader,
+            &c,
+            AgentId::CLAUDE,
+            &SessionId::try_from(session.to_owned()).unwrap(),
+        )
+        .unwrap()
+        .machine
+    };
+    assert_eq!(detail("remote").as_deref(), Some("laptop · laptop"));
+    assert_eq!(detail("s1"), None);
 }

@@ -20,7 +20,7 @@ mod settings;
 pub use backup::{BackupFile, backup_files, backup_path, list_backups, prune_backups};
 pub use context::{
     AccountSummary, AppContext, FxSummary, PricingSnapshotInfo, PricingSummary, QuotaReport,
-    UnpricedModel, sink_dirs,
+    SourceImport, UnpricedModel, external_dirs,
 };
 pub use diagnose::{Diagnosis, diagnose};
 pub use erase::{EraseReport, EraseScope, erase};
@@ -31,5 +31,5 @@ pub use retention::{RETENTION_DAYS, set_claude_retention};
 pub use settings::{
     add_project_rule, add_subscription, backup_dir, budget_specs, display_zone, ensure_config_file,
     load_config, metrics_specs, query_context, recap_config, set_git_defaults, set_menubar_rings,
-    sink_specs, store_path,
+    sink_specs, source_specs, store_path,
 };

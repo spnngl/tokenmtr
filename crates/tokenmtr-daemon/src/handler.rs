@@ -5,16 +5,17 @@ use std::sync::Arc;
 use tokenmtr_agents::ingest::{ScanPriority, ScanReport, ScanRequest};
 use tokenmtr_config::Config;
 use tokenmtr_control::{
-    AgentScanSummary, BackupSummary, DaemonStatus, ErrorKind, ExportSummary, Handler, IssueKind,
-    IssueList, IssueSummary, QuotaSummary, RepriceSummary, Request, Response, ScanSummary,
-    SinkExportSummary, SinkSummary, Task,
+    AgentScanSummary, BackupSummary, DaemonStatus, ErrorKind, ExportSummary, Handler,
+    ImportSummary, IssueKind, IssueList, IssueSummary, QuotaSummary, RepriceSummary, Request,
+    Response, ScanSummary, SinkExportSummary, SinkSummary, SourceImportSummary, Task,
 };
-use tokenmtr_core::SinkId;
+use tokenmtr_core::{SinkId, SourceId};
 use tokenmtr_platform::ThreadPriority;
 use tokenmtr_store::{IssueKind as StoreIssueKind, RepriceScope, SCHEMA_VERSION, StoreRead};
 
 use crate::ctx::{Ctx, lock};
 use crate::error::DaemonError;
+use crate::import::enabled_imports;
 use crate::reload::ReloadCause;
 
 /// The optional tasks `config` switches on, ascending.
@@ -72,6 +73,24 @@ impl ControlHandler {
                         .collect(),
                 }))
             }
+            Request::ImportNow { source } => {
+                self.check_source(source.as_ref())?;
+                let reports = ctx.import(source, ThreadPriority::UserInitiated).await?;
+                Ok(Response::Imported(ImportSummary {
+                    sources: reports
+                        .into_iter()
+                        .map(|report| SourceImportSummary {
+                            files_read: report.read,
+                            rows: report.rows(),
+                            error: report
+                                .failures
+                                .first()
+                                .map(|failure| failure.error.to_string()),
+                            source: report.source,
+                        })
+                        .collect(),
+                }))
+            }
             Request::BackupNow => {
                 let backup = ctx.backup(ThreadPriority::UserInitiated).await?;
                 Ok(Response::BackedUp(BackupSummary {
@@ -121,6 +140,20 @@ impl ControlHandler {
             Ok(())
         } else {
             Err(DaemonError::Unknown(format!("no sink named `{sink}`")))
+        }
+    }
+
+    /// Rejects a request naming a source that is not an enabled `sqlite` source.
+    fn check_source(&self, source: Option<&SourceId>) -> Result<(), DaemonError> {
+        let Some(source) = source else {
+            return Ok(());
+        };
+        if enabled_imports(&self.0.active().config).any(|s| s.id == *source) {
+            Ok(())
+        } else {
+            Err(DaemonError::Unknown(format!(
+                "no enabled sqlite source named `{source}`"
+            )))
         }
     }
 

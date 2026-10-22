@@ -5,14 +5,14 @@
 
 use std::time::Duration;
 
-use tokenmtr_core::{AgentId, SinkId};
+use tokenmtr_core::{AgentId, SinkId, SourceId};
 use tokenmtr_platform::{ControlStream, ControlTransport, LineReader, LineWriter};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::error::ClientError;
 use crate::protocol::{
-    BackupSummary, ClientInfo, DaemonStatus, Event, ExportSummary, IssueList, PROTOCOL_VERSION,
-    QuotaSummary, RepriceSummary, Request, Response, ScanSummary,
+    BackupSummary, ClientInfo, DaemonStatus, Event, ExportSummary, ImportSummary, IssueList,
+    PROTOCOL_VERSION, QuotaSummary, RepriceSummary, Request, Response, ScanSummary,
 };
 
 /// Bound on connecting plus the `Hello` handshake.
@@ -27,6 +27,7 @@ const fn request_timeout(request: &Request) -> Duration {
     match request {
         Request::ScanNow { .. }
         | Request::ExportNow { .. }
+        | Request::ImportNow { .. }
         | Request::BackupNow
         | Request::Reprice { .. }
         | Request::RefreshQuota
@@ -199,6 +200,20 @@ impl Client {
         }
     }
 
+    /// Imports the `sqlite` sources now.
+    ///
+    /// # Errors
+    /// As [`Client::request`].
+    pub async fn import_now(
+        &mut self,
+        source: Option<SourceId>,
+    ) -> Result<ImportSummary, ClientError> {
+        match self.request(&Request::ImportNow { source }).await? {
+            Response::Imported(summary) => Ok(summary),
+            other => Err(ClientError::Unexpected(type_name(&other))),
+        }
+    }
+
     /// Backs up now.
     ///
     /// # Errors
@@ -331,6 +346,7 @@ const fn type_name(response: &Response) -> &'static str {
         Response::Status(_) => "status",
         Response::Scanned(_) => "scanned",
         Response::Exported(_) => "exported",
+        Response::Imported(_) => "imported",
         Response::BackedUp(_) => "backed_up",
         Response::Repriced(_) => "repriced",
         Response::QuotaRefreshed(_) => "quota_refreshed",

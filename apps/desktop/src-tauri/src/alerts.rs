@@ -106,6 +106,11 @@ impl Notice {
                 format!("Sink {sink} has been failing for a while."),
                 Route::Settings,
             ),
+            AlertKind::SourceFailing { source, .. } => (
+                "Import failing".to_owned(),
+                format!("Source {source} has been failing for a while."),
+                Route::Export,
+            ),
             AlertKind::MetricsFailing { output, .. } => (
                 "Metrics output failing".to_owned(),
                 format!("Metrics output {output} has been failing for a while."),

@@ -221,6 +221,13 @@ fn render_system(system: &SystemHealth) {
         };
         println!("metrics {}: {state}", output.output);
     }
+    for source in &system.sources {
+        println!(
+            "source {}: {}",
+            source.source,
+            crate::sources::state_text(&source.state)
+        );
+    }
 }
 
 fn render_recap(recap: &AgentRecap) {
