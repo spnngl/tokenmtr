@@ -52,8 +52,8 @@ CREATE TABLE import_cursor (
     PRIMARY KEY (source, path)
 ) STRICT, WITHOUT ROWID;
 
--- One row per file read or failed; source health is computed from these rows. `path` and
--- `dataset` are NULL when the run failed before it knew them (a folder macOS refused).
+-- One row per failed file and one per pass (`path` NULL); source health is computed from these
+-- rows. `dataset` is unused.
 CREATE TABLE import_run (
     id             INTEGER PRIMARY KEY,
     source         TEXT NOT NULL,

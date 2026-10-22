@@ -49,15 +49,7 @@ enum State {
 }
 
 impl Hints {
-    /// No hints (no Superset source is enabled).
-    #[must_use]
-    pub const fn off() -> Self {
-        Self {
-            sources: Vec::new(),
-        }
-    }
-
-    /// Hints read on first use from the Superset data directory of each source.
+    /// Hints read on first use from the Superset data directory of each source (none: no hints).
     #[must_use]
     pub fn superset(sources: Vec<(SourceId, Utf8PathBuf)>) -> Self {
         Self {
@@ -68,19 +60,6 @@ impl Hints {
                     state: State::Unread(dir),
                 })
                 .collect(),
-        }
-    }
-
-    /// Hints from `worktrees` (tests).
-    #[cfg(test)]
-    #[must_use]
-    pub fn from_worktrees(mut worktrees: Vec<(Utf8PathBuf, WorktreeHint)>) -> Self {
-        sort(&mut worktrees);
-        Self {
-            sources: vec![Source {
-                id: SourceId::implicit_superset(),
-                state: State::Read(worktrees),
-            }],
         }
     }
 

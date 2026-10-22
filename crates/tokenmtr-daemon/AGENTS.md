@@ -10,8 +10,7 @@ The store's writer whenever it runs. The crate doc in `src/lib.rs` lists its tas
 - Network jobs run only while their config flag is on; `tests/network.rs` proves the daemon sends nothing when they are off.
 - Metrics outputs exist only while a `[[metrics.*]]` entry does: with none, nothing is bound, computed or recorded (`tests/metrics.rs`). `Ctx::arm_metrics` is state-driven (it keeps the server, `Seen` set and timers of an unchanged output), the refresh is rate-limited to `refresh_interval` and woken by changed datasets, and a session's expiry arms its own refresh.
 - A failing output retries with `Timing.metrics_backoff` doubling up to `export_retry_cap`, shortened by `before_alert` so the `metrics_failing` alert fires on time. Secrets are resolved at bind or push time, never at config load, and never logged.
-
-- Sources of kind `sqlite` import on their own `imports` connection (`src/import.rs`): a pass reads files for as long as it takes and writes pages in short transactions, so it never holds `store`. One `Job::Import(source)` per enabled source, armed by `Ctx::arm_imports`, woken by a file event under the source'"'"'s `include` folders (`wake_imports` in `src/watcher.rs`, after `Timing.import_debounce`) and by its `interval`. A disabled source is never listed, opened or watched (`tests/imports.rs`).
+- Sources of kind `sqlite` import on their own `imports` connection (`src/import.rs`): a pass writes pages in short transactions, so it never holds `store`. One `Job::Import(source)` per enabled source, armed by `Ctx::arm_imports`, woken by a file event under the source's `include` folders (`wake_imports` in `src/watcher.rs`, after `Timing.import_debounce`) and by its `interval`. A disabled source is never opened or watched (`tests/imports.rs`).
 
 ## Adding a scheduled job
 

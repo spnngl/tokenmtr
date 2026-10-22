@@ -272,7 +272,7 @@ pub struct ImportSummary {
     pub sources: Vec<SourceImportSummary>,
 }
 
-/// One source'"'"'s run.
+/// One source's run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceImportSummary {
     /// The source.

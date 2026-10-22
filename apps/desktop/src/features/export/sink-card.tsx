@@ -5,6 +5,7 @@ import { formatCount, formatDuration } from "../../shared/format";
 import type { SinkHealth, SinkRun } from "../../shared/schemas";
 import { Badge, type Column, DataTable, type Tone } from "../../shared/ui";
 import { canExport, formatInstant, looksLikeProtectedFolder } from "./model";
+import { resultColumn } from "./result-column";
 
 interface SinkCardProps {
   readonly sink: SinkHealth;
@@ -34,18 +35,7 @@ function runColumns(timeZone: string): readonly Column<SinkRun>[] {
     { header: "Dataset", cell: (run) => run.dataset },
     { header: "Finished", cell: (run) => formatInstant(run.finished_at, timeZone) },
     { header: "Rows", numeric: true, cell: (run) => formatCount(run.rows) },
-    {
-      header: "Result",
-      cell: (run) =>
-        run.error === null ? (
-          <Badge tone="success">OK</Badge>
-        ) : (
-          <span className="flex flex-col items-start gap-1">
-            <Badge tone="danger">Failed</Badge>
-            <span className="text-xs">{run.error}</span>
-          </span>
-        ),
-    },
+    resultColumn<SinkRun>(),
   ];
 }
 

@@ -1,4 +1,4 @@
-# Control protocol v4
+# Control protocol
 
 How clients (CLI, menu-bar app) talk to the daemon. Types live in `crates/tokenmtr-control/src/protocol.rs`; that file is the source of truth, this page is the map.
 
@@ -62,5 +62,5 @@ Clients re-read the store after `store_changed`; the event carries no row data.
 ## Versioning
 
 - `PROTOCOL_VERSION` is bumped for any change an older peer would misread: removing or renaming a message or field, changing a meaning, adding a required field.
-- Adding an optional field is compatible. A new event, an unsolicited response type or a new value of a closed enum (a quota status, an issue kind) is not: older clients fail to parse it, so it bumps the version. v2 added `keychain_denied` and `integration_drift`; v3 added the `metrics_failing` alert kind; v4 added the `source_failing` alert kind and `import_now`. A new request with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
+- Adding an optional field is compatible. A new event, an unsolicited response type or a new value of a closed enum (a quota status, an issue kind) is not: older clients fail to parse it, so it bumps the version. v2 added `keychain_denied` and `integration_drift`; v3 added the `metrics_failing` alert kind; v4 added the `source_failing` alert kind. A new request (`import_now`) with its own response is compatible: only a client that sends it can receive that response (an older daemon answers `error` / `bad_request`).
 - There is no negotiation: a mismatch ends the connection. Ship the daemon and its clients together: they come from one app bundle, and the app shows "Update required" on `incompatible`.

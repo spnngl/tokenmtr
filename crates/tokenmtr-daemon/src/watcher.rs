@@ -1,4 +1,4 @@
-//! The file watcher task: agent roots feed debounced scans, the config file feeds reloads.
+//! The file watcher task: agent roots feed debounced scans, source folders feed imports, the config file feeds reloads.
 //!
 //! One `notify` watcher whose callback pushes into a bounded channel; when the channel is full the
 //! event is dropped and the next batch becomes a full rescan. The task sleeps until the
@@ -239,6 +239,7 @@ pub(crate) async fn run(ctx: Arc<Ctx>, mut shutdown: Shutdown) {
                     // A full channel means at least one event was dropped after the one read.
                     if inbox.take_overflow() {
                         tracing::debug!("file watcher channel overflowed, scheduling a rescan");
+                        wake_imports(&ctx, None);
                         core.feed(RawEvent::Rescan, Instant::now(), &|_| false);
                     }
                 }
@@ -247,6 +248,7 @@ pub(crate) async fn run(ctx: Arc<Ctx>, mut shutdown: Shutdown) {
             () = poll => {
                 if live.watch_appeared() {
                     // Files written before the watch started are found by a rescan.
+                    wake_imports(&ctx, None);
                     core.feed(RawEvent::Rescan, Instant::now(), &|_| false);
                 }
             }

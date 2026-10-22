@@ -10,7 +10,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** Header status: the worst of daemon, sinks, metrics outputs and sources, named so the dot is never alone. */
+/** Header status: the worst of daemon, sinks, metrics outputs and `sqlite` sources, named so the dot is never alone. */
 export function summarizeHealth(system: SystemHealth): HealthSummary {
   const { level, daemon, sinks, metrics, sources } = system;
   if (daemon.state !== "running") {
@@ -28,7 +28,9 @@ export function summarizeHealth(system: SystemHealth): HealthSummary {
   if (failingOutputs > 0) {
     return { level, label: `${plural(failingOutputs, "metrics output")} failing` };
   }
-  const failingSources = sources.filter((source) => source.state === "failing").length;
+  const failingSources = sources.filter(
+    (source) => source.kind === "sqlite" && source.state === "failing",
+  ).length;
   if (failingSources > 0) {
     return { level, label: `${plural(failingSources, "source")} failing` };
   }

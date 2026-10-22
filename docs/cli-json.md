@@ -31,7 +31,7 @@ Other `--json` outputs (`alerts`, `quota`, `fx`, `pricing`, `backup`, `doctor`, 
 | --- | --- | --- |
 | `status_schema` | `1` | Schema version. |
 | `generated_at` | timestamp | When the document was built. |
-| `system.level` | `ok` \| `warning` \| `error` | Worst of daemon, sinks and metrics outputs (a failing output is a `warning`). A never-started daemon and disabled sinks count as `ok`. |
+| `system.level` | `ok` \| `warning` \| `error` | Worst of daemon, sinks, metrics outputs and `sqlite` sources (a failing output or source is a `warning`). A never-started daemon and disabled sinks count as `ok`. |
 | `system.daemon.state` | `running` \| `stale` \| `never_started` | From the daemon's heartbeat. |
 | `system.daemon.last_heartbeat`, `age_secs` | timestamp, integer or `null` | Latest heartbeat and its age. |
 | `system.sinks[]` | object | One entry per configured sink (below). |

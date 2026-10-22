@@ -27,7 +27,20 @@ export function pageCount(data: Pick<SessionPage, "total" | "page_size">): numbe
   return Math.max(1, Math.ceil(data.total / Math.max(1, data.page_size)));
 }
 
-function columns(timeZone: string, currency: SessionPage["currency"]): Column<SessionRow>[] {
+function columns(
+  timeZone: string,
+  currency: SessionPage["currency"],
+  withMachine: boolean,
+): Column<SessionRow>[] {
+  const machine: Column<SessionRow>[] = withMachine
+    ? [
+        {
+          header: "Machine",
+          cell: (row) => row.machine ?? "This machine",
+          sortValue: (row) => row.machine ?? "",
+        },
+      ]
+    : [];
   return [
     {
       header: "Session",
@@ -60,11 +73,7 @@ function columns(timeZone: string, currency: SessionPage["currency"]): Column<Se
       cell: (row) => row.project ?? PLACEHOLDER,
       sortValue: (row) => row.project ?? "",
     },
-    {
-      header: "Machine",
-      cell: (row) => row.machine ?? "This machine",
-      sortValue: (row) => row.machine ?? "",
-    },
+    ...machine,
     { header: "Models", cell: (row) => row.models.join(", ") },
     {
       header: "Tokens",
@@ -151,7 +160,11 @@ function SessionsTable(): ReactNode {
             caption="Sessions, newest first"
             rows={answer.rows}
             rowKey={(row) => `${row.agent}:${row.session}`}
-            columns={columns(timeZone, answer.currency)}
+            columns={columns(
+              timeZone,
+              answer.currency,
+              answer.rows.some((row) => row.machine !== null),
+            )}
           />
           <Pager data={answer} onPage={setPage} />
         </>

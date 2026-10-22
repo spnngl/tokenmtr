@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SOURCE_FAILING } from "../features/export/fixtures";
 import type { SinkHealth, SystemHealth } from "../shared/schemas";
 import { summarizeHealth } from "./health";
 
@@ -76,23 +77,20 @@ describe("summarizeHealth", () => {
       daemon: RUNNING,
       sinks: [HEALTHY_SINK],
       metrics: [],
-      sources: [
-        {
-          state: "failing",
-          since: "2026-06-15T09:00:00Z",
-          last_error: "database is locked",
-          source: "laptop",
-          kind: "sqlite",
-          files: 1,
-          machines: 1,
-          events: 10,
-          tool_calls: 3,
-          last_success_at: null,
-          recent_runs: [],
-        },
-      ],
+      sources: [SOURCE_FAILING],
     };
     expect(summarizeHealth(system)).toEqual({ level: "warning", label: "1 source failing" });
+  });
+
+  it("ignores a Superset source: only imports raise the header", () => {
+    const system: SystemHealth = {
+      level: "ok",
+      daemon: RUNNING,
+      sinks: [],
+      metrics: [],
+      sources: [{ ...SOURCE_FAILING, kind: "superset" }],
+    };
+    expect(summarizeHealth(system)).toEqual({ level: "ok", label: "Healthy" });
   });
 
   it("reports lag as a warning", () => {

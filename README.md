@@ -63,9 +63,9 @@ kind = "sqlite"
 include = ["~/Dropbox/tokenmtr/*.db"]
 ```
 
-Never let two machines write one file. A machine skips its own file, so the glob can cover the whole folder. Declare the same `[[subscriptions]]` and `[[budgets]]` on every machine: imported rows count in totals and budgets, never in your own exports or metrics. `tokenmtr sources` shows each source's health and `tokenmtr sources import` reads now. Details: [docs/config.md](docs/config.md#sources).
+One file per machine; a machine skips its own, so the glob can cover the whole folder. Declare the same `[[subscriptions]]` and `[[budgets]]` on every machine: imported rows count in totals and budgets, never in your own exports or metrics. `tokenmtr sources` shows each source's health and `tokenmtr sources import` reads now. Details: [docs/config.md](docs/config.md#sources).
 
-Privacy: an export holds usage metadata only (tokens, costs, model, project, working directory, git branch; never prompts or transcripts), and so does what you import. Turn on `privacy.redact_paths` to hash imported paths too.
+Privacy: an export holds usage metadata only (tokens, costs, model, project, working directory, git branch; never prompts or transcripts), and so does what you import. `privacy.redact_paths` also hashes the imported working directory and git branch.
 
 ## CLI
 
