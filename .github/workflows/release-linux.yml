@@ -43,7 +43,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=casey/just
           just-version: "1.59.0"
-      - uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28 (scripts/release.nu)
+      - uses: hustcer/setup-nu@eacad52a4634c4f8d17a94916f93be6856861b9c # v3.29 (scripts/release.nu)
         with:
           # renovate: datasource=github-releases depName=nushell/nushell
           version: "0.116.1"
