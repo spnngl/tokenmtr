@@ -39,7 +39,7 @@ globset = "0.4"
 http-body-util = "0.1"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-graceful"] }
-gix = { version = "0.89", default-features = false, features = ["max-performance-safe", "sha1"] }
+gix = { version = "0.90", default-features = false, features = ["max-performance-safe", "sha1"] }
 jiff = { version = "0.2", features = ["serde"] }
 libc = "0.2"
 memchr = "2.8"
