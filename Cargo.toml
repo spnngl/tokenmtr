@@ -85,7 +85,7 @@ tauri-plugin-store = "2"
 assert_cmd = "2.2"
 divan = "0.1"
 insta = { version = "1.49", features = ["json"] }
-jsonschema = { version = "0.59", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
 predicates = "3.1"
 proptest = "1.12"
 wiremock = "0.6"
