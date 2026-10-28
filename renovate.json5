@@ -4,6 +4,11 @@
     "extends": ["github>spnngl/.github:renovate.default.json5"],
     "packageRules": [
         {
+            "description": "Automerge every non-major update, 0.x crate bumps included, once the required checks pass.",
+            "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+            "automerge": true
+        },
+        {
             "description": "Tauri: the Rust crates and the npm packages must move together (the CLI checks that their versions match).",
             "matchPackageNames": ["tauri", "tauri-build", "tauri-plugin-*", "@tauri-apps/*"],
             "groupName": "tauri"
