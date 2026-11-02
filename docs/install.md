@@ -186,7 +186,11 @@ published: `amd64` or `x86_64`, and `arm64` or `aarch64`.
 
 ### Install
 
-Download the package for your architecture from the
+Add the signed spnngl package repository, then install `tokenmtr` with your package manager:
+see [spnngl/linux-packaging](https://github.com/spnngl/linux-packaging#install). Updates then
+arrive with the system's.
+
+Or download the package for your architecture from the
 [GitHub releases](https://github.com/spnngl/tokenmtr/releases), [verify it](#verify-a-download),
 then:
 
