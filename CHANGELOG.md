@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
+Linux packages come from a signed package repository.
+
+### Changed
+
+- Linux install: [docs/install.md](docs/install.md#linux) adds the signed spnngl package repository ([spnngl/linux-packaging](https://github.com/spnngl/linux-packaging#install)), so updates arrive with the system's package manager. The GitHub release packages stay available.
+
 ## [0.4.0] - 2026-10-22
 
 Sources: usage from other machines, next to the ones this machine records.
@@ -100,7 +108,8 @@ First release: macOS app (universal, Apple Silicon and Intel) plus the `tokenmtr
 - `[menubar] title` is gone: the menu bar shows rings instead of a text title. Remove the key, or the config is rejected.
 - `tokenmtr erase` deletes the config with `--delete-config` (`--config <path>` is the global flag that picks the file).
 
-[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/spnngl/tokenmtr/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/spnngl/tokenmtr/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/spnngl/tokenmtr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spnngl/tokenmtr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spnngl/tokenmtr/compare/v0.1.0...v0.2.0
